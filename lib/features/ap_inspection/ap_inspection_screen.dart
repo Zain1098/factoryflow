@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
@@ -28,6 +27,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   bool _isSaving = false;
   String? _error;
   String? _success;
+  DateTime _recordedAt = DateTime.now();
 
   @override
   void initState() {
@@ -80,6 +80,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         rejectedQty: double.tryParse(_rejectedCtrl.text) ?? 0,
         rejectReason: _rejectReason ?? 'N/A',
         inspectorId: user?.id ?? 'unknown',
+        recordedAt: _recordedAt,
       );
 
       if (result.success) {
@@ -102,7 +103,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     _checkedCtrl.clear();
     _approvedCtrl.clear();
     _rejectedCtrl.text = '0';
-    setState(() { _partId = null; _rejectReason = null; });
+    setState(() { _partId = null; _rejectReason = null; _recordedAt = DateTime.now(); });
   }
 
   @override
@@ -135,21 +136,10 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 18),
-                  const SizedBox(width: 8),
-                  Text(DateFormat('dd MMM yyyy').format(DateTime.now())),
-                  const Spacer(),
-                  const Text('Auto', style: TextStyle(color: Colors.green, fontSize: 12)),
-                ],
-              ),
+            RecordDateTimePicker(
+              value: _recordedAt,
+              onChanged: (dt) => setState(() => _recordedAt = dt),
+              showTime: false,
             ),
             const SizedBox(height: 16),
 

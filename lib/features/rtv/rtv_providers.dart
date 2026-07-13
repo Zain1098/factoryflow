@@ -34,6 +34,7 @@ class RtvRepository {
     String? expectedReturnDate,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
     // Check cycle count (PRD 3.3 — cap at 3)
     final cycleRows = _db.db.select(
@@ -71,7 +72,7 @@ class RtvRepository {
 
     final cycleNumber = currentCycles + 1;
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     final record = {

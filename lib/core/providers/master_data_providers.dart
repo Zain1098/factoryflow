@@ -73,6 +73,65 @@ class MasterDataRepository {
     return id;
   }
 
+  Future<void> updatePart(String id, {required String code, required String name}) async {
+    _db.db.execute('UPDATE parts SET code = ?, name = ? WHERE id = ?', [code, name, id]);
+    await _sync.queueInsert(tableName: 'parts', recordId: id, payload: {'id': id, 'code': code, 'name': name});
+  }
+
+  Future<void> deactivatePart(String id) async {
+    _db.db.execute('UPDATE parts SET active = 0 WHERE id = ?', [id]);
+  }
+
+  Future<String> insertOperator(String name) async {
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'factory_id': AppConstants.defaultFactoryId,
+      'name': name,
+      'active': 1,
+    };
+    await _db.insertRecord('operators', data);
+    await _sync.queueInsert(tableName: 'operators', recordId: id, payload: data);
+    return id;
+  }
+
+  Future<void> updateOperator(String id, String name) async {
+    _db.db.execute('UPDATE operators SET name = ? WHERE id = ?', [name, id]);
+    await _sync.queueInsert(tableName: 'operators', recordId: id, payload: {'id': id, 'name': name});
+  }
+
+  Future<void> deactivateOperator(String id) async {
+    _db.db.execute('UPDATE operators SET active = 0 WHERE id = ?', [id]);
+  }
+
+  Future<String> insertMachine({required String name, required String machineCode, required int sequenceOrder}) async {
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'factory_id': AppConstants.defaultFactoryId,
+      'name': name,
+      'machine_code': machineCode,
+      'sequence_order': sequenceOrder,
+      'active': 1,
+    };
+    await _db.insertRecord('machines', data);
+    await _sync.queueInsert(tableName: 'machines', recordId: id, payload: data);
+    return id;
+  }
+
+  Future<void> updateMachine(String id, {required String name, required String machineCode}) async {
+    _db.db.execute('UPDATE machines SET name = ?, machine_code = ? WHERE id = ?', [name, machineCode, id]);
+    await _sync.queueInsert(tableName: 'machines', recordId: id, payload: {'id': id, 'name': name, 'machine_code': machineCode});
+  }
+
+  Future<void> deactivateMachine(String id) async {
+    _db.db.execute('UPDATE machines SET active = 0 WHERE id = ?', [id]);
+  }
+
+  Future<void> reorderMachine(String id, int sequenceOrder) async {
+    _db.db.execute('UPDATE machines SET sequence_order = ? WHERE id = ?', [sequenceOrder, id]);
+  }
+
   Future<String> insertVehicle(String numberPlate) async {
     final id = _uuid.v4();
     final data = {

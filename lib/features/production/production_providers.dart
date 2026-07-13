@@ -17,16 +17,17 @@ class ProductionRepository {
   final SyncService _sync;
   final StockLedgerService _ledger;
 
-  /// Generate batch number per PRD 7.2: {PartCode}-{YYYYMMDD}-{MachineSeq}-{Seq}
+  /// Generates batch number using machine_code from DB — no hardcoded letters.
   Future<String> generateBatchNumber({
     required String partCode,
     required DateTime date,
-    required String machineSeq,
+    required String machineCode,
   }) async {
-    final dateStr = '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
-    final prefix = '$partCode-$dateStr-$machineSeq';
+    final dateStr =
+        '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+    final prefix = '$partCode-$dateStr-$machineCode';
     final existing = _db.db.select(
-      "SELECT COUNT(*) as cnt FROM productions WHERE batch_number LIKE ?",
+      'SELECT COUNT(*) as cnt FROM productions WHERE batch_number LIKE ?',
       ['$prefix%'],
     );
     final seq = (existing.first['cnt'] as int) + 1;
@@ -38,7 +39,7 @@ class ProductionRepository {
     required String partCode,
     required String machineId,
     required String machineName,
-    required String machineSeq,
+    required String machineCode,
     required String operatorId,
     required String machineStatusId,
     required double productionQty,
@@ -46,8 +47,8 @@ class ProductionRepository {
     String? shiftId,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
-    // Validate: bpRejectQty <= productionQty (PRD 4.2)
     if (bpRejectQty > productionQty) {
       return const ProductionResult(
         success: false,
@@ -56,14 +57,16 @@ class ProductionRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
-    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final now = recordedAt ?? DateTime.now();
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
     final batchNumber = await generateBatchNumber(
       partCode: partCode,
       date: now,
-      machineSeq: machineSeq,
+      machineCode: machineCode,
     );
 
     final goodQty = productionQty - bpRejectQty;
@@ -90,7 +93,6 @@ class ProductionRepository {
 
     await _db.insertRecord('productions', record);
 
-    // Stock ledger: good_qty goes into BP Stock (PRD 7.1)
     if (goodQty > 0) {
       final ledgerResult = await _ledger.productionToBpStock(
         partId: partId,
@@ -102,7 +104,13 @@ class ProductionRepository {
       }
     }
 
-    await _sync.queueInsert(tableName: 'productions', recordId: id, payload: record);
+    // FIXED: Strip good_qty (generated column in Supabase) from sync payload
+    final syncPayload = Map<String, dynamic>.from(record)..remove('good_qty');
+    await _sync.queueInsert(
+      tableName: 'productions',
+      recordId: id,
+      payload: syncPayload,
+    );
 
     return ProductionResult(success: true, recordId: id, batchNumber: batchNumber);
   }
@@ -134,7 +142,6 @@ final productionListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   return ref.watch(productionRepositoryProvider).getRecent();
 });
 
-// Machine status types (PRD 15.2 — seeded)
 const kMachineStatuses = ['Running', 'Breakdown', 'Maintenance', 'Idle'];
 
 class ProductionResult {

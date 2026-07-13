@@ -26,6 +26,7 @@ class FinalDispatchRepository {
     String? challanNumber,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
     // Validate: dispatchQty <= Approved AP stock (PRD 4.10)
     final available = await _ledger.getAvailableStock(partId, StockStage.approvedAp);
@@ -37,7 +38,7 @@ class FinalDispatchRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     final record = {

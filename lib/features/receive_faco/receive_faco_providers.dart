@@ -23,6 +23,7 @@ class ReceiveFacoRepository {
     String? supplierChallan,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
     // Shortage check: compare with dispatched qty (PRD 3.7 — allowed, flagged)
     double? dispatchedQty;
@@ -39,7 +40,7 @@ class ReceiveFacoRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     final record = {

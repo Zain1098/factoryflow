@@ -21,6 +21,7 @@ class MachineDowntimeRepository {
     String? operatorId,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
     // Validate end_time > start_time (PRD 4.3)
     if (endTime != null && endTime.isNotEmpty) {
@@ -32,7 +33,7 @@ class MachineDowntimeRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     int? durationMinutes;

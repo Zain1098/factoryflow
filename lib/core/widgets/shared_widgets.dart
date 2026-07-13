@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 // ─── App Form Field ───────────────────────────────────────────────────────────
 class AppFormField extends StatelessWidget {
@@ -470,4 +471,116 @@ Future<bool> showConfirmDialog(
     ),
   );
   return result ?? false;
+}
+
+// ─── Record Date/Time Picker ──────────────────────────────────────────────────
+/// Shows current date+time by default. Tap the edit icon to set a custom
+/// date/time (e.g. for backdated entries). Pass [showTime] = false for
+/// screens that only need a date (e.g. machine downtime).
+class RecordDateTimePicker extends StatelessWidget {
+  const RecordDateTimePicker({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.showTime = true,
+  });
+
+  final DateTime value;
+  final ValueChanged<DateTime> onChanged;
+  final bool showTime;
+
+  Future<void> _pick(BuildContext context) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: value,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (pickedDate == null || !context.mounted) return;
+
+    if (!showTime) {
+      final d = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        value.hour,
+        value.minute,
+      );
+      onChanged(d);
+      return;
+    }
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: value.hour, minute: value.minute),
+    );
+    if (pickedTime == null) return;
+    final dt = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+    onChanged(dt);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCustom = !_isSameMinute(value, DateTime.now());
+    final label = showTime
+        ? DateFormat('dd MMM yyyy, hh:mm a').format(value)
+        : DateFormat('dd MMM yyyy').format(value);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: isCustom
+            ? Border.all(color: Colors.orange.withValues(alpha: 0.6))
+            : null,
+      ),
+      child: Row(
+        children: [
+          Icon(showTime ? Icons.access_time : Icons.calendar_today, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label)),
+          if (isCustom)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'Custom',
+                style: TextStyle(color: Colors.orange, fontSize: 11),
+              ),
+            )
+          else
+            const Text(
+              'Auto',
+              style: TextStyle(color: Colors.green, fontSize: 12),
+            ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _pick(context),
+            borderRadius: BorderRadius.circular(4),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.edit_calendar_outlined, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _isSameMinute(DateTime a, DateTime b) =>
+      a.year == b.year &&
+      a.month == b.month &&
+      a.day == b.day &&
+      a.hour == b.hour &&
+      a.minute == b.minute;
 }

@@ -474,7 +474,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Add valid Supabase credentials to .env for production login.',
+                          'Supabase is not configured for this build. Contact your administrator.',
                           style: TextStyle(
                             color: Colors.orange.withValues(alpha: 0.85),
                             fontSize: 12,

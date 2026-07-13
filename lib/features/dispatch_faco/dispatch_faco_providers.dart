@@ -26,6 +26,7 @@ class DispatchFacoRepository {
     String? challannumber,
     String? remarks,
     required String createdBy,
+    DateTime? recordedAt,
   }) async {
     // Validate: qty <= BP stock (PRD 4.5)
     final available = await _ledger.getAvailableStock(partId, StockStage.bpStock);
@@ -37,7 +38,7 @@ class DispatchFacoRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 

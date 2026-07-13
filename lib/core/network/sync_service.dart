@@ -1,22 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../constants/app_constants.dart';
 import '../database/database_service.dart';
+import '../services/notification_service.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   return SyncService(ref.watch(databaseServiceProvider));
 });
 
-/// Periodically polls pending sync count — properly cancellable stream
+/// Polls pending sync count every 30 s — only when provider is alive.
 final pendingSyncCountProvider = StreamProvider<int>((ref) {
   final db = ref.watch(databaseServiceProvider);
-  // Stream.periodic is properly cancelled when provider is disposed
-  return Stream.periodic(const Duration(seconds: 5), (_) => 0)
+  return Stream.periodic(const Duration(seconds: 30), (_) => 0)
       .asyncExpand((_) => Stream.fromFuture(db.countPendingSync()))
       .asBroadcastStream();
 });
@@ -25,7 +27,10 @@ final connectivityProvider = StreamProvider<List<ConnectivityResult>>((ref) {
   return Connectivity().onConnectivityChanged;
 });
 
-/// Offline-first sync engine per PRD Ch. 7.6 and Ch. 8.
+/// Columns that are GENERATED in Supabase and must be stripped before upsert.
+const _generatedColumns = {'good_qty'};
+
+/// Offline-first sync engine with exponential backoff and notification alerts.
 class SyncService {
   SyncService(this._db);
 
@@ -35,11 +40,15 @@ class SyncService {
 
   void startPeriodicSync() {
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) => syncPending());
+    _syncTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => syncPending(),
+    );
   }
 
   void stopPeriodicSync() {
     _syncTimer?.cancel();
+    _syncTimer = null;
   }
 
   Future<bool> isOnline() async {
@@ -63,43 +72,133 @@ class SyncService {
       for (final item in items) {
         final id = item['id'] as int;
         final attempts = (item['attempts'] as int? ?? 0) + 1;
+        final tableName = item['table_name'] as String;
+        final operation = item['operation'] as String;
+        final recordId = item['record_id'] as String;
 
         try {
-          final tableName = item['table_name'] as String;
-          final operation = item['operation'] as String;
-          final payload = jsonDecode(item['payload'] as String) as Map<String, dynamic>;
+          var payload =
+              jsonDecode(item['payload'] as String) as Map<String, dynamic>;
 
-          if (operation == 'insert') {
+          // Strip generated columns so Supabase doesn't reject the upsert
+          payload = Map.from(payload)
+            ..removeWhere((k, _) => _generatedColumns.contains(k))
+            ..remove('sync_status');
+
+          if (operation == 'insert' || operation == 'update') {
             await client.from(tableName).upsert(payload);
           } else if (operation == 'ledger') {
-            final result = await client.rpc('write_stock_ledger_entry', params: payload);
+            final result = await client.rpc(
+              'write_stock_ledger_entry',
+              params: {
+                'p_id': payload['id'],
+                'p_factory_id': payload['factory_id'],
+                'p_part_id': payload['part_id'],
+                'p_stage': payload['stage'],
+                'p_direction': payload['direction'],
+                'p_qty': payload['qty'],
+                'p_ref_table': payload['ref_table'],
+                'p_ref_id': payload['ref_id'],
+              },
+            );
             if (result is Map && result['success'] == false) {
-              await _db.markRecordConflict(tableName, item['record_id'] as String);
+              await _db.markRecordConflict(tableName, recordId);
               await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+              await _logSyncHistory(
+                tableName: tableName,
+                recordId: recordId,
+                operation: operation,
+                status: 'conflict',
+                errorMessage:
+                    result['error']?.toString() ?? 'RPC conflict detected',
+              );
               conflicts++;
               continue;
             }
           }
 
-          await _db.markRecordSynced(tableName, item['record_id'] as String);
+          await _db.markRecordSynced(tableName, recordId);
           await _db.updateSyncStatus(id, 'synced', attempts: attempts);
+          await _logSyncHistory(
+            tableName: tableName,
+            recordId: recordId,
+            operation: operation,
+            status: 'synced',
+          );
           synced++;
         } catch (e) {
+          final errorStr = _sanitizeSyncError(e);
           if (attempts >= AppConstants.syncRetryMaxAttempts) {
             await _db.updateSyncStatus(id, 'failed', attempts: attempts);
+            await _logSyncHistory(
+              tableName: tableName,
+              recordId: recordId,
+              operation: operation,
+              status: 'failed',
+              errorMessage: errorStr,
+            );
             failed++;
           } else {
-            await _db.updateSyncStatus(id, 'pending', attempts: attempts);
+            final retryAt = DateTime.now().add(backoffDelay(attempts));
+            await _db.updateSyncStatus(
+              id,
+              'pending',
+              attempts: attempts,
+              nextRetryAt: retryAt.toIso8601String(),
+            );
+            await _logSyncHistory(
+              tableName: tableName,
+              recordId: recordId,
+              operation: operation,
+              status: 'retry',
+              errorMessage: 'Attempt $attempts: $errorStr',
+            );
           }
         }
       }
+
+      if (failed > 0) {
+        await NotificationService.instance.showSyncFailure(failed);
+      }
     } catch (_) {
-      // Supabase not configured — keep items pending
+      // Supabase not configured — keep items pending silently
     } finally {
       _isSyncing = false;
     }
 
     return SyncResult(synced: synced, failed: failed, conflicts: conflicts);
+  }
+
+  Future<void> _logSyncHistory({
+    required String tableName,
+    required String recordId,
+    required String operation,
+    required String status,
+    String? errorMessage,
+  }) async {
+    try {
+      await _db.insertRecord('sync_history_logs', {
+        'id': const Uuid().v4(),
+        'table_name': tableName,
+        'record_id': recordId,
+        'operation': operation,
+        'status': status,
+        'error_message': errorMessage ?? '',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {
+      // Prevent failure in writing sync history from breaking sync loop
+    }
+  }
+
+  String _sanitizeSyncError(Object error) {
+    final message = error
+        .toString()
+        .replaceAll(
+            RegExp(r'(?i)(apikey|authorization|bearer)\\s*[:=]\\s*\\S+'),
+            '[redacted]',)
+        .replaceAll(RegExp(r'eyJ[a-zA-Z0-9_\\-\.]+'), '[redacted]');
+    return message.length <= 500 ? message : '${message.substring(0, 500)}…';
   }
 
   Future<void> queueInsert({
@@ -116,6 +215,13 @@ class SyncService {
     if (await isOnline()) {
       unawaited(syncPending());
     }
+  }
+
+  // Exponential backoff delay (not used for timer but available for manual retry)
+  Duration backoffDelay(int attempt) {
+    final seconds =
+        AppConstants.syncRetryBaseDelay.inSeconds * pow(2, attempt - 1);
+    return Duration(seconds: seconds.toInt().clamp(2, 300));
   }
 }
 

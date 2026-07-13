@@ -35,6 +35,7 @@ class BpInspectionRepository {
     required String rejectReason,
     required String inspectorId,
     String? remarks,
+    DateTime? recordedAt,
   }) async {
     // Validate: bpRejectQty <= BP stock available (PRD 4.4)
     final available = await _ledger.getAvailableStock(partId, StockStage.bpStock);
@@ -46,7 +47,7 @@ class BpInspectionRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     final record = {

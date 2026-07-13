@@ -4,8 +4,6 @@ import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 
-// ─── Dashboard Data Model ─────────────────────────────────────────────────────
-
 class DashboardData {
   const DashboardData({
     required this.rawMaterial,
@@ -19,6 +17,10 @@ class DashboardData {
     required this.todayApReject,
     required this.todayDispatch,
     required this.pendingSyncCount,
+    required this.todayTarget,
+    required this.machinesRunning,
+    required this.totalMachines,
+    required this.pendingApprovals,
   });
 
   final double rawMaterial;
@@ -32,17 +34,27 @@ class DashboardData {
   final double todayApReject;
   final double todayDispatch;
   final int pendingSyncCount;
+  final double todayTarget;
+  final int machinesRunning;
+  final int totalMachines;
+  final int pendingApprovals;
 
   static const empty = DashboardData(
     rawMaterial: 0, bpStock: 0, atFaco: 0, pendingAp: 0,
     approvedAp: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
     todayApReject: 0, todayDispatch: 0, pendingSyncCount: 0,
+    todayTarget: 500, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
   );
 
   double get totalRejectPct {
     final denom = todayProduction;
     if (denom == 0) return 0;
     return ((todayBpReject + todayApReject) / denom) * 100;
+  }
+
+  double get targetEfficiency {
+    if (todayTarget == 0) return 0;
+    return (todayProduction / todayTarget) * 100;
   }
 }
 
@@ -56,13 +68,14 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final todayStr =
       '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
-  // Stock balances
-  final rawMaterial = await ledger.getTotalStageBalance(StockStage.rawMaterial);
-  final bpStock = await ledger.getTotalStageBalance(StockStage.bpStock);
-  final atFaco = await ledger.getTotalStageBalance(StockStage.atFaco);
-  final pendingAp = await ledger.getTotalStageBalance(StockStage.pendingAp);
-  final approvedAp = await ledger.getTotalStageBalance(StockStage.approvedAp);
-  final rtvStock = await ledger.getTotalStageBalance(StockStage.rtvStock);
+  // Stock balances (bulk query in a single DB round-trip)
+  final stageTotals = await db.getAllStageTotals();
+  final rawMaterial = stageTotals[StockStage.rawMaterial.value] ?? 0.0;
+  final bpStock = stageTotals[StockStage.bpStock.value] ?? 0.0;
+  final atFaco = stageTotals[StockStage.atFaco.value] ?? 0.0;
+  final pendingAp = stageTotals[StockStage.pendingAp.value] ?? 0.0;
+  final approvedAp = stageTotals[StockStage.approvedAp.value] ?? 0.0;
+  final rtvStock = stageTotals[StockStage.rtvStock.value] ?? 0.0;
 
   // Today's production totals
   final prodRows = db.db.select(
@@ -89,6 +102,33 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   // Pending sync count
   final syncCount = await db.countPendingSync();
 
+  // 1. Get active targets for today (mapped to DB day_of_week)
+  final weekday = today.weekday % 7; // Sunday=0, Monday=1, etc.
+  final targetRows = db.db.select(
+    "SELECT SUM(target_qty) as total_target FROM target_master WHERE day_of_week = ?",
+    [weekday],
+  );
+  final todayTarget = (targetRows.first['total_target'] as num?)?.toDouble() ?? 500.0;
+
+  // 2. Machine monitoring status
+  final activeMachinesCountRows = db.db.select(
+    "SELECT COUNT(*) as cnt FROM machines WHERE active = 1",
+  );
+  final totalMachines = (activeMachinesCountRows.first['cnt'] as num?)?.toInt() ?? 3;
+
+  final activeDowntimes = db.db.select(
+    "SELECT COUNT(DISTINCT machine_id) as cnt FROM machine_downtimes WHERE date = ? AND end_time IS NULL",
+    [todayStr],
+  );
+  final machinesDown = (activeDowntimes.first['cnt'] as num?)?.toInt() ?? 0;
+  final machinesRunning = (totalMachines - machinesDown).clamp(0, totalMachines);
+
+  // 3. Pending approvals
+  final pendingCorrectionRows = db.db.select(
+    "SELECT COUNT(*) as cnt FROM correction_requests WHERE status = 'pending'",
+  );
+  final pendingApprovals = (pendingCorrectionRows.first['cnt'] as num?)?.toInt() ?? 0;
+
   return DashboardData(
     rawMaterial: rawMaterial,
     bpStock: bpStock,
@@ -101,5 +141,9 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     todayApReject: todayAp,
     todayDispatch: todayDisp,
     pendingSyncCount: syncCount,
+    todayTarget: todayTarget,
+    machinesRunning: machinesRunning,
+    totalMachines: totalMachines,
+    pendingApprovals: pendingApprovals,
   );
 });

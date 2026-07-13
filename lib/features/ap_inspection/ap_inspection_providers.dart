@@ -35,6 +35,7 @@ class ApInspectionRepository {
     required String rejectReason,
     required String inspectorId,
     String? remarks,
+    DateTime? recordedAt,
   }) async {
     // Validate: approved + rejected = checked (PRD 4.7, 5.3)
     if ((approvedQty + rejectedQty - qtyChecked).abs() > 0.001) {
@@ -54,7 +55,7 @@ class ApInspectionRepository {
     }
 
     final id = _uuid.v4();
-    final now = DateTime.now();
+    final now = recordedAt ?? DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     final record = {

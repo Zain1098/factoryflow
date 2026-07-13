@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
@@ -21,6 +20,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
 
   String? _partId;
   String? _partCode;
+  // null = 'All Machines' mode, otherwise single machine id
   String? _machineId;
   String? _machineName;
   String? _machineSeq;
@@ -29,11 +29,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
   final _prodQtyCtrl = TextEditingController();
   final _bpRejectCtrl = TextEditingController(text: '0');
   final _remarksCtrl = TextEditingController();
+  bool _allMachines = false;
 
   bool _isSaving = false;
   String? _error;
   String? _success;
   String? _lastBatchNumber;
+  DateTime _recordedAt = DateTime.now();
 
   @override
   void initState() {
@@ -66,15 +68,16 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
       final result = await repo.save(
         partId: _partId!,
         partCode: _partCode!,
-        machineId: _machineId!,
+        machineId: _allMachines ? 'all' : _machineId!,
         machineName: _machineName!,
-        machineSeq: _machineSeq!,
+        machineCode: _machineSeq!,
         operatorId: _operatorId!,
         machineStatusId: _machineStatus,
         productionQty: double.parse(_prodQtyCtrl.text),
         bpRejectQty: double.tryParse(_bpRejectCtrl.text) ?? 0,
         remarks: _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
         createdBy: user?.id ?? 'unknown',
+        recordedAt: _recordedAt,
       );
 
       if (result.success) {
@@ -103,6 +106,8 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
       _partId = null; _partCode = null;
       _machineId = null; _machineName = null; _machineSeq = null;
       _operatorId = null; _machineStatus = 'Running';
+      _allMachines = false;
+      _recordedAt = DateTime.now();
     });
   }
 
@@ -138,22 +143,10 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Date/time display
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.access_time, size: 18),
-                  const SizedBox(width: 8),
-                  Text(DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now())),
-                  const Spacer(),
-                  const Text('Auto', style: TextStyle(color: Colors.green, fontSize: 12)),
-                ],
-              ),
+            // Date/time picker
+            RecordDateTimePicker(
+              value: _recordedAt,
+              onChanged: (dt) => setState(() => _recordedAt = dt),
             ),
             const SizedBox(height: 16),
 
@@ -187,25 +180,65 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
             machines.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => ErrorBanner('Machines load error: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Machine',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
-                value: _machineId,
-                items: list.map((m) => DropdownMenuItem(
-                  value: m['id'] as String,
-                  child: Text(m['name'] as String),
-                ),).toList(),
-                onChanged: (v) {
-                  if (v == null) return;
-                  final m = list.firstWhere((m) => m['id'] == v);
-                  setState(() {
-                    _machineId = v;
-                    _machineName = m['name'] as String;
-                    _machineSeq = _machineSeqLetter(m['sequence_order'] as int);
-                  });
-                },
-                validator: (v) => v == null ? 'Machine is required' : null,
+              data: (list) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // All Machines toggle
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _allMachines
+                            ? InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'Machine',
+                                  prefixIcon: Icon(Icons.precision_manufacturing_outlined),
+                                ),
+                                child: const Text('All Machines'),
+                              )
+                            : AppDropdown<String>(
+                                label: 'Machine',
+                                isRequired: true,
+                                prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
+                                value: _machineId,
+                                items: list.map((m) => DropdownMenuItem(
+                                  value: m['id'] as String,
+                                  child: Text(m['name'] as String),
+                                ),).toList(),
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  final m = list.firstWhere((m) => m['id'] == v);
+                                  setState(() {
+                                    _machineId = v;
+                                    _machineName = m['name'] as String;
+                                    _machineSeq = m['machine_code'] as String? ?? v.substring(0, 1);
+                                  });
+                                },
+                                validator: (v) => (!_allMachines && v == null) ? 'Machine is required' : null,
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'All Machines',
+                        child: FilterChip(
+                          label: const Text('All'),
+                          selected: _allMachines,
+                          onSelected: (v) => setState(() {
+                            _allMachines = v;
+                            if (v) {
+                              _machineId = null;
+                              _machineName = 'All';
+                              _machineSeq = 'A';
+                            } else {
+                              _machineId = null;
+                              _machineName = null;
+                              _machineSeq = null;
+                            }
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
@@ -389,10 +422,11 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
   }
 
   String _machineSeqLetter(int seq) {
+    // Kept for backward compat — new code uses machine_code from DB directly
     switch (seq) {
-      case 1: return 'B';  // Bending
-      case 2: return 'N';  // Notching
-      case 3: return 'E';  // End Forming
+      case 1: return 'B';
+      case 2: return 'N';
+      case 3: return 'E';
       default: return seq.toString();
     }
   }

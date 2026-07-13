@@ -55,8 +55,11 @@ class CorrectionsScreen extends ConsumerWidget {
                   backgroundColor: _statusColor(status).withValues(alpha: 0.12),
                   child: Icon(_statusIcon(status), color: _statusColor(status), size: 20),
                 ),
-                title: Text('${r['table_name']} · ${r['record_id']}',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),),
+                // FIXED: Show human-readable table label instead of raw table name
+                title: Text(
+                  '${_tableLabel(r['table_name'] as String? ?? '')} — ${_shortId(r['record_id'] as String? ?? '')}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 subtitle: Text(r['reason'] as String? ?? '—'),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -109,13 +112,14 @@ class CorrectionsScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Table: ${record['table_name']}'),
+            Text('Module: ${_tableLabel(record['table_name'] as String? ?? '')}'),
+            const SizedBox(height: 4),
             Text('Reason: ${record['reason']}'),
             const SizedBox(height: 12),
             TextField(
               controller: remarksCtrl,
               decoration: const InputDecoration(
-                labelText: 'Admin remarks (required for rejection)',
+                labelText: 'Admin remarks',
                 border: OutlineInputBorder(),
               ),
               maxLines: 2,
@@ -137,14 +141,34 @@ class CorrectionsScreen extends ConsumerWidget {
     );
 
     if (result != null) {
-      final db = ref.read(databaseServiceProvider);
-      db.db.execute(
-        'UPDATE correction_requests SET status = ?, reviewed_at = ? WHERE id = ?',
-        [result, DateTime.now().toIso8601String(), record['id']],
+      final user = ref.read(currentUserProvider).value;
+      // FIXED: Use repository method that also enqueues sync — no raw SQL bypass
+      await ref.read(databaseServiceProvider).updateCorrectionStatus(
+        id: record['id'] as String,
+        status: result,
+        reviewedBy: user?.id,
       );
       ref.invalidate(_correctionsProvider);
     }
   }
+
+  String _tableLabel(String table) {
+    const labels = {
+      'productions': 'Production Entry',
+      'material_receives': 'Material Receive',
+      'machine_downtimes': 'Machine Downtime',
+      'bp_inspections': 'BP Inspection',
+      'dispatch_to_facos': 'Dispatch to Faco',
+      'receive_from_facos': 'Receive from Faco',
+      'ap_inspections': 'AP Inspection',
+      'rtvs': 'Return to Vendor',
+      'final_dispatches': 'Final Dispatch',
+    };
+    return labels[table] ?? table;
+  }
+
+  /// Shows only the first 8 chars of a UUID for readability.
+  String _shortId(String id) => id.length > 8 ? '#${id.substring(0, 8)}' : '#$id';
 
   Color _statusColor(String status) {
     switch (status) {
