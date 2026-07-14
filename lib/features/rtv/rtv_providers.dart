@@ -8,15 +8,15 @@ import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
 
-// RTV Reasons per PRD 15.2
+const kRtvStatuses = ['pending', 'sent', 'received', 'escalated'];
+
+// RTV Reasons — shared with AP Inspection inline RTV
 const kRtvReasons = [
   'Plating Quality Reject',
   'Vendor Processing Delay',
   'Damaged in Transit',
   'Wrong Quantity Received',
 ];
-
-const kRtvStatuses = ['pending', 'sent', 'received', 'escalated'];
 
 class RtvRepository {
   RtvRepository(this._db, this._sync, this._ledger);
@@ -43,7 +43,7 @@ class RtvRepository {
     );
     final currentCycles = cycleRows.first['cnt'] as int;
     if (currentCycles >= AppConstants.rtvMaxCycles) {
-      return RtvResult(
+      return const RtvResult(
         success: false,
         error: 'RTV cycle cap (${AppConstants.rtvMaxCycles}) reached. Escalated — Awaiting Admin Decision.',
         isEscalated: true,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/batch_config_provider.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'dispatch_faco_providers.dart';
@@ -31,6 +32,10 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   String? _success;
   DateTime _recordedAt = DateTime.now();
 
+  // Material source and linked inspected batch
+  String _materialSource = 'fresh'; // 'fresh' or 'inspected'
+  String? _selectedBpBatchNumber;
+
   @override
   void initState() {
     super.initState();
@@ -54,8 +59,26 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     try {
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(dispatchFacoRepositoryProvider);
+      final showBatchNumber = ref.read(batchConfigProvider);
+
+      String batchVal = '';
+      if (showBatchNumber) {
+        if (_materialSource == 'inspected') {
+          batchVal = _selectedBpBatchNumber ?? '';
+        } else {
+          batchVal = _batchCtrl.text.trim();
+        }
+      }
+      
+      if (batchVal.isEmpty) {
+        // Auto-generate batch number if tracking is off or not selected
+        final now = DateTime.now();
+        final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+        batchVal = 'AUTO-DISP-$timestamp';
+      }
+
       final result = await repo.save(
-        batchNumber: _batchCtrl.text.trim(),
+        batchNumber: batchVal,
         partId: _partId!,
         qty: double.parse(_qtyCtrl.text),
         vendorId: _vendorId!,
@@ -91,6 +114,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
       _partId = null; _vendorId = null;
       _vehicleId = null; _driverId = null;
       _recordedAt = DateTime.now();
+      _materialSource = 'fresh';
+      _selectedBpBatchNumber = null;
     });
   }
 
@@ -187,32 +212,116 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             ),
             const SizedBox(height: 16),
 
+            const SectionHeader('Material Source'),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                  value: 'fresh',
+                  label: Text('Fresh Production'),
+                  icon: Icon(Icons.fiber_new_outlined),
+                ),
+                ButtonSegment(
+                  value: 'inspected',
+                  label: Text('BP QC Inspected'),
+                  icon: Icon(Icons.verified_outlined),
+                ),
+              ],
+              selected: {_materialSource},
+              onSelectionChanged: (val) {
+                setState(() {
+                  _materialSource = val.first;
+                  _partId = null;
+                  _selectedBpBatchNumber = null;
+                  _batchCtrl.clear();
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+
             const SectionHeader('Batch & Material'),
 
-            AppFormField(
-              label: 'Batch Number',
-              controller: _batchCtrl,
-              prefixIcon: const Icon(Icons.qr_code_2),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
-            ),
-            const SizedBox(height: 12),
-
-            parts.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load parts: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Part',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.category_outlined),
-                value: _partId,
-                items: list.map((p) => DropdownMenuItem(
-                  value: p['id'] as String,
-                  child: Text('${p['code']} – ${p['name']}'),
-                ),).toList(),
-                onChanged: (v) => setState(() => _partId = v),
-                validator: (v) => v == null ? 'Part is required' : null,
+            if (_materialSource == 'inspected') ...[
+              ref.watch(bpReinspectedBatchesProvider).when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => ErrorBanner('Could not load inspected batches: $e'),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text('No recently inspected BP batches found. Please select Fresh Production.'),
+                    );
+                  }
+                  return AppDropdown<String>(
+                    label: 'BP Inspected Batch',
+                    isRequired: true,
+                    prefixIcon: const Icon(Icons.qr_code_2),
+                    value: _selectedBpBatchNumber,
+                    items: list.map((b) => DropdownMenuItem(
+                      value: b['batch_number'] as String,
+                      child: Text('${b['batch_number']} (${b['part_code']})'),
+                    )).toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      final match = list.firstWhere((b) => b['batch_number'] == v);
+                      setState(() {
+                        _selectedBpBatchNumber = v;
+                        _partId = match['part_id'] as String;
+                      });
+                    },
+                    validator: (v) => v == null ? 'Please select an inspected batch' : null,
+                  );
+                },
               ),
-            ),
+              const SizedBox(height: 12),
+            ] else ...[
+              if (ref.watch(batchConfigProvider)) ...[
+                AppFormField(
+                  label: 'Batch Number',
+                  controller: _batchCtrl,
+                  prefixIcon: const Icon(Icons.qr_code_2),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+                ),
+                const SizedBox(height: 12),
+              ],
+            ],
+
+            if (_materialSource == 'inspected')
+              // Display read-only info about the auto-selected part
+              parts.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                data: (list) {
+                  final part = _partId == null
+                      ? null
+                      : list.firstWhere((p) => p['id'] == _partId, orElse: () => <String, dynamic>{});
+                  return InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Part (Auto-filled from Batch)',
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                    child: Text(part != null && part.isNotEmpty
+                        ? '${part['code']} – ${part['name']}'
+                        : 'Select inspected batch first'),
+                  );
+                },
+              )
+            else
+              parts.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                data: (list) => AppDropdown<String>(
+                  label: 'Part',
+                  isRequired: true,
+                  prefixIcon: const Icon(Icons.category_outlined),
+                  value: _partId,
+                  items: list.map((p) => DropdownMenuItem(
+                    value: p['id'] as String,
+                    child: Text('${p['code']} – ${p['name']}'),
+                  ),).toList(),
+                  onChanged: (v) => setState(() => _partId = v),
+                  validator: (v) => v == null ? 'Part is required' : null,
+                ),
+              ),
             const SizedBox(height: 12),
 
             NumberFormField(

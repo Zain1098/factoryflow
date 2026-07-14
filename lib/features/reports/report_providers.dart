@@ -88,7 +88,7 @@ final dailyProductionReportProvider =
     WHERE p.date BETWEEN ? AND ?
     GROUP BY p.date
     ORDER BY p.date DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -151,7 +151,7 @@ final machineReportProvider =
     WHERE m.active = 1
     GROUP BY m.id, m.name
     ORDER BY total_prod DESC
-  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr],);
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -206,7 +206,7 @@ final operatorReportProvider =
     WHERE o.active = 1
     GROUP BY o.id, o.name
     ORDER BY total_prod DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -257,7 +257,7 @@ final downtimeReportProvider =
     LEFT JOIN machines m ON m.id = dt.machine_id
     WHERE dt.date BETWEEN ? AND ?
     ORDER BY dt.date DESC, dt.start_time DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) => DowntimeRow(
         date: r['date'] as String,
@@ -266,7 +266,7 @@ final downtimeReportProvider =
         endTime: r['end_time'] as String?,
         durationMinutes: (r['duration_minutes'] as num).toInt(),
         reason: r['reason'] as String,
-      )).toList();
+      ),).toList();
 });
 
 // ─── 5. Reject Analysis (BP + AP combined) ───────────────────────────────────
@@ -312,7 +312,7 @@ final rejectAnalysisProvider =
     WHERE p.date BETWEEN ? AND ?
     GROUP BY p.date, p.part_id
     ORDER BY p.date DESC
-  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr],);
 
   return rows.map((r) {
     final prod = (r['production'] as num).toDouble();
@@ -365,7 +365,7 @@ final rtvReportProvider =
     LEFT JOIN vendors v ON v.id = r.vendor_id
     WHERE r.date BETWEEN ? AND ?
     ORDER BY r.date DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) => RtvReportRow(
         date: r['date'] as String,
@@ -375,7 +375,7 @@ final rtvReportProvider =
         status: r['status'] as String? ?? 'pending',
         expectedReturn: r['expected_return_date'] as String?,
         cycleNumber: (r['cycle_number'] as num?)?.toInt() ?? 1,
-      )).toList();
+      ),).toList();
 });
 
 // ─── 7. Dispatch Report ───────────────────────────────────────────────────────
@@ -412,7 +412,7 @@ final dispatchReportProvider =
     LEFT JOIN vehicles v ON v.id = fd.vehicle_id
     WHERE fd.date BETWEEN ? AND ?
     ORDER BY fd.date DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) => DispatchReportRow(
         date: r['date'] as String,
@@ -421,7 +421,7 @@ final dispatchReportProvider =
         dispatchQty: (r['dispatch_qty'] as num).toDouble(),
         challanNumber: r['challan'] as String,
         vehicleNumber: r['vehicle'] as String,
-      )).toList();
+      ),).toList();
 });
 
 // ─── 8. Faco Pending Material ─────────────────────────────────────────────────
@@ -584,7 +584,7 @@ final ledgerMovementProvider =
     WHERE sl.date BETWEEN ? AND ?
     ORDER BY sl.created_at DESC
     LIMIT 500
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   return rows.map((r) => LedgerMovementRow(
         date: r['date'] as String,
@@ -594,7 +594,7 @@ final ledgerMovementProvider =
         qty: (r['qty'] as num).toDouble(),
         runningBalance: (r['running_balance'] as num).toDouble(),
         refTable: r['ref_table'] as String? ?? '—',
-      )).toList();
+      ),).toList();
 });
 
 // ─── Summary Totals Helpers ───────────────────────────────────────────────────
@@ -615,3 +615,114 @@ extension RtvSummary on List<RtvReportRow> {
   double get totalRtvQty => fold(0, (s, r) => s + r.rtvQty);
   int get pendingCount => where((r) => r.status == 'pending').length;
 }
+
+// ─── 11. Hold Material Report ─────────────────────────────────────────────────
+
+class BpHoldRow {
+  const BpHoldRow({
+    required this.date,
+    required this.partCode,
+    required this.partName,
+    required this.machineName,
+    required this.qty,
+    required this.reason,
+  });
+  final String date;
+  final String partCode;
+  final String partName;
+  final String machineName;
+  final double qty;
+  final String reason;
+}
+
+class RtvHoldRow {
+  const RtvHoldRow({
+    required this.date,
+    required this.partCode,
+    required this.partName,
+    required this.vendorName,
+    required this.qty,
+    required this.status,
+    required this.agingDays,
+  });
+  final String date;
+  final String partCode;
+  final String partName;
+  final String vendorName;
+  final double qty;
+  final String status;
+  final int agingDays;
+}
+
+class HoldMaterialReportData {
+  const HoldMaterialReportData({
+    required this.bpHoldList,
+    required this.rtvHoldList,
+  });
+  final List<BpHoldRow> bpHoldList;
+  final List<RtvHoldRow> rtvHoldList;
+
+  double get totalBpHold => bpHoldList.fold(0.0, (s, r) => s + r.qty);
+  double get totalRtvHold => rtvHoldList.fold(0.0, (s, r) => s + r.qty);
+}
+
+final holdMaterialReportProvider =
+    FutureProvider.autoDispose<HoldMaterialReportData>((ref) async {
+  final db = ref.watch(databaseServiceProvider);
+  final range = ref.watch(reportDateRangeProvider);
+
+  // 1. Fetch BP Inspections (Hold Before Plating)
+  final bpRows = db.db.select('''
+    SELECT bi.date, p.code as part_code, p.name as part_name, m.name as machine_name, bi.bp_reject_qty, bi.reject_reason_id
+    FROM bp_inspections bi
+    LEFT JOIN parts p ON p.id = bi.part_id
+    LEFT JOIN machines m ON m.id = bi.machine_id
+    WHERE bi.date BETWEEN ? AND ?
+    ORDER BY bi.date DESC
+  ''', [range.fromStr, range.toStr]);
+
+  final bpHoldList = bpRows.map((r) {
+    return BpHoldRow(
+      date: r['date'] as String,
+      partCode: r['part_code'] as String? ?? '—',
+      partName: r['part_name'] as String? ?? '—',
+      machineName: r['machine_name'] as String? ?? '—',
+      qty: (r['bp_reject_qty'] as num).toDouble(),
+      reason: r['reject_reason_id'] as String? ?? '—',
+    );
+  }).toList();
+
+  // 2. Fetch Active RTV Stock (Hold After Plating)
+  final rtvRows = db.db.select('''
+    SELECT r.date, p.code as part_code, p.name as part_name, v.name as vendor_name, r.rtv_qty, r.status
+    FROM rtvs r
+    LEFT JOIN parts p ON p.id = r.part_id
+    LEFT JOIN vendors v ON v.id = r.vendor_id
+    WHERE r.status != 'received' AND r.date BETWEEN ? AND ?
+    ORDER BY r.date DESC
+  ''', [range.fromStr, range.toStr]);
+
+  final rtvHoldList = rtvRows.map((r) {
+    final rtvDateStr = r['date'] as String;
+    int aging = 0;
+    try {
+      final parsedDate = DateTime.parse(rtvDateStr);
+      aging = DateTime.now().difference(parsedDate).inDays;
+    } catch (_) {}
+
+    return RtvHoldRow(
+      date: rtvDateStr,
+      partCode: r['part_code'] as String? ?? '—',
+      partName: r['part_name'] as String? ?? '—',
+      vendorName: r['vendor_name'] as String? ?? '—',
+      qty: (r['rtv_qty'] as num).toDouble(),
+      status: r['status'] as String? ?? 'pending',
+      agingDays: aging,
+    );
+  }).toList();
+
+  return HoldMaterialReportData(
+    bpHoldList: bpHoldList,
+    rtvHoldList: rtvHoldList,
+  );
+});

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/batch_config_provider.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'bp_inspection_providers.dart';
@@ -49,8 +50,18 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
     try {
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(bpInspectionRepositoryProvider);
+      final showBatchNumber = ref.read(batchConfigProvider);
+
+      String batchVal = _batchCtrl.text.trim();
+      if (!showBatchNumber || batchVal.isEmpty) {
+        // Auto-generate batch number from timestamp + selected part
+        final now = DateTime.now();
+        final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+        batchVal = 'AUTO-$timestamp';
+      }
+
       final result = await repo.save(
-        batchNumber: _batchCtrl.text.trim(),
+        batchNumber: batchVal,
         partId: _partId!,
         machineId: _machineId!,
         bpRejectQty: double.tryParse(_rejectQtyCtrl.text) ?? 0,
@@ -122,45 +133,46 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
 
             const SectionHeader('Batch & Part'),
 
-            // Batch number with autocomplete
-            batches.when(
-              loading: () => AppFormField(
-                label: 'Batch Number',
-                controller: _batchCtrl,
-                prefixIcon: const Icon(Icons.qr_code_2),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+            if (ref.watch(batchConfigProvider)) ...[
+              batches.when(
+                loading: () => AppFormField(
+                  label: 'Batch Number',
+                  controller: _batchCtrl,
+                  prefixIcon: const Icon(Icons.qr_code_2),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+                ),
+                error: (_, __) => AppFormField(
+                  label: 'Batch Number',
+                  controller: _batchCtrl,
+                  prefixIcon: const Icon(Icons.qr_code_2),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+                ),
+                data: (list) => Autocomplete<String>(
+                  optionsBuilder: (textEditingValue) {
+                    if (textEditingValue.text.isEmpty) return list;
+                    return list.where((b) =>
+                        b.toLowerCase().contains(textEditingValue.text.toLowerCase()),);
+                  },
+                  onSelected: (v) {
+                    _batchCtrl.text = v;
+                    setState(() {});
+                  },
+                  fieldViewBuilder: (ctx, ctrl, focusNode, onSubmit) {
+                    return TextFormField(
+                      controller: ctrl,
+                      focusNode: focusNode,
+                      onChanged: (v) => _batchCtrl.text = v,
+                      decoration: const InputDecoration(
+                        labelText: 'Batch Number',
+                        prefixIcon: Icon(Icons.qr_code_2),
+                      ),
+                      validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+                    );
+                  },
+                ),
               ),
-              error: (_, __) => AppFormField(
-                label: 'Batch Number',
-                controller: _batchCtrl,
-                prefixIcon: const Icon(Icons.qr_code_2),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
-              ),
-              data: (list) => Autocomplete<String>(
-                optionsBuilder: (textEditingValue) {
-                  if (textEditingValue.text.isEmpty) return list;
-                  return list.where((b) =>
-                      b.toLowerCase().contains(textEditingValue.text.toLowerCase()),);
-                },
-                onSelected: (v) {
-                  _batchCtrl.text = v;
-                  setState(() {});
-                },
-                fieldViewBuilder: (ctx, ctrl, focusNode, onSubmit) {
-                  return TextFormField(
-                    controller: ctrl,
-                    focusNode: focusNode,
-                    onChanged: (v) => _batchCtrl.text = v,
-                    decoration: const InputDecoration(
-                      labelText: 'Batch Number',
-                      prefixIcon: Icon(Icons.qr_code_2),
-                    ),
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
 
             parts.when(
               loading: () => const LinearProgressIndicator(),

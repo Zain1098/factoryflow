@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/providers/production_flow_provider.dart';
 import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
@@ -33,6 +34,47 @@ class ProductionRepository {
     return '$prefix-${seq.toString().padLeft(3, '0')}';
   }
 
+  /// Returns which required machines have already been recorded for this batch.
+  List<String> getCompletedMachines(String batchNumber) {
+    final rows = _db.db.select(
+      'SELECT machine_id FROM productions WHERE batch_number = ?',
+      [batchNumber],
+    );
+    return rows.map((r) => r['machine_id'] as String).toList();
+  }
+
+  /// Returns WIP batches — batches that have some but not all required machines done.
+  Future<List<Map<String, dynamic>>> getWipBatches(List<String> requiredMachineIds) async {
+    if (requiredMachineIds.isEmpty) return [];
+    // Get all batches with at least one production entry
+    final rows = _db.db.select(
+      'SELECT pr.batch_number, pr.part_id, pr.date, p.name as part_name, p.code as part_code, '
+      'GROUP_CONCAT(pr.machine_id) as done_machines, '
+      'SUM(pr.production_qty) as total_qty '
+      'FROM productions pr '
+      'LEFT JOIN parts p ON p.id = pr.part_id '
+      'GROUP BY pr.batch_number, pr.part_id '
+      'ORDER BY pr.date DESC LIMIT 100',
+    );
+    final wip = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final doneMachines = (row['done_machines'] as String? ?? '')
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final missing = requiredMachineIds
+          .where((id) => !doneMachines.contains(id))
+          .toList();
+      if (missing.isNotEmpty) {
+        final map = Map<String, dynamic>.from(row);
+        map['missing_machine_ids'] = missing;
+        map['done_machine_ids'] = doneMachines;
+        wip.add(map);
+      }
+    }
+    return wip;
+  }
+
   Future<ProductionResult> save({
     required String partId,
     required String partCode,
@@ -47,6 +89,8 @@ class ProductionRepository {
     String? remarks,
     required String createdBy,
     DateTime? recordedAt,
+    // WIP: batch to continue (optional)
+    String? wipBatchNumber,
   }) async {
     if (bpRejectQty > productionQty) {
       return const ProductionResult(
@@ -62,7 +106,8 @@ class ProductionRepository {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    final batchNumber = await generateBatchNumber(
+    // If continuing a WIP batch, reuse its batch number
+    final batchNumber = wipBatchNumber ?? await generateBatchNumber(
       partCode: partCode,
       date: now,
       machineCode: machineCode,
@@ -111,7 +156,7 @@ class ProductionRepository {
       payload: syncPayload,
     );
 
-    return ProductionResult(success: true, recordId: id, batchNumber: batchNumber);
+    return ProductionResult(success: true, recordId: id, batchNumber: batchNumber, isWip: false);
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
@@ -143,10 +188,23 @@ final productionListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
 
 const kMachineStatuses = ['Running', 'Breakdown', 'Maintenance', 'Idle'];
 
+final wipBatchesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final flow = ref.watch(productionFlowProvider);
+  if (!flow.enabled || flow.requiredMachineIds.isEmpty) return [];
+  return ref.watch(productionRepositoryProvider).getWipBatches(flow.requiredMachineIds);
+});
+
 class ProductionResult {
-  const ProductionResult({required this.success, this.error, this.recordId, this.batchNumber});
+  const ProductionResult({
+    required this.success,
+    this.error,
+    this.recordId,
+    this.batchNumber,
+    this.isWip = false,
+  });
   final bool success;
   final String? error;
   final String? recordId;
   final String? batchNumber;
+  final bool isWip;
 }

@@ -93,6 +93,16 @@ class DispatchFacoRepository {
     );
     return rows.map((r) => r['batch_number'] as String).toList();
   }
+
+  Future<List<Map<String, dynamic>>> getRecentBpInspections() async {
+    final rows = _db.db.select(
+      'SELECT DISTINCT bi.batch_number, bi.part_id, p.code as part_code, p.name as part_name, bi.date '
+      'FROM bp_inspections bi '
+      'LEFT JOIN parts p ON p.id = bi.part_id '
+      'ORDER BY bi.date DESC LIMIT 30'
+    );
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
 }
 
 final dispatchFacoRepositoryProvider = Provider<DispatchFacoRepository>((ref) {
@@ -105,6 +115,10 @@ final dispatchFacoRepositoryProvider = Provider<DispatchFacoRepository>((ref) {
 
 final dispatchFacoListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(dispatchFacoRepositoryProvider).getRecent();
+});
+
+final bpReinspectedBatchesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(dispatchFacoRepositoryProvider).getRecentBpInspections();
 });
 
 class DispatchFacoResult {

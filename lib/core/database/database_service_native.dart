@@ -123,6 +123,11 @@ class DatabaseService {
         part_id TEXT, qty_checked REAL, approved_qty REAL, rejected_qty REAL,
         reject_reason_id TEXT, inspector_id TEXT, photo_url TEXT, remarks TEXT,
         sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS ap_rejected_actions (
+        id TEXT PRIMARY KEY, factory_id TEXT, date TEXT,
+        part_id TEXT, qty REAL, action TEXT,
+        vendor_id TEXT, remarks TEXT,
+        created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS rtvs (
         id TEXT PRIMARY KEY, factory_id TEXT, batch_number TEXT, cycle_number INTEGER,
         date TEXT, part_id TEXT, rtv_qty REAL, reason_id TEXT, vendor_id TEXT,
@@ -227,6 +232,15 @@ class DatabaseService {
     }
     if (!mrNames.contains('shortfall')) {
       db.execute('ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0');
+    }
+
+    // productions: add good_qty if missing (older DBs)
+    final prodCols = db.select('PRAGMA table_info(productions)');
+    final prodNames = prodCols.map((r) => r['name'] as String).toSet();
+    if (!prodNames.contains('good_qty')) {
+      db.execute('ALTER TABLE productions ADD COLUMN good_qty REAL');
+      // backfill
+      db.execute('UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL');
     }
   }
 

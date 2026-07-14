@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/batch_config_provider.dart';
+import '../../core/providers/production_flow_provider.dart';
 import '../../core/models/app_user.dart';
 import '../../core/services/data_management_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -16,6 +18,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final user = ref.watch(currentUserProvider).value;
+    final showBatchNumber = ref.watch(batchConfigProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -47,6 +50,27 @@ class SettingsScreen extends ConsumerWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
               ),
+            ),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.qr_code_2_outlined),
+            title: const Text('Batch Tracking'),
+            subtitle: const Text('Enable batch numbers on entries and forms'),
+            value: showBatchNumber,
+            onChanged: (val) {
+              ref.read(batchConfigProvider.notifier).toggle(val);
+            },
+          ),
+          const Divider(),
+          const _SectionLabel('Production Flow'),
+          ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: const Text('Multi-Machine Flow'),
+            subtitle: const Text('Define which machines a part must pass through'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _ProductionFlowPage()),
             ),
           ),
           const Divider(),
@@ -97,7 +121,7 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.no_accounts_outlined, color: Colors.red),
               title: const Text('Delete My Account',
-                  style: TextStyle(color: Colors.red)),
+                  style: TextStyle(color: Colors.red),),
               subtitle: const Text('Remove account access and clear local data'),
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
@@ -207,38 +231,56 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
   }
 
   Future<void> _showEditDialog(String? id, String? current) async {
-    final ctrl = TextEditingController(text: current ?? '');
-    final confirmed = await showDialog<bool>(
+    // Controllers live inside StatefulBuilder so they are never accessed
+    // after the dialog is dismissed (fixes "used after disposed" crash).
+    String? resultName;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(id == null ? 'Add Operator' : 'Rename Operator'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
-          textCapitalization: TextCapitalization.words,
-          onSubmitted: (_) => Navigator.pop(ctx, true),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (ctrl.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            child: Text(id == null ? 'Add' : 'Save'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final ctrl = TextEditingController(text: current ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: Text(id == null ? 'Add Operator' : 'Rename Operator'),
+              content: SingleChildScrollView(
+                child: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                  textCapitalization: TextCapitalization.words,
+                  onSubmitted: (_) {
+                    if (ctrl.text.trim().isNotEmpty) {
+                      resultName = ctrl.text.trim();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (ctrl.text.trim().isEmpty) return;
+                    resultName = ctrl.text.trim();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
-    final name = ctrl.text.trim();
-    ctrl.dispose();
-    if (confirmed != true || name.isEmpty) return;
+    if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertOperator(name);
+      await repo.insertOperator(resultName!);
     } else {
-      await repo.updateOperator(id, name);
+      await repo.updateOperator(id, resultName!);
     }
   }
 
@@ -324,62 +366,73 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
   }
 
   Future<void> _showEditDialog(String? id, String? currentCode, String? currentName) async {
-    final codeCtrl = TextEditingController(text: currentCode ?? '');
-    final nameCtrl = TextEditingController(text: currentName ?? '');
-    final confirmed = await showDialog<bool>(
+    // Controllers live inside StatefulBuilder so they are never accessed
+    // after the dialog is dismissed (fixes "used after disposed" crash and
+    // the 99903px RenderFlex overflow caused by keyboard insets).
+    String? resultCode;
+    String? resultName;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(id == null ? 'Add Part' : 'Edit Part'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: codeCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Part Code',
-                hintText: 'e.g. V21',
-              ),
-              textCapitalization: TextCapitalization.characters,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Part Name',
-                hintText: 'e.g. Valve 21',
-              ),
-              textCapitalization: TextCapitalization.words,
-              onSubmitted: (_) {
-                if (codeCtrl.text.trim().isNotEmpty && nameCtrl.text.trim().isNotEmpty) {
-                  Navigator.pop(ctx, true);
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
+      builder: (ctx) {
+        final codeCtrl = TextEditingController(text: currentCode ?? '');
+        final nameCtrl = TextEditingController(text: currentName ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            void submit() {
               if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            child: Text(id == null ? 'Add' : 'Save'),
-          ),
-        ],
-      ),
+              resultCode = codeCtrl.text.trim();
+              resultName = nameCtrl.text.trim();
+              Navigator.pop(ctx);
+            }
+            return AlertDialog(
+              title: Text(id == null ? 'Add Part' : 'Edit Part'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: codeCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Part Code',
+                        hintText: 'e.g. V21',
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Part Name',
+                        hintText: 'e.g. Valve 21',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                      onSubmitted: (_) => submit(),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: submit,
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
-    final code = codeCtrl.text.trim();
-    final name = nameCtrl.text.trim();
-    codeCtrl.dispose();
-    nameCtrl.dispose();
-    if (confirmed != true || code.isEmpty || name.isEmpty) return;
+    if (resultCode == null || resultName == null) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertPart(code: code, name: name);
+      await repo.insertPart(code: resultCode!, name: resultName!);
     } else {
-      await repo.updatePart(id, code: code, name: name);
+      await repo.updatePart(id, code: resultCode!, name: resultName!);
     }
   }
 
@@ -479,84 +532,91 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
   Future<void> _showEditDialog(
     String? id, String? currentName, String? currentCode, int? currentSeq,
   ) async {
-    final nameCtrl = TextEditingController(text: currentName ?? '');
-    final codeCtrl = TextEditingController(text: currentCode ?? '');
-    final seqCtrl = TextEditingController(text: currentSeq?.toString() ?? '');
-
-    final confirmed = await showDialog<bool>(
+    // Controllers live inside StatefulBuilder so they are never accessed
+    // after the dialog is dismissed (fixes "used after disposed" crash).
+    String? resultName;
+    String? resultCode;
+    int? resultSeq;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(id == null ? 'Add Machine' : 'Edit Machine'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Machine Name',
-                  hintText: 'e.g. Bending',
-                ),
-                textCapitalization: TextCapitalization.words,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: codeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Batch Code Letter',
-                  hintText: 'e.g. B',
-                  helperText: 'Used in batch number generation',
-                ),
-                textCapitalization: TextCapitalization.characters,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: seqCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Sequence Order',
-                  hintText: 'e.g. 1',
-                ),
-                keyboardType: TextInputType.number,
-                onSubmitted: (_) {
-                  if (nameCtrl.text.trim().isNotEmpty && codeCtrl.text.trim().isNotEmpty) {
-                    Navigator.pop(ctx, true);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
+      builder: (ctx) {
+        final nameCtrl = TextEditingController(text: currentName ?? '');
+        final codeCtrl = TextEditingController(text: currentCode ?? '');
+        final seqCtrl = TextEditingController(text: currentSeq?.toString() ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            void submit() {
               if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            child: Text(id == null ? 'Add' : 'Save'),
-          ),
-        ],
-      ),
+              resultName = nameCtrl.text.trim();
+              resultCode = codeCtrl.text.trim().toUpperCase();
+              resultSeq = int.tryParse(seqCtrl.text.trim()) ?? 1;
+              Navigator.pop(ctx);
+            }
+            return AlertDialog(
+              title: Text(id == null ? 'Add Machine' : 'Edit Machine'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameCtrl,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Machine Name',
+                        hintText: 'e.g. Bending',
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: codeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Batch Code Letter',
+                        hintText: 'e.g. B',
+                        helperText: 'Used in batch number generation',
+                      ),
+                      textCapitalization: TextCapitalization.characters,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: seqCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Sequence Order',
+                        hintText: 'e.g. 1',
+                      ),
+                      keyboardType: TextInputType.number,
+                      onSubmitted: (_) => submit(),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: submit,
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
-    final name = nameCtrl.text.trim();
-    final code = codeCtrl.text.trim().toUpperCase();
-    final seq = int.tryParse(seqCtrl.text.trim()) ?? 1;
-    nameCtrl.dispose();
-    codeCtrl.dispose();
-    seqCtrl.dispose();
-
-    if (confirmed != true || name.isEmpty || code.isEmpty) return;
+    if (resultName == null || resultCode == null) return;
 
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertMachine(name: name, machineCode: code, sequenceOrder: seq);
+      await repo.insertMachine(
+        name: resultName!,
+        machineCode: resultCode!,
+        sequenceOrder: resultSeq ?? 1,
+      );
     } else {
-      await repo.updateMachine(id, name: name, machineCode: code);
+      await repo.updateMachine(id, name: resultName!, machineCode: resultCode!);
     }
   }
 
@@ -580,57 +640,177 @@ Future<void> _confirmDeleteAccount(
   WidgetRef ref,
   AppUser user,
 ) async {
-  final ctrl = TextEditingController();
-  final typed = await showDialog<bool>(
+  // Controller lives inside StatefulBuilder so it is never accessed after
+  // the dialog is dismissed (fixes "used after disposed" crash).
+  bool confirmed = false;
+  await showDialog<void>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Delete Account'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'This will remove your account access and clear local app data.\n'
-            'Type DELETE to confirm.',
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: ctrl,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Type DELETE'),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(ctx).colorScheme.error,
-          ),
-          onPressed: () {
-            if (ctrl.text.trim() == 'DELETE') Navigator.pop(ctx, true);
-          },
-          child: const Text('Delete'),
-        ),
-      ],
-    ),
+    builder: (ctx) {
+      final ctrl = TextEditingController();
+      return StatefulBuilder(
+        builder: (ctx, setState) {
+          return AlertDialog(
+            title: const Text('Delete Account'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'This will remove your account access and clear local app data.\n'
+                    'Type DELETE to confirm.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: 'Type DELETE'),
+                    onSubmitted: (_) {
+                      if (ctrl.text.trim() == 'DELETE') {
+                        confirmed = true;
+                        Navigator.pop(ctx);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                ),
+                onPressed: () {
+                  if (ctrl.text.trim() == 'DELETE') {
+                    confirmed = true;
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+    },
   );
-  ctrl.dispose();
-  if (typed != true) return;
+  if (!confirmed) return;
   final svc = ref.read(dataManagementServiceProvider);
   try {
     await svc.deleteAccountData(user: user);
     await ref.read(currentUserProvider.notifier).signOut();
-    if (context.mounted) context.go('/login');
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Account deletion failed: $e'),
         backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+    return;
+  }
+  if (context.mounted) context.go('/login');
+}
+
+// ─── Production Flow Settings Page ──────────────────────────────────────────
+
+class _ProductionFlowPage extends ConsumerWidget {
+  const _ProductionFlowPage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final flow = ref.watch(productionFlowProvider);
+    final machines = ref.watch(machinesProvider);
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Multi-Machine Flow')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'When enabled, a batch is marked WIP until all selected machines have recorded production. '
+              'Only complete batches can be dispatched to Faco.',
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.account_tree_outlined),
+            title: const Text('Enable Multi-Machine Flow'),
+            subtitle: Text(flow.enabled ? 'Active — WIP tracking ON' : 'Disabled — single machine mode'),
+            value: flow.enabled,
+            onChanged: (v) => ref.read(productionFlowProvider.notifier).setEnabled(v),
+          ),
+          if (flow.enabled) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Required Machines (select all that a part must pass through)',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+            machines.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => Text('Error: $e'),
+              data: (list) => Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: list.map((m) {
+                  final id = m['id'] as String;
+                  final name = m['name'] as String;
+                  final isSelected = flow.requiredMachineIds.contains(id);
+                  return FilterChip(
+                    label: Text(name),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      final updated = [...flow.requiredMachineIds];
+                      if (selected) {
+                        updated.add(id);
+                      } else {
+                        updated.remove(id);
+                      }
+                      ref.read(productionFlowProvider.notifier).setRequiredMachines(updated);
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+            if (flow.requiredMachineIds.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${flow.requiredMachineIds.length} machines required for a batch to be Ready',
+                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ],
       ),
     );
   }
@@ -691,7 +871,7 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('${section.label} erased.'),
         backgroundColor: Colors.orange,
-      ));
+      ),);
     }
   }
 
@@ -708,6 +888,7 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
       isDestructive: true,
     );
     if (!first) return;
+    if (!mounted) return;
     final second = await showConfirmDialog(
       context,
       title: 'Final Confirmation',
@@ -727,7 +908,7 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('All transaction data erased.'),
         backgroundColor: Colors.orange,
-      ));
+      ),);
     }
   }
 
@@ -749,12 +930,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: Colors.orange.withValues(alpha: 0.4)),
+                            color: Colors.orange.withValues(alpha: 0.4),),
                       ),
                       child: const Row(
                         children: [
                           Icon(Icons.info_outline,
-                              color: Colors.orange, size: 18),
+                              color: Colors.orange, size: 18,),
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -783,9 +964,9 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         subtitle: Text('$count records'),
                         trailing: TextButton.icon(
                           icon: const Icon(Icons.delete_outline,
-                              size: 16, color: Colors.red),
+                              size: 16, color: Colors.red,),
                           label: const Text('Erase',
-                              style: TextStyle(color: Colors.red)),
+                              style: TextStyle(color: Colors.red),),
                           onPressed: (_working || count == 0)
                               ? null
                               : () => _eraseSection(s),

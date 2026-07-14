@@ -244,6 +244,9 @@ class SyncService {
     required String recordId,
     required Map<String, dynamic> payload,
   }) async {
+    // Guard: don't queue if workspace not set (would fail RLS on Supabase)
+    final factoryId = payload['factory_id']?.toString() ?? '';
+    if (factoryId.isEmpty) return;
     await _db.enqueueSync(
       tableName: tableName,
       recordId: recordId,

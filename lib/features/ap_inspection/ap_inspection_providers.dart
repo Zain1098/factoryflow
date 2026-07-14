@@ -36,7 +36,6 @@ class ApInspectionRepository {
     String? remarks,
     DateTime? recordedAt,
   }) async {
-    // Validate: approved + rejected = checked (PRD 4.7, 5.3)
     if ((approvedQty + rejectedQty - qtyChecked).abs() > 0.001) {
       return ApInspectionResult(
         success: false,
@@ -44,7 +43,6 @@ class ApInspectionRepository {
       );
     }
 
-    // Validate: qtyChecked <= Pending AP stock
     final available = await _ledger.getAvailableStock(partId, StockStage.pendingAp);
     if (qtyChecked > available) {
       return ApInspectionResult(
@@ -74,7 +72,7 @@ class ApInspectionRepository {
 
     await _db.insertRecord('ap_inspections', record);
 
-    // Stock split: Pending AP OUT → Approved AP IN + RTV Stock IN (PRD 7.1)
+    // Pending AP OUT → Approved AP IN + AP Rejected IN
     final ledgerResult = await _ledger.apInspectionSplit(
       partId: partId,
       checkedQty: qtyChecked,
@@ -87,7 +85,6 @@ class ApInspectionRepository {
     }
 
     await _sync.queueInsert(tableName: 'ap_inspections', recordId: id, payload: record);
-
     return ApInspectionResult(success: true, recordId: id);
   }
 
@@ -101,6 +98,90 @@ class ApInspectionRepository {
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
+
+  // ── AP Rejected Stock ──────────────────────────────────────────────────────
+
+  /// Returns per-part AP rejected balances
+  Future<List<Map<String, dynamic>>> getApRejectedStock() async {
+    final rows = _db.db.select(
+      '''SELECT p.id as part_id, p.code as part_code, p.name as part_name,
+                COALESCE(sl.running_balance, 0) AS qty
+         FROM parts p
+         LEFT JOIN stock_ledger sl ON sl.part_id = p.id AND sl.stage = 'ap_rejected'
+           AND sl.created_at = (
+             SELECT MAX(created_at) FROM stock_ledger
+             WHERE part_id = p.id AND stage = 'ap_rejected'
+           )
+         WHERE p.active = 1 AND COALESCE(sl.running_balance, 0) > 0
+         ORDER BY p.name''',
+    );
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Scrap AP rejected qty (write off — mark done)
+  Future<ApInspectionResult> scrapRejected({
+    required String partId,
+    required double qty,
+    required String createdBy,
+    String? remarks,
+  }) async {
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final record = {
+      'id': id,
+      'factory_id': _db.activeWorkspaceId,
+      'date': dateStr,
+      'part_id': partId,
+      'qty': qty,
+      'action': 'scrapped',
+      'vendor_id': null,
+      'remarks': remarks,
+      'created_by': createdBy,
+      'sync_status': 'pending',
+    };
+    await _db.insertRecord('ap_rejected_actions', record);
+
+    final ledgerResult = await _ledger.apRejectedScrap(partId: partId, qty: qty, refId: id);
+    if (!ledgerResult.success) return ApInspectionResult(success: false, error: ledgerResult.error);
+
+    await _sync.queueInsert(tableName: 'ap_rejected_actions', recordId: id, payload: record);
+    return ApInspectionResult(success: true, recordId: id);
+  }
+
+  /// Send AP rejected qty to Faco vendor (RTV dispatch)
+  Future<ApInspectionResult> sendToFaco({
+    required String partId,
+    required double qty,
+    required String vendorId,
+    required String createdBy,
+    String? remarks,
+  }) async {
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final record = {
+      'id': id,
+      'factory_id': _db.activeWorkspaceId,
+      'date': dateStr,
+      'part_id': partId,
+      'qty': qty,
+      'action': 'sent_to_faco',
+      'vendor_id': vendorId,
+      'remarks': remarks,
+      'created_by': createdBy,
+      'sync_status': 'pending',
+    };
+    await _db.insertRecord('ap_rejected_actions', record);
+
+    final ledgerResult = await _ledger.apRejectedToFaco(partId: partId, qty: qty, refId: id);
+    if (!ledgerResult.success) return ApInspectionResult(success: false, error: ledgerResult.error);
+
+    await _sync.queueInsert(tableName: 'ap_rejected_actions', recordId: id, payload: record);
+    return ApInspectionResult(success: true, recordId: id);
+  }
 }
 
 final apInspectionRepositoryProvider = Provider<ApInspectionRepository>((ref) {
@@ -113,6 +194,10 @@ final apInspectionRepositoryProvider = Provider<ApInspectionRepository>((ref) {
 
 final apInspectionListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(apInspectionRepositoryProvider).getRecent();
+});
+
+final apRejectedStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(apInspectionRepositoryProvider).getApRejectedStock();
 });
 
 class ApInspectionResult {

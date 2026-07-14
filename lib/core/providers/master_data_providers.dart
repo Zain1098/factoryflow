@@ -71,7 +71,7 @@ class MasterDataRepository {
   void _bump() => _ref.read(masterDataRevProvider.notifier).bump();
 
   Future<String> insertPart(
-      {required String code, required String name, String uom = 'PCS'}) async {
+      {required String code, required String name, String uom = 'PCS',}) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
@@ -88,13 +88,18 @@ class MasterDataRepository {
   }
 
   Future<void> updatePart(String id,
-      {required String code, required String name}) async {
+      {required String code, required String name,}) async {
     _db.db.execute(
-        'UPDATE parts SET code = ?, name = ? WHERE id = ?', [code, name, id]);
+        'UPDATE parts SET code = ?, name = ? WHERE id = ?', [code, name, id],);
     await _sync.queueInsert(
         tableName: 'parts',
         recordId: id,
-        payload: {'id': id, 'code': code, 'name': name});
+        payload: {
+          'id': id,
+          'factory_id': _db.activeWorkspaceId,
+          'code': code,
+          'name': name,
+        },);
     _bump();
   }
 
@@ -113,7 +118,7 @@ class MasterDataRepository {
     };
     await _db.insertRecord('operators', data);
     await _sync.queueInsert(
-        tableName: 'operators', recordId: id, payload: data);
+        tableName: 'operators', recordId: id, payload: data,);
     _bump();
     return id;
   }
@@ -123,7 +128,11 @@ class MasterDataRepository {
     await _sync.queueInsert(
         tableName: 'operators',
         recordId: id,
-        payload: {'id': id, 'name': name});
+        payload: {
+          'id': id,
+          'factory_id': _db.activeWorkspaceId,
+          'name': name,
+        },);
     _bump();
   }
 
@@ -135,7 +144,7 @@ class MasterDataRepository {
   Future<String> insertMachine(
       {required String name,
       required String machineCode,
-      required int sequenceOrder}) async {
+      required int sequenceOrder,}) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
@@ -152,14 +161,19 @@ class MasterDataRepository {
   }
 
   Future<void> updateMachine(String id,
-      {required String name, required String machineCode}) async {
+      {required String name, required String machineCode,}) async {
     _db.db.execute(
         'UPDATE machines SET name = ?, machine_code = ? WHERE id = ?',
-        [name, machineCode, id]);
+        [name, machineCode, id],);
     await _sync.queueInsert(
         tableName: 'machines',
         recordId: id,
-        payload: {'id': id, 'name': name, 'machine_code': machineCode});
+        payload: {
+          'id': id,
+          'factory_id': _db.activeWorkspaceId,
+          'name': name,
+          'machine_code': machineCode,
+        },);
     _bump();
   }
 
@@ -170,7 +184,7 @@ class MasterDataRepository {
 
   Future<void> reorderMachine(String id, int sequenceOrder) async {
     _db.db.execute('UPDATE machines SET sequence_order = ? WHERE id = ?',
-        [sequenceOrder, id]);
+        [sequenceOrder, id],);
     _bump();
   }
 

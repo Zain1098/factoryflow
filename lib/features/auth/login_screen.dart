@@ -139,13 +139,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         const Icon(Icons.error_outline, color: Colors.white, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text(msg)),
-      ]),
+      ],),
       backgroundColor: Theme.of(context).colorScheme.error,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(16),
       duration: const Duration(seconds: 4),
-    ));
+    ),);
   }
 
   void _showSuccess(String msg) {
@@ -155,12 +155,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text(msg)),
-      ]),
+      ],),
       backgroundColor: const Color(0xFF2A9D8F),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(16),
-    ));
+    ),);
   }
 
   // ── Build ──────────────────────────────────────────────────────────────

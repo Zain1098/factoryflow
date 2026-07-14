@@ -5,6 +5,7 @@ enum StockStage {
   atFaco('at_faco', 'At Faco'),
   pendingAp('pending_ap', 'Pending AP Inspection'),
   approvedAp('approved_ap', 'Approved AP Stock'),
+  apRejected('ap_rejected', 'AP Rejected'),
   rtvStock('rtv_stock', 'RTV Stock');
 
   const StockStage(this.value, this.label);

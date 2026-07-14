@@ -136,10 +136,11 @@ class StockLedgerService {
       if (!approvedResult.success) return approvedResult;
     }
 
+    // Rejected goes to ap_rejected holding stage (not rtv_stock)
     if (rejectedQty > 0) {
       return _writeIn(
         partId: partId,
-        stage: StockStage.rtvStock,
+        stage: StockStage.apRejected,
         qty: rejectedQty,
         refTable: 'ap_inspections',
         refId: refId,
@@ -147,6 +148,44 @@ class StockLedgerService {
     }
 
     return const StockLedgerResult(success: true);
+  }
+
+  /// AP Rejected → scrapped (written off, stock goes to zero)
+  Future<StockLedgerResult> apRejectedScrap({
+    required String partId,
+    required double qty,
+    required String refId,
+  }) {
+    return _writeOut(
+      partId: partId,
+      stage: StockStage.apRejected,
+      qty: qty,
+      refTable: 'ap_rejected_actions',
+      refId: refId,
+    );
+  }
+
+  /// AP Rejected → send to Faco vendor (RTV dispatch)
+  Future<StockLedgerResult> apRejectedToFaco({
+    required String partId,
+    required double qty,
+    required String refId,
+  }) async {
+    final outResult = await _writeOut(
+      partId: partId,
+      stage: StockStage.apRejected,
+      qty: qty,
+      refTable: 'ap_rejected_actions',
+      refId: refId,
+    );
+    if (!outResult.success) return outResult;
+    return _writeIn(
+      partId: partId,
+      stage: StockStage.atFaco,
+      qty: qty,
+      refTable: 'ap_rejected_actions',
+      refId: refId,
+    );
   }
 
   Future<StockLedgerResult> rtvOut({

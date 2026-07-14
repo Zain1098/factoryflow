@@ -131,7 +131,7 @@ class AuthRepository {
     final result = await client.rpc('create_user_workspace', params: {
       'p_profile_name': profileName,
       'p_workspace_name': workspaceName,
-    }) as Map<String, dynamic>;
+    },) as Map<String, dynamic>;
 
     final workspaceId = result['workspace_id'] as String;
     final userId = result['user_id'] as String;

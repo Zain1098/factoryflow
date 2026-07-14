@@ -4,6 +4,26 @@ import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 
+class DashboardMachineStatus {
+  const DashboardMachineStatus({
+    required this.name,
+    required this.status,
+    required this.todayQty,
+  });
+  final String name;
+  final String status;
+  final double todayQty;
+}
+
+class DashboardWeeklyData {
+  const DashboardWeeklyData({
+    required this.dayLabel,
+    required this.qty,
+  });
+  final String dayLabel;
+  final double qty;
+}
+
 class DashboardData {
   const DashboardData({
     required this.rawMaterial,
@@ -21,6 +41,8 @@ class DashboardData {
     required this.machinesRunning,
     required this.totalMachines,
     required this.pendingApprovals,
+    required this.machineStatuses,
+    required this.weeklyData,
   });
 
   final double rawMaterial;
@@ -38,12 +60,15 @@ class DashboardData {
   final int machinesRunning;
   final int totalMachines;
   final int pendingApprovals;
+  final List<DashboardMachineStatus> machineStatuses;
+  final List<DashboardWeeklyData> weeklyData;
 
   static const empty = DashboardData(
     rawMaterial: 0, bpStock: 0, atFaco: 0, pendingAp: 0,
     approvedAp: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
     todayApReject: 0, todayDispatch: 0, pendingSyncCount: 0,
     todayTarget: 500, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
+    machineStatuses: [], weeklyData: [],
   );
 
   double get totalRejectPct {
@@ -61,14 +86,13 @@ class DashboardData {
 // ─── Dashboard Provider ───────────────────────────────────────────────────────
 
 final dashboardProvider = FutureProvider<DashboardData>((ref) async {
-  final ledger = ref.watch(stockLedgerServiceProvider);
   final db = ref.watch(databaseServiceProvider);
 
   final today = DateTime.now();
   final todayStr =
       '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
-  // Stock balances (bulk query in a single DB round-trip)
+  // Stock balances
   final stageTotals = await db.getAllStageTotals();
   final rawMaterial = stageTotals[StockStage.rawMaterial.value] ?? 0.0;
   final bpStock = stageTotals[StockStage.bpStock.value] ?? 0.0;
@@ -102,7 +126,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   // Pending sync count
   final syncCount = await db.countPendingSync();
 
-  // 1. Get active targets for today (mapped to DB day_of_week)
+  // Active targets for today
   final weekday = today.weekday % 7; // Sunday=0, Monday=1, etc.
   final targetRows = db.db.select(
     "SELECT SUM(target_qty) as total_target FROM target_master WHERE day_of_week = ?",
@@ -110,20 +134,65 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   );
   final todayTarget = (targetRows.first['total_target'] as num?)?.toDouble() ?? 500.0;
 
-  // 2. Machine monitoring status
-  final activeMachinesCountRows = db.db.select(
-    "SELECT COUNT(*) as cnt FROM machines WHERE active = 1",
-  );
-  final totalMachines = (activeMachinesCountRows.first['cnt'] as num?)?.toInt() ?? 3;
+  // Machine list and statuses
+  final machinesList = db.db.select("SELECT id, name FROM machines WHERE active = 1");
+  final List<DashboardMachineStatus> machineStatuses = [];
+  int machinesRunning = 0;
 
-  final activeDowntimes = db.db.select(
-    "SELECT COUNT(DISTINCT machine_id) as cnt FROM machine_downtimes WHERE date = ? AND end_time IS NULL",
-    [todayStr],
-  );
-  final machinesDown = (activeDowntimes.first['cnt'] as num?)?.toInt() ?? 0;
-  final machinesRunning = (totalMachines - machinesDown).clamp(0, totalMachines);
+  for (final m in machinesList) {
+    final mId = m['id'] as String;
+    final mName = m['name'] as String;
 
-  // 3. Pending approvals
+    // Check if currently down today (has downtime entry with null end_time)
+    final downtime = db.db.select(
+      "SELECT id FROM machine_downtimes WHERE machine_id = ? AND date = ? AND end_time IS NULL LIMIT 1",
+      [mId, todayStr],
+    );
+
+    // Sum of today's production on this machine
+    final mProd = db.db.select(
+      "SELECT SUM(production_qty) as qty FROM productions WHERE machine_id = ? AND date = ?",
+      [mId, todayStr],
+    );
+    final mQty = (mProd.first['qty'] as num?)?.toDouble() ?? 0.0;
+
+    String status = 'Running';
+    if (downtime.isNotEmpty) {
+      status = 'Breakdown';
+    } else if (mQty == 0) {
+      status = 'Idle';
+    }
+
+    if (status == 'Running') {
+      machinesRunning++;
+    }
+
+    machineStatuses.add(DashboardMachineStatus(
+      name: mName,
+      status: status,
+      todayQty: mQty,
+    ));
+  }
+
+  final totalMachines = machineStatuses.length;
+
+  // Weekly data (last 7 days production)
+  final List<DashboardWeeklyData> weeklyData = [];
+  for (int i = 6; i >= 0; i--) {
+    final dateVal = today.subtract(Duration(days: i));
+    final dStr = '${dateVal.year}-${dateVal.month.toString().padLeft(2, '0')}-${dateVal.day.toString().padLeft(2, '0')}';
+    final dLabel = '${dateVal.day}/${dateVal.month}';
+
+    final wProd = db.db.select(
+      "SELECT SUM(production_qty) as qty FROM productions WHERE date = ?",
+      [dStr],
+    );
+    final wQty = (wProd.first['qty'] as num?)?.toDouble() ?? 0.0;
+
+    weeklyData.add(DashboardWeeklyData(dayLabel: dLabel, qty: wQty));
+  }
+
+  // Pending approvals
   final pendingCorrectionRows = db.db.select(
     "SELECT COUNT(*) as cnt FROM correction_requests WHERE status = 'pending'",
   );
@@ -145,5 +214,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     machinesRunning: machinesRunning,
     totalMachines: totalMachines,
     pendingApprovals: pendingApprovals,
+    machineStatuses: machineStatuses,
+    weeklyData: weeklyData,
   );
 });

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import 'report_providers.dart';
+import '../../core/widgets/shared_widgets.dart';
 
 // ─── Reports Hub ──────────────────────────────────────────────────────────────
 
@@ -17,38 +18,41 @@ class ReportsScreen extends ConsumerWidget {
       _ReportSection('Production', Colors.teal, [
         _ReportTile('Daily Production', Icons.today, Colors.teal,
             'Day-wise output, target & efficiency',
-            () => _push(context, const _DailyProductionReport())),
+            () => _push(context, const _DailyProductionReport()),),
         _ReportTile('Machine-wise', Icons.precision_manufacturing, Colors.blue,
             'Output & downtime per machine',
-            () => _push(context, const _MachineReport())),
+            () => _push(context, const _MachineReport()),),
         _ReportTile('Operator-wise', Icons.person_outline, Colors.indigo,
             'Output & avg per operator',
-            () => _push(context, const _OperatorReport())),
+            () => _push(context, const _OperatorReport()),),
         _ReportTile('Machine Downtime', Icons.build_outlined, Colors.orange,
             'Breakdown & maintenance log',
-            () => _push(context, const _DowntimeReport())),
+            () => _push(context, const _DowntimeReport()),),
       ]),
       _ReportSection('Quality', Colors.red, [
         _ReportTile('Reject Analysis', Icons.cancel_outlined, Colors.red,
             'BP + AP rejection by part & date',
-            () => _push(context, const _RejectReport())),
+            () => _push(context, const _RejectReport()),),
         _ReportTile('RTV Analysis', Icons.undo, Colors.deepOrange,
             'Return to vendor summary & status',
-            () => _push(context, const _RtvReport())),
+            () => _push(context, const _RtvReport()),),
+        _ReportTile('Hold Material', Icons.back_hand_outlined, Colors.redAccent,
+            'BP QC hold & active RTV aging',
+            () => _push(context, const _HoldReport()),),
       ]),
       _ReportSection('Inventory & Dispatch', Colors.green, [
         _ReportTile('Live Stock', Icons.inventory_2_outlined, Colors.green,
             'Current stock at every stage',
-            () => _push(context, const _LiveStockReport())),
+            () => _push(context, const _LiveStockReport()),),
         _ReportTile('Faco Pending', Icons.pending_outlined, Colors.amber,
             'Material still at Faco vendor',
-            () => _push(context, const _FacoPendingReport())),
+            () => _push(context, const _FacoPendingReport()),),
         _ReportTile('Dispatch Report', Icons.send_outlined, Colors.purple,
             'Final dispatch to customers',
-            () => _push(context, const _DispatchReport())),
+            () => _push(context, const _DispatchReport()),),
         _ReportTile('Inventory Movement', Icons.swap_horiz, Colors.blueGrey,
             'Full stock ledger movement',
-            () => _push(context, const _LedgerReport())),
+            () => _push(context, const _LedgerReport()),),
       ]),
     ];
 
@@ -86,7 +90,7 @@ class ReportsScreen extends ConsumerWidget {
   String _shortDate(DateTime d) => DateFormat('dd MMM').format(d);
 
   Future<void> _pickRange(
-      BuildContext context, WidgetRef ref, DateRange current) async {
+      BuildContext context, WidgetRef ref, DateRange current,) async {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2024),
@@ -95,7 +99,7 @@ class ReportsScreen extends ConsumerWidget {
     );
     if (picked != null) {
       ref.read(reportDateRangeProvider.notifier).set(
-            DateRange(picked.start, picked.end));
+            DateRange(picked.start, picked.end),);
     }
   }
 }
@@ -150,15 +154,15 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(
         children: [
-          Container(width: 4, height: 16, color: color,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(2))),
+          Container(width: 4, height: 16,
+              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),),
           const SizedBox(width: 8),
           Text(title.toUpperCase(),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: color,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.2,
-                  )),
+                  ),),
         ],
       ),
     );
@@ -185,9 +189,9 @@ class _ReportListTile extends StatelessWidget {
       subtitle: Text(tile.subtitle,
           style: TextStyle(
               fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,),),
       trailing: Icon(Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurfaceVariant),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,),
       onTap: tile.onTap,
     );
   }
@@ -255,11 +259,11 @@ class _ReportPage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.inbox_outlined, size: 56,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),),
                   const SizedBox(height: 12),
                   Text(emptyMessage,
                       style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,),),
                 ],
               ),
             )
@@ -296,7 +300,7 @@ class _SummaryRow extends StatelessWidget {
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
-                              color: color)),
+                              color: color,),),
                       const SizedBox(height: 2),
                       Text(c.label,
                           textAlign: TextAlign.center,
@@ -304,10 +308,10 @@ class _SummaryRow extends StatelessWidget {
                               fontSize: 10,
                               color: Theme.of(context)
                                   .colorScheme
-                                  .onSurfaceVariant)),
+                                  .onSurfaceVariant,),),
                     ],
                   ),
-                ))
+                ),)
             .toList(),
       ),
     );
@@ -339,7 +343,7 @@ class _DataTable extends StatelessWidget {
           headingTextStyle: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 12,
-              color: color),
+              color: color,),
           dataTextStyle: theme.textTheme.bodySmall,
           columnSpacing: 20,
           horizontalMargin: 16,
@@ -349,7 +353,7 @@ class _DataTable extends StatelessWidget {
           rows: rows
               .map((r) => DataRow(
                     cells: r.map((c) => DataCell(Text(c))).toList(),
-                  ))
+                  ),)
               .toList(),
         ),
       ),
@@ -400,7 +404,7 @@ class _DailyProductionReport extends ConsumerWidget {
               _n(r.target),
               _pct(r.efficiency),
               _pct(r.rejectPct),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No production data for selected range',
       );
     });
@@ -436,7 +440,7 @@ class _MachineReport extends ConsumerWidget {
               _pct(r.rejectPct),
               _mins(r.downtimeMinutes),
               '${r.runDays}',
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No machine data for selected range',
       );
     });
@@ -470,7 +474,7 @@ class _OperatorReport extends ConsumerWidget {
               _pct(r.rejectPct),
               '${r.runDays}',
               _n(r.avgPerDay),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No operator data for selected range',
       );
     });
@@ -503,7 +507,7 @@ class _DowntimeReport extends ConsumerWidget {
               r.endTime ?? 'Ongoing',
               _mins(r.durationMinutes),
               r.reason.length > 20 ? '${r.reason.substring(0, 20)}…' : r.reason,
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No downtime events for selected range',
       );
     });
@@ -542,7 +546,7 @@ class _RejectReport extends ConsumerWidget {
               _n(r.apReject),
               _n(r.totalReject),
               _pct(r.rejectPct),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No reject data for selected range',
       );
     });
@@ -576,7 +580,7 @@ class _RtvReport extends ConsumerWidget {
               r.status,
               r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
               '#${r.cycleNumber}',
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No RTV data for selected range',
       );
     });
@@ -608,7 +612,7 @@ class _DispatchReport extends ConsumerWidget {
               _n(r.dispatchQty),
               r.challanNumber.isEmpty ? '—' : r.challanNumber,
               r.vehicleNumber.isEmpty ? '—' : r.vehicleNumber,
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No dispatch data for selected range',
       );
     });
@@ -641,7 +645,7 @@ class _FacoPendingReport extends ConsumerWidget {
               _n(r.received),
               _n(r.pending),
               _fmtDate(r.oldestDate),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No pending material at Faco',
       );
     });
@@ -676,7 +680,7 @@ class _LiveStockReport extends ConsumerWidget {
               _n(r.approvedAp),
               _n(r.rtvStock),
               _n(r.totalStock),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No stock data available',
       );
     });
@@ -708,7 +712,7 @@ class _LedgerReport extends ConsumerWidget {
               _n(r.qty),
               _n(r.runningBalance),
               _tableLabel(r.refTable),
-            ]).toList(),
+            ],).toList(),
         emptyMessage: 'No ledger entries for selected range',
       );
     });
@@ -750,4 +754,191 @@ String _tableLabel(String table) {
     'final_dispatches': 'Dispatch',
   };
   return map[table] ?? table;
+}
+
+// ─── Hold Material Report Screen ────────────────────────────────────────────────
+
+class _HoldReport extends ConsumerWidget {
+  const _HoldReport();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reportAsync = ref.watch(holdMaterialReportProvider);
+    final theme = Theme.of(context);
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Hold Material Report'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.warning_amber), text: 'BP QC Hold'),
+              Tab(icon: Icon(Icons.sync_problem), text: 'RTV Hold (AP)'),
+            ],
+          ),
+        ),
+        body: reportAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+          data: (data) {
+            return TabBarView(
+              children: [
+                _buildBpHoldTab(context, data, theme),
+                _buildRtvHoldTab(context, data, theme),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBpHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+    if (data.bpHoldList.isEmpty) {
+      return const EmptyState(
+        message: 'No material currently on BP QC Hold.',
+        icon: Icons.check_circle_outline,
+      );
+    }
+
+    return Column(
+      children: [
+        _buildSummaryCard(
+          theme,
+          title: 'Total BP Rejections / QC Hold',
+          value: '${data.totalBpHold.toInt()} PCS',
+          icon: Icons.warning_amber,
+          color: Colors.redAccent,
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: data.bpHoldList.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, i) {
+              final r = data.bpHoldList[i];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+                  child: const Icon(Icons.build_circle_outlined, color: Colors.redAccent),
+                ),
+                title: Row(
+                  children: [
+                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    'Machine: ${r.machineName} · Reason: ${r.reason} · Date: ${_fmtDate(r.date)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRtvHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+    if (data.rtvHoldList.isEmpty) {
+      return const EmptyState(
+        message: 'No active RTV (Post-Plating) Hold.',
+        icon: Icons.check_circle_outline,
+      );
+    }
+
+    return Column(
+      children: [
+        _buildSummaryCard(
+          theme,
+          title: 'Total RTV Pending Reinspection',
+          value: '${data.totalRtvHold.toInt()} PCS',
+          icon: Icons.sync_problem,
+          color: Colors.orange,
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: data.rtvHoldList.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, i) {
+              final r = data.rtvHoldList[i];
+              final ageColor = r.agingDays > 10 ? Colors.red : (r.agingDays > 5 ? Colors.orange : Colors.green);
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange.withValues(alpha: 0.1),
+                  child: const Icon(Icons.undo, color: Colors.orange),
+                ),
+                title: Row(
+                  children: [
+                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                  ],
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Vendor: ${r.vendorName} · Status: ${r.status}'),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ageColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '${r.agingDays}d aging',
+                          style: TextStyle(color: ageColor, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCard(
+    ThemeData theme, {
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
