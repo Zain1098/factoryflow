@@ -491,6 +491,7 @@ class LiveStockRow {
     required this.atFaco,
     required this.pendingAp,
     required this.approvedAp,
+    required this.apRejected,
     required this.rtvStock,
     required this.totalStock,
   });
@@ -501,6 +502,7 @@ class LiveStockRow {
   final double atFaco;
   final double pendingAp;
   final double approvedAp;
+  final double apRejected;
   final double rtvStock;
   final double totalStock;
 }
@@ -517,6 +519,7 @@ final liveStockReportProvider =
       COALESCE(MAX(CASE WHEN sl.stage='at_faco' THEN sl.running_balance END), 0) AS faco,
       COALESCE(MAX(CASE WHEN sl.stage='pending_ap' THEN sl.running_balance END), 0) AS pap,
       COALESCE(MAX(CASE WHEN sl.stage='approved_ap' THEN sl.running_balance END), 0) AS aap,
+      COALESCE(MAX(CASE WHEN sl.stage='ap_rejected' THEN sl.running_balance END), 0) AS aprej,
       COALESCE(MAX(CASE WHEN sl.stage='rtv_stock' THEN sl.running_balance END), 0) AS rtv
     FROM parts p
     LEFT JOIN stock_ledger sl ON sl.part_id = p.id
@@ -535,6 +538,7 @@ final liveStockReportProvider =
     final faco = (r['faco'] as num).toDouble();
     final pap = (r['pap'] as num).toDouble();
     final aap = (r['aap'] as num).toDouble();
+    final aprej = (r['aprej'] as num).toDouble();
     final rtv = (r['rtv'] as num).toDouble();
     return LiveStockRow(
       partName: r['name'] as String,
@@ -544,8 +548,9 @@ final liveStockReportProvider =
       atFaco: faco,
       pendingAp: pap,
       approvedAp: aap,
+      apRejected: aprej,
       rtvStock: rtv,
-      totalStock: raw + bp + faco + pap + aap + rtv,
+      totalStock: raw + bp + faco + pap + aap + aprej + rtv,
     );
   }).toList();
 });

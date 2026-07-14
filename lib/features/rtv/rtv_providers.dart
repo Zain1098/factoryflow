@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
@@ -50,23 +51,11 @@ class RtvRepository {
       );
     }
 
-    // Check cumulative RTV qty <= AP rejected qty (PRD 3.4)
-    final apRows = _db.db.select(
-      'SELECT SUM(rejected_qty) as total FROM ap_inspections WHERE batch_number = ? AND part_id = ?',
-      [batchNumber, partId],
-    );
-    final apRejectedTotal = (apRows.first['total'] as num?)?.toDouble() ?? 0;
-
-    final existingRtvRows = _db.db.select(
-      'SELECT SUM(rtv_qty) as total FROM rtvs WHERE batch_number = ? AND part_id = ?',
-      [batchNumber, partId],
-    );
-    final existingRtvTotal = (existingRtvRows.first['total'] as num?)?.toDouble() ?? 0;
-
-    if (existingRtvTotal + rtvQty > apRejectedTotal) {
+    final availableRtvStock = await _ledger.getAvailableStock(partId, StockStage.rtvStock);
+    if (rtvQty > availableRtvStock) {
       return RtvResult(
         success: false,
-        error: 'Cumulative RTV qty (${existingRtvTotal + rtvQty}) would exceed AP rejected qty ($apRejectedTotal)',
+        error: 'RTV qty ($rtvQty) exceeds available RTV stock ($availableRtvStock PCS)',
       );
     }
 

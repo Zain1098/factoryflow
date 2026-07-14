@@ -31,6 +31,7 @@ class DashboardData {
     required this.atFaco,
     required this.pendingAp,
     required this.approvedAp,
+    required this.apRejected,
     required this.rtvStock,
     required this.todayProduction,
     required this.todayBpReject,
@@ -50,6 +51,7 @@ class DashboardData {
   final double atFaco;
   final double pendingAp;
   final double approvedAp;
+  final double apRejected;
   final double rtvStock;
   final double todayProduction;
   final double todayBpReject;
@@ -65,7 +67,7 @@ class DashboardData {
 
   static const empty = DashboardData(
     rawMaterial: 0, bpStock: 0, atFaco: 0, pendingAp: 0,
-    approvedAp: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
+    approvedAp: 0, apRejected: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
     todayApReject: 0, todayDispatch: 0, pendingSyncCount: 0,
     todayTarget: 500, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
     machineStatuses: [], weeklyData: [],
@@ -99,6 +101,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final atFaco = stageTotals[StockStage.atFaco.value] ?? 0.0;
   final pendingAp = stageTotals[StockStage.pendingAp.value] ?? 0.0;
   final approvedAp = stageTotals[StockStage.approvedAp.value] ?? 0.0;
+  final apRejected = stageTotals[StockStage.apRejected.value] ?? 0.0;
   final rtvStock = stageTotals[StockStage.rtvStock.value] ?? 0.0;
 
   // Today's production totals
@@ -204,6 +207,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     atFaco: atFaco,
     pendingAp: pendingAp,
     approvedAp: approvedAp,
+    apRejected: apRejected,
     rtvStock: rtvStock,
     todayProduction: todayProd,
     todayBpReject: todayBp,

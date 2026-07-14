@@ -31,15 +31,17 @@ class ApInspectionRepository {
     required double qtyChecked,
     required double approvedQty,
     required double rejectedQty,
+    double rtvQty = 0,
     required String rejectReason,
     required String inspectorId,
     String? remarks,
     DateTime? recordedAt,
   }) async {
-    if ((approvedQty + rejectedQty - qtyChecked).abs() > 0.001) {
+    if ((approvedQty + rejectedQty + rtvQty - qtyChecked).abs() > 0.001) {
       return ApInspectionResult(
         success: false,
-        error: 'Approved ($approvedQty) + Rejected ($rejectedQty) must equal Checked ($qtyChecked)',
+        error:
+            'Approved ($approvedQty) + Rejected ($rejectedQty) + RTV ($rtvQty) must equal Checked ($qtyChecked)',
       );
     }
 
@@ -64,6 +66,7 @@ class ApInspectionRepository {
       'qty_checked': qtyChecked,
       'approved_qty': approvedQty,
       'rejected_qty': rejectedQty,
+      'rtv_qty': rtvQty,
       'reject_reason_id': rejectReason,
       'inspector_id': inspectorId,
       'remarks': remarks,
@@ -78,6 +81,7 @@ class ApInspectionRepository {
       checkedQty: qtyChecked,
       approvedQty: approvedQty,
       rejectedQty: rejectedQty,
+      rtvQty: rtvQty,
       refId: id,
     );
     if (!ledgerResult.success) {

@@ -114,6 +114,7 @@ class StockLedgerService {
     required double checkedQty,
     required double approvedQty,
     required double rejectedQty,
+    double rtvQty = 0,
     required String refId,
   }) async {
     final outResult = await _writeOut(
@@ -136,12 +137,22 @@ class StockLedgerService {
       if (!approvedResult.success) return approvedResult;
     }
 
-    // Rejected goes to ap_rejected holding stage (not rtv_stock)
     if (rejectedQty > 0) {
-      return _writeIn(
+      final rejectedResult = await _writeIn(
         partId: partId,
         stage: StockStage.apRejected,
         qty: rejectedQty,
+        refTable: 'ap_inspections',
+        refId: refId,
+      );
+      if (!rejectedResult.success) return rejectedResult;
+    }
+
+    if (rtvQty > 0) {
+      return _writeIn(
+        partId: partId,
+        stage: StockStage.rtvStock,
+        qty: rtvQty,
         refTable: 'ap_inspections',
         refId: refId,
       );

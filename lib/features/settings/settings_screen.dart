@@ -86,6 +86,16 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
+            leading: const Icon(Icons.local_shipping_outlined),
+            title: const Text('Suppliers'),
+            subtitle: const Text('Add, rename or remove material suppliers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _SuppliersPage()),
+            ),
+          ),
+          ListTile(
             leading: const Icon(Icons.category_outlined),
             title: const Text('Parts'),
             subtitle: const Text('Add, rename or remove parts'),
@@ -294,6 +304,133 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
     );
     if (!confirmed) return;
     await ref.read(masterDataRepositoryProvider).deactivateOperator(id);
+  }
+}
+
+class _SuppliersPage extends ConsumerStatefulWidget {
+  const _SuppliersPage();
+  @override
+  ConsumerState<_SuppliersPage> createState() => _SuppliersPageState();
+}
+
+class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
+  @override
+  Widget build(BuildContext context) {
+    final suppliers = ref.watch(suppliersProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Suppliers')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(null, null),
+        child: const Icon(Icons.add),
+      ),
+      body: suppliers.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        data: (list) {
+          if (list.isEmpty) {
+            return const EmptyState(
+              message: 'No suppliers yet.\nTap + to add one.',
+              icon: Icons.local_shipping_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final supplier = list[i];
+              final name = supplier['name'] as String;
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  child: Text(name[0].toUpperCase()),
+                ),
+                title: Text(name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(
+                        supplier['id'] as String,
+                        name,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(
+                        supplier['id'] as String,
+                        name,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog(String? id, String? current) async {
+    String? resultName;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController(text: current ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            void submit() {
+              if (ctrl.text.trim().isEmpty) return;
+              resultName = ctrl.text.trim();
+              Navigator.pop(ctx);
+            }
+
+            return AlertDialog(
+              title: Text(id == null ? 'Add Supplier' : 'Rename Supplier'),
+              content: SingleChildScrollView(
+                child: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                  textCapitalization: TextCapitalization.words,
+                  onSubmitted: (_) => submit(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: submit,
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (resultName == null || resultName!.isEmpty) return;
+    final repo = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await repo.insertSupplier(resultName!);
+    } else {
+      await repo.updateSupplier(id, resultName!);
+    }
+  }
+
+  Future<void> _confirmDelete(String id, String name) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove Supplier',
+      message: 'Remove "$name"? It will no longer appear in Material Receive.',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(masterDataRepositoryProvider).deactivateSupplier(id);
   }
 }
 

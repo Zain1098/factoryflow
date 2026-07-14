@@ -670,7 +670,7 @@ class _LiveStockReport extends ConsumerWidget {
           _SummaryCard('Total Stock', _n(totalAll)),
           _SummaryCard('Parts', '${data.length}'),
         ],
-        tableHeader: const ['Part', 'Raw', 'BP', 'Faco', 'Pend AP', 'Appr AP', 'RTV', 'Total'],
+        tableHeader: const ['Part', 'Raw', 'BP', 'Faco', 'Pend AP', 'Appr AP', 'AP Rej', 'RTV', 'Total'],
         rows: data.map((r) => [
               r.partCode.isNotEmpty ? r.partCode : r.partName.substring(0, r.partName.length.clamp(0, 10)),
               _n(r.rawMaterial),
@@ -678,6 +678,7 @@ class _LiveStockReport extends ConsumerWidget {
               _n(r.atFaco),
               _n(r.pendingAp),
               _n(r.approvedAp),
+              _n(r.apRejected),
               _n(r.rtvStock),
               _n(r.totalStock),
             ],).toList(),

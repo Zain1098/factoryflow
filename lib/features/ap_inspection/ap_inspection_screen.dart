@@ -23,14 +23,19 @@ class _ApPartEntry {
   final checkedCtrl = TextEditingController();
   final rejectedCtrl = TextEditingController(text: '0');
 
+  final rtvQtyCtrl = TextEditingController(text: '0');
+
   double get checked => double.tryParse(checkedCtrl.text) ?? 0;
   double get rejected => double.tryParse(rejectedCtrl.text) ?? 0;
-  double get approved => (checked - rejected).clamp(0, double.infinity);
-  bool get isBalanced => (approved + rejected - checked).abs() < 0.001;
+  double get rtvQty => double.tryParse(rtvQtyCtrl.text) ?? 0;
+  double get approved => (checked - rejected - rtvQty).clamp(0, double.infinity);
+  bool get isBalanced => (approved + rejected + rtvQty - checked).abs() < 0.001;
+  bool get isRtvValid => rtvQty >= 0 && rtvQty <= checked;
 
   void dispose() {
     checkedCtrl.dispose();
     rejectedCtrl.dispose();
+    rtvQtyCtrl.dispose();
   }
 }
 
@@ -93,6 +98,10 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         setState(() => _error = '${e.partName}: Approved + Rejected ≠ Checked');
         return;
       }
+      if (!e.isRtvValid) {
+        setState(() => _error = '${e.partName}: RTV qty invalid');
+        return;
+      }
     }
 
     setState(() { _isSaving = true; _error = null; _success = null; });
@@ -111,6 +120,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           rejectReason: _rejectReason ?? 'N/A',
           inspectorId: user?.id ?? 'unknown',
           recordedAt: _recordedAt,
+          rtvQty: e.rtvQty,
         );
         if (!result.success) {
           setState(() => _error = '${e.partName}: ${result.error}');
@@ -276,6 +286,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             final isSynced = r['sync_status'] == 'synced';
             final approved = (r['approved_qty'] as num?)?.toInt() ?? 0;
             final rejected = (r['rejected_qty'] as num?)?.toInt() ?? 0;
+            final rtv = (r['rtv_qty'] as num?)?.toInt() ?? 0;
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.green.withValues(alpha: 0.12),
@@ -290,6 +301,11 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 children: [
                   Text('✓$approved  ✗$rejected',
                       style: const TextStyle(fontWeight: FontWeight.bold)),
+                  if (rtv > 0)
+                    Text(
+                      'RTV $rtv',
+                      style: const TextStyle(fontSize: 11, color: Colors.deepOrange),
+                    ),
                   Icon(
                     isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
                     size: 14,
@@ -330,6 +346,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
     super.initState();
     widget.entry.checkedCtrl.addListener(_rebuild);
     widget.entry.rejectedCtrl.addListener(_rebuild);
+    widget.entry.rtvQtyCtrl.addListener(_rebuild);
   }
 
   void _rebuild() => setState(() {});
@@ -338,6 +355,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
   void dispose() {
     widget.entry.checkedCtrl.removeListener(_rebuild);
     widget.entry.rejectedCtrl.removeListener(_rebuild);
+    widget.entry.rtvQtyCtrl.removeListener(_rebuild);
     super.dispose();
   }
 
@@ -389,13 +407,20 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: NumberFormField(
-                    label: 'Rejected',
+                    label: 'AP Rejected',
                     controller: e.rejectedCtrl,
                     allowDecimal: false,
                     prefixIcon: const Icon(Icons.cancel_outlined, size: 18),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 10),
+            NumberFormField(
+              label: 'RTV Stock',
+              controller: e.rtvQtyCtrl,
+              allowDecimal: false,
+              prefixIcon: const Icon(Icons.undo, size: 18),
             ),
             if (e.checked > 0) ...[
               const SizedBox(height: 8),
@@ -446,6 +471,16 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                   ],
                 ),
               ),
+              if (e.rtvQty > 0) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _SplitChip(
+                    label: '${e.rtvQty.toInt()} PCS -> RTV Stock',
+                    color: Colors.deepOrange,
+                  ),
+                ),
+              ],
             ],
           ],
         ),
@@ -455,6 +490,32 @@ class _PartEntryCardState extends State<_PartEntryCard> {
 }
 
 // ─── AP Rejected Stock Tab ────────────────────────────────────────────────────
+
+class _SplitChip extends StatelessWidget {
+  const _SplitChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
 
 class _ApRejectedStockTab extends ConsumerWidget {
   const _ApRejectedStockTab();

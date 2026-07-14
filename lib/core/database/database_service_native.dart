@@ -121,6 +121,7 @@ class DatabaseService {
       '''CREATE TABLE IF NOT EXISTS ap_inspections (
         id TEXT PRIMARY KEY, factory_id TEXT, batch_number TEXT, date TEXT,
         part_id TEXT, qty_checked REAL, approved_qty REAL, rejected_qty REAL,
+        rtv_qty REAL DEFAULT 0,
         reject_reason_id TEXT, inspector_id TEXT, photo_url TEXT, remarks TEXT,
         sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS ap_rejected_actions (
@@ -241,6 +242,12 @@ class DatabaseService {
       db.execute('ALTER TABLE productions ADD COLUMN good_qty REAL');
       // backfill
       db.execute('UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL');
+    }
+
+    final apCols = db.select('PRAGMA table_info(ap_inspections)');
+    final apNames = apCols.map((r) => r['name'] as String).toSet();
+    if (!apNames.contains('rtv_qty')) {
+      db.execute('ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0');
     }
   }
 

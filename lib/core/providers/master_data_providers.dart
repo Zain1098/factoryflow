@@ -141,6 +141,38 @@ class MasterDataRepository {
     _bump();
   }
 
+  Future<String> insertSupplier(String name) async {
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'factory_id': _db.activeWorkspaceId,
+      'name': name,
+      'active': 1,
+    };
+    await _db.insertRecord('suppliers', data);
+    await _sync.queueInsert(tableName: 'suppliers', recordId: id, payload: data);
+    _bump();
+    return id;
+  }
+
+  Future<void> updateSupplier(String id, String name) async {
+    _db.db.execute('UPDATE suppliers SET name = ? WHERE id = ?', [name, id]);
+    await _sync.queueInsert(
+        tableName: 'suppliers',
+        recordId: id,
+        payload: {
+          'id': id,
+          'factory_id': _db.activeWorkspaceId,
+          'name': name,
+        },);
+    _bump();
+  }
+
+  Future<void> deactivateSupplier(String id) async {
+    _db.db.execute('UPDATE suppliers SET active = 0 WHERE id = ?', [id]);
+    _bump();
+  }
+
   Future<String> insertMachine(
       {required String name,
       required String machineCode,

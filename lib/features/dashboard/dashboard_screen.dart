@@ -365,6 +365,7 @@ class DashboardScreen extends ConsumerWidget {
       _StockEntry('At Faco', data.atFaco, Icons.local_shipping_outlined, Colors.orange),
       _StockEntry('Pending AP', data.pendingAp, Icons.hourglass_empty, Colors.purple),
       _StockEntry('Approved AP', data.approvedAp, Icons.verified_outlined, Colors.green),
+      _StockEntry('AP Rejected', data.apRejected, Icons.warning_amber_outlined, Colors.deepOrange),
       _StockEntry('RTV Stock', data.rtvStock, Icons.undo, Colors.red),
     ];
 
