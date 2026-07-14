@@ -8,27 +8,22 @@ import 'core/router/app_router.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 
-// ---------------------------------------------------------------------------
-// Supabase connection state, overridden once after application initialization.
-// ---------------------------------------------------------------------------
+/// True only when Supabase SDK was successfully initialized at startup.
 final supabaseConnectedProvider = Provider<bool>((_) => false);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ── Step 1: Local SQLite DB (offline-first) ────────────────────────────
-  await DatabaseService.instance.initialize();
-  await DatabaseService.instance.seedDemoData();
+  // ── Step 1: Local SQLite (must succeed — app cannot run without it) ────
+  try {
+    await DatabaseService.instance.initialize();
+  } catch (e) {
+    // DB failed — show error screen, do not proceed
+    runApp(_DbErrorApp(error: e.toString()));
+    return;
+  }
 
-  // ── Step 2: Local notifications ────────────────────────────────────────
-  await NotificationService.instance.initialize();
-
-  // ── Step 3: Supabase (optional — app works fully offline without it) ───
-  // Credentials are injected at build time via --dart-define, never loaded
-  // from an asset or local .env file.
-  // Build command:
-  //   flutter run --dart-define=SUPABASE_URL=https://xxx.supabase.co \
-  //               --dart-define=SUPABASE_ANON_KEY=eyJ...
+  // ── Step 2: Supabase (optional — 5 s timeout so offline users aren't blocked)
   const config = AppConfig.fromEnvironment();
   bool supabaseConnected = false;
   if (config.hasValidSupabaseConfiguration) {
@@ -40,10 +35,10 @@ Future<void> main() async {
           authFlowType: AuthFlowType.pkce,
           autoRefreshToken: true,
         ),
-      );
+      ).timeout(const Duration(seconds: 5));
       supabaseConnected = true;
     } catch (_) {
-      // The app remains usable offline. Do not log service configuration.
+      // Offline or misconfigured — app continues in offline mode.
     }
   }
 
@@ -55,6 +50,9 @@ Future<void> main() async {
       child: const FactoryFlowApp(),
     ),
   );
+
+  // Notification init is fire-and-forget — never blocks startup.
+  NotificationService.instance.initialize().catchError((_) {});
 }
 
 class FactoryFlowApp extends ConsumerWidget {
@@ -72,6 +70,43 @@ class FactoryFlowApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
+    );
+  }
+}
+
+/// Shown only when SQLite initialization fails (rare, e.g. storage permission).
+class _DbErrorApp extends StatelessWidget {
+  const _DbErrorApp({required this.error});
+  final String error;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.storage_rounded, size: 56, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Storage Error',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Could not open local database.\nPlease restart the app or free up storage.\n\n$error',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

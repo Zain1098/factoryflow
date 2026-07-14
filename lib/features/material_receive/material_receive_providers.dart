@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
@@ -34,7 +33,7 @@ class PurchaseOrderRepository {
 
     final record = {
       'id': id,
-      'factory_id': AppConstants.defaultFactoryId,
+      'factory_id': _db.activeWorkspaceId,
       'date': dateStr,
       'time': timeStr,
       'part_id': partId,
@@ -101,7 +100,7 @@ class MaterialReceiveRepository {
 
     final record = {
       'id': id,
-      'factory_id': AppConstants.defaultFactoryId,
+      'factory_id': _db.activeWorkspaceId,
       'date': dateStr,
       'time': timeStr,
       'supplier_id': supplierId,

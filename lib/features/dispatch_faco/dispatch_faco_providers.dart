@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/constants/stock_stages.dart';
@@ -44,7 +43,7 @@ class DispatchFacoRepository {
 
     final record = {
       'id': id,
-      'factory_id': AppConstants.defaultFactoryId,
+      'factory_id': _db.activeWorkspaceId,
       'batch_number': batchNumber,
       'date': dateStr,
       'time': timeStr,

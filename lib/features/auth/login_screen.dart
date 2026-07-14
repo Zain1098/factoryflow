@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/network/sync_service.dart';
 import '../../main.dart';
 import 'auth_providers.dart';
 
@@ -16,141 +17,150 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _isResettingPassword = false;
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _workspaceCtrl = TextEditingController();
+  bool _obscure = true;
+  bool _isResetting = false;
+  bool _isSignUp = false;
 
-  late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<Offset> _slideAnimation;
+  late final AnimationController _anim;
+  late final Animation<double> _fade;
+  late final Animation<Offset> _slide;
+
+  bool _hasLocalSession = false;
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
+    _anim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 600),
     );
-    _fadeAnimation = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.08),
+    _fade = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.06),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
-    _fadeController.forward();
+    ).animate(CurvedAnimation(parent: _anim, curve: Curves.easeOut));
+    _anim.forward();
+    _checkLocalSession();
+  }
+
+  Future<void> _checkLocalSession() async {
+    final user = await ref.read(authRepositoryProvider).getLocalSession();
+    if (mounted) setState(() => _hasLocalSession = user != null);
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _fadeController.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _nameCtrl.dispose();
+    _workspaceCtrl.dispose();
+    _anim.dispose();
     super.dispose();
   }
 
-  // ── Login ──────────────────────────────────────────────────────────────
+  // ── Actions ────────────────────────────────────────────────────────────
 
-  Future<void> _login() async {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-
-    await ref.read(currentUserProvider.notifier).signIn(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-
-    // Router handles redirect automatically via _AuthChangeNotifier.
-    // Check for error state only.
+    if (_isSignUp) {
+      await ref.read(currentUserProvider.notifier).signUp(
+            email: _emailCtrl.text.trim(),
+            password: _passwordCtrl.text,
+            profileName: _nameCtrl.text.trim(),
+            workspaceName: _workspaceCtrl.text.trim(),
+          );
+    } else {
+      await ref.read(currentUserProvider.notifier).signIn(
+            _emailCtrl.text.trim(),
+            _passwordCtrl.text,
+          );
+    }
     if (!mounted) return;
-    final state = ref.read(currentUserProvider);
-    if (state.hasError) {
-      _showError(_friendlyError(state.error));
-    } else if (state.value == null && !state.isLoading) {
-      _showError('No user profile found. Please contact your administrator.');
+    final s = ref.read(currentUserProvider);
+    if (s.hasError) _showError(_friendlyError(s.error));
+    if (!s.hasError && s.value == null && !s.isLoading) {
+      _showError('No user profile found. Contact your administrator.');
     }
   }
 
-  // ── Password Reset ─────────────────────────────────────────────────────
+  Future<void> _continueOffline() async {
+    await ref.read(currentUserProvider.notifier).continueOffline();
+  }
 
   Future<void> _forgotPassword() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty || !_isValidEmail(email)) {
-      _showError('Enter a valid email address first, then tap "Forgot Password".');
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty || !_validEmail(email)) {
+      _showError('Enter a valid email first, then tap Forgot Password.');
       return;
     }
-
-    setState(() => _isResettingPassword = true);
+    setState(() => _isResetting = true);
     try {
       await ref.read(authRepositoryProvider).sendPasswordResetEmail(email);
-      if (mounted) {
-        _showSuccess('Password reset email sent to $email');
-      }
+      if (mounted) _showSuccess('Reset email sent to $email');
     } catch (e) {
       if (mounted) _showError(_friendlyError(e));
     } finally {
-      if (mounted) setState(() => _isResettingPassword = false);
+      if (mounted) setState(() => _isResetting = false);
     }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  String _friendlyError(Object? error) {
-    final msg = error?.toString() ?? '';
-    if (msg.contains('Invalid login credentials') || msg.contains('invalid_credentials')) {
-      return 'Incorrect email or password. Please try again.';
+  String _friendlyError(Object? e) {
+    final msg = e?.toString() ?? '';
+    if (msg.contains('Invalid login') || msg.contains('invalid_credentials')) {
+      return 'Incorrect email or password.';
     }
     if (msg.contains('Email not confirmed')) {
       return 'Please verify your email before signing in.';
     }
     if (msg.contains('not configured') || msg.contains('Supabase')) {
-      return 'Server not configured. Use Dev Login below.';
+      return 'Server not configured. Use offline login.';
     }
-    if (msg.contains('network') || msg.contains('SocketException')) {
-      return 'No internet connection. Check your network and try again.';
+    if (msg.contains('network') ||
+        msg.contains('SocketException') ||
+        msg.contains('Failed host lookup')) {
+      return 'No internet connection.';
     }
-    return 'Sign in failed. Please try again.';
+    return _isSignUp ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.';
   }
 
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+$').hasMatch(email);
-  }
+  bool _validEmail(String e) =>
+      RegExp(r'^[\w.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z0-9\-.]+$').hasMatch(e);
 
-  void _showError(String message) {
+  void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: Theme.of(context).colorScheme.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.error_outline, color: Colors.white, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(msg)),
+      ]),
+      backgroundColor: Theme.of(context).colorScheme.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 4),
+    ));
   }
 
-  void _showSuccess(String message) {
+  void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: const Color(0xFF2A9D8F),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(msg)),
+      ]),
+      backgroundColor: const Color(0xFF2A9D8F),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
+    ));
   }
 
   // ── Build ──────────────────────────────────────────────────────────────
@@ -159,10 +169,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // Watch loading state from provider
-    final authState = ref.watch(currentUserProvider);
-    final isLoading = authState.isLoading;
+    final isLoading = ref.watch(currentUserProvider).isLoading;
+    final connected = ref.watch(supabaseConnectedProvider);
+    final isOnline = ref.watch(isOnlineProvider);
+    final showOfflineMode = !isOnline || !connected;
 
     return Scaffold(
       body: Container(
@@ -188,20 +198,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: FadeTransition(
-                opacity: _fadeAnimation,
+                opacity: _fade,
                 child: SlideTransition(
-                  position: _slideAnimation,
+                  position: _slide,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 420),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _buildHeader(theme, isDark),
-                        const SizedBox(height: 40),
-                        _buildLoginCard(theme, isDark, isLoading),
-                        const SizedBox(height: 20),
-                        _buildOfflineSection(theme),
+                        _buildHeader(theme),
                         const SizedBox(height: 32),
+
+                        if (showOfflineMode) _buildOfflineBanner(theme),
+                        if (showOfflineMode) const SizedBox(height: 16),
+
+                        if (_hasLocalSession && showOfflineMode)
+                          _buildContinueOfflineCard(theme, isLoading),
+                        if (_hasLocalSession && showOfflineMode)
+                          const SizedBox(height: 16),
+
+                        _buildCard(theme, isDark, isLoading, connected && isOnline),
+                        const SizedBox(height: 12),
+
+                        // Toggle sign-in / sign-up
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _isSignUp
+                                  ? 'Already have an account? '
+                                  : "Don't have an account? ",
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _isSignUp = !_isSignUp),
+                              child: Text(
+                                _isSignUp ? 'Sign In' : 'Create Account',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        if (kDebugMode) ...[
+                          const SizedBox(height: 12),
+                          _buildDevLogin(),
+                        ],
+
+                        const SizedBox(height: 24),
                         _buildFooter(theme),
                       ],
                     ),
@@ -215,42 +262,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildHeader(ThemeData theme, bool isDark) {
+  Widget _buildHeader(ThemeData theme) {
     return Column(
       children: [
-        // Logo container
         Container(
-          width: 88,
-          height: 88,
+          width: 84,
+          height: 84,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [Color(0xFF3D5A80), Color(0xFF5C7A9E)],
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF3D5A80).withValues(alpha: 0.4),
-                blurRadius: 20,
+                color: const Color(0xFF3D5A80).withValues(alpha: 0.35),
+                blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
-          child: const Icon(Icons.factory_rounded, size: 44, color: Colors.white),
+          child: const Icon(Icons.factory_rounded, size: 42, color: Colors.white),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         Text(
           AppConstants.appName,
           style: theme.textTheme.headlineLarge?.copyWith(
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
-            color: theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
             color: theme.colorScheme.primaryContainer,
             borderRadius: BorderRadius.circular(20),
@@ -260,7 +305,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             style: theme.textTheme.labelMedium?.copyWith(
               color: theme.colorScheme.primary,
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
             ),
           ),
         ),
@@ -268,12 +312,88 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildLoginCard(ThemeData theme, bool isDark, bool isLoading) {
+  Widget _buildOfflineBanner(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_outlined, color: Colors.orange, size: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'No server connection — offline mode available',
+              style: TextStyle(
+                color: Colors.orange,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContinueOfflineCard(ThemeData theme, bool isLoading) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark
-            ? const Color(0xFF1E2329)
-            : Colors.white,
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.offline_bolt_outlined, color: Colors.green, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Previous session found',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'You can continue working offline. Data will sync when internet is available.',
+            style: TextStyle(
+              color: Colors.green.withValues(alpha: 0.8),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: isLoading ? null : _continueOffline,
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: const Text('Continue Offline'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.green,
+              minimumSize: const Size(double.infinity, 46),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(ThemeData theme, bool isDark, bool isLoading, bool connected) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2329) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isDark
@@ -283,38 +403,72 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withValues(alpha: 0.4)
-                : const Color(0xFF3D5A80).withValues(alpha: 0.08),
-            blurRadius: 30,
+                ? Colors.black.withValues(alpha: 0.35)
+                : const Color(0xFF3D5A80).withValues(alpha: 0.07),
+            blurRadius: 28,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Welcome back',
+              _isSignUp
+                  ? 'Create Account'
+                  : (connected ? 'Sign in' : 'Sign in when online'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Sign in to continue to your workspace',
+              _isSignUp
+                  ? 'Set up your workspace in seconds'
+                  : (connected
+                      ? 'Enter your credentials to continue'
+                      : 'Internet required for first-time login'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
 
-            // Email field
+            // Sign-up only fields
+            if (_isSignUp) ...[
+              TextFormField(
+                controller: _nameCtrl,
+                textInputAction: TextInputAction.next,
+                enabled: !isLoading,
+                decoration: InputDecoration(
+                  labelText: 'Your Name',
+                  prefixIcon: const Icon(Icons.person_outline),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _workspaceCtrl,
+                textInputAction: TextInputAction.next,
+                enabled: !isLoading,
+                decoration: InputDecoration(
+                  labelText: 'Company / Workspace Name',
+                  prefixIcon: const Icon(Icons.business_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Workspace name is required' : null,
+              ),
+              const SizedBox(height: 14),
+            ],
+
             TextFormField(
-              controller: _emailController,
+              controller: _emailCtrl,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               autocorrect: false,
@@ -324,115 +478,99 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 hintText: 'you@example.com',
                 prefixIcon: const Icon(Icons.email_outlined),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.4),
-                  ),
-                ),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Email is required';
-                if (!_isValidEmail(v.trim())) return 'Enter a valid email address';
+                if (!_validEmail(v.trim())) return 'Enter a valid email';
                 return null;
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Password field
             TextFormField(
-              controller: _passwordController,
-              obscureText: _obscurePassword,
+              controller: _passwordCtrl,
+              obscureText: _obscure,
               textInputAction: TextInputAction.done,
               enabled: !isLoading,
-              onFieldSubmitted: (_) => isLoading ? null : _login(),
+              onFieldSubmitted: (_) => isLoading ? null : _submit(),
               decoration: InputDecoration(
                 labelText: 'Password',
                 prefixIcon: const Icon(Icons.lock_outlined),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.4),
-                  ),
-                ),
                 suffixIcon: IconButton(
-                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
                   icon: Icon(
-                    _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
                   ),
-                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6) return 'Password must be at least 6 characters';
+                if (v.length < 6) return 'Minimum 6 characters';
                 return null;
               },
             ),
 
-            // Forgot password
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: (isLoading || _isResettingPassword) ? null : _forgotPassword,
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: _isResettingPassword
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        'Forgot Password?',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w500,
+            if (!_isSignUp)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: (isLoading || _isResetting) ? null : _forgotPassword,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: _isResetting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          'Forgot Password?',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
+                ),
               ),
-            ),
             const SizedBox(height: 8),
 
-            // Sign In button
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              child: FilledButton(
-                onPressed: isLoading ? null : _login,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  backgroundColor: theme.colorScheme.primary,
+            FilledButton(
+              onPressed: isLoading ? null : _submit,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: isLoading
-                    ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Sign In',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Icon(Icons.arrow_forward_rounded, size: 18),
-                        ],
-                      ),
               ),
+              child: isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _isSignUp ? 'Create Account' : 'Sign In',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 18),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -440,74 +578,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildOfflineSection(ThemeData theme) {
-    return Consumer(
-      builder: (context, ref, _) {
-        final connected = ref.watch(supabaseConnectedProvider);
-        if (connected) return const SizedBox.shrink();
-
-        return Column(
-          children: [
-            // Offline warning banner
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.cloud_off_outlined, color: Colors.orange, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Offline / Not Configured',
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Supabase is not configured for this build. Contact your administrator.',
-                          style: TextStyle(
-                            color: Colors.orange.withValues(alpha: 0.85),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Dev Login button — only in debug builds
-            if (kDebugMode) ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  ref.read(currentUserProvider.notifier).devLogin();
-                  // Router will auto-redirect via _AuthChangeNotifier
-                },
-                icon: const Icon(Icons.developer_mode_outlined, size: 18),
-                label: const Text('Dev Login (Debug Only)'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                  side: const BorderSide(color: Colors.orange),
-                  foregroundColor: Colors.orange,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ],
-          ],
-        );
-      },
+  Widget _buildDevLogin() {
+    return OutlinedButton.icon(
+      onPressed: () => ref.read(currentUserProvider.notifier).devLogin(),
+      icon: const Icon(Icons.developer_mode_outlined, size: 18),
+      label: const Text('Dev Login (Debug Only)'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 46),
+        side: const BorderSide(color: Colors.orange),
+        foregroundColor: Colors.orange,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
@@ -516,7 +597,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       '© ${DateTime.now().year} FactoryFlow · Secure Manufacturing ERP',
       textAlign: TextAlign.center,
       style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
       ),
     );
   }

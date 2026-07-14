@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../constants/app_constants.dart';
 import '../constants/stock_stages.dart';
 import '../database/database_service.dart';
 import '../network/sync_service.dart';
@@ -242,10 +241,11 @@ class StockLedgerService {
     required String refTable,
     required String refId,
   }) async {
+    final factoryId = _db.activeWorkspaceId;
     final ledgerId = _uuid.v4();
     final result = await _db.writeStockLedgerEntry(
       id: ledgerId,
-      factoryId: AppConstants.defaultFactoryId,
+      factoryId: factoryId,
       partId: partId,
       stage: stage,
       direction: direction,
@@ -260,7 +260,7 @@ class StockLedgerService {
         recordId: ledgerId,
         payload: {
           'id': ledgerId,
-          'factory_id': AppConstants.defaultFactoryId,
+          'factory_id': factoryId,
           'part_id': partId,
           'stage': stage.value,
           'direction': direction.value,

@@ -1,4 +1,5 @@
 enum UserRole {
+  owner('owner'),
   admin('Admin'),
   productionIncharge('Production Incharge'),
   store('Store'),
@@ -17,12 +18,12 @@ enum UserRole {
 
   bool get canCreateTransactions => this != UserRole.management;
 
-  bool get canManageMasters => this == UserRole.admin;
+  bool get canManageMasters => this == UserRole.admin || this == UserRole.owner;
 
-  bool get canApproveCorrections => this == UserRole.admin;
+  bool get canApproveCorrections => this == UserRole.admin || this == UserRole.owner;
 
   bool canAccessModule(String module) {
-    if (this == UserRole.admin) return true;
+    if (this == UserRole.admin || this == UserRole.owner) return true;
     if (this == UserRole.management) return false;
     switch (module) {
       case 'material_receive':

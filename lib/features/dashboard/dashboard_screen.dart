@@ -117,7 +117,7 @@ class DashboardScreen extends ConsumerWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 1.4,
+          childAspectRatio: 1.7,
           crossAxisSpacing: 0,
           mainAxisSpacing: 0,
         ),
@@ -151,7 +151,7 @@ class DashboardScreen extends ConsumerWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 1.4,
+          childAspectRatio: 1.7,
         ),
         itemCount: items.length,
         itemBuilder: (context, i) {

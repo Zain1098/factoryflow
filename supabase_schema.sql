@@ -309,6 +309,18 @@ CREATE TABLE IF NOT EXISTS audit_log (
   device TEXT
 );
 
+CREATE TABLE IF NOT EXISTS backup_records (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  factory_id UUID NOT NULL REFERENCES factories(id),
+  user_id UUID REFERENCES users(id),
+  source_table TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  data_json JSONB NOT NULL,
+  backup_reason TEXT,
+  backed_up_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sync_status TEXT DEFAULT 'pending'
+);
+
 -- ─── Indexes ──────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_ledger_part_stage ON stock_ledger(part_id, stage);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON stock_ledger(date);
@@ -318,6 +330,9 @@ CREATE INDEX IF NOT EXISTS idx_productions_date ON productions(date);
 CREATE INDEX IF NOT EXISTS idx_productions_factory ON productions(factory_id);
 CREATE INDEX IF NOT EXISTS idx_material_receives_date ON material_receives(date);
 CREATE INDEX IF NOT EXISTS idx_final_dispatches_date ON final_dispatches(date);
+CREATE INDEX IF NOT EXISTS idx_backup_records_user ON backup_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_backup_records_table ON backup_records(source_table);
+CREATE INDEX IF NOT EXISTS idx_backup_records_at ON backup_records(backed_up_at);
 
 -- ─── Row Level Security ───────────────────────────────────────
 ALTER TABLE factories ENABLE ROW LEVEL SECURITY;
@@ -344,6 +359,7 @@ ALTER TABLE final_dispatches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE correction_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backup_records ENABLE ROW LEVEL SECURITY;
 
 -- Helper function: get current user's factory_id
 CREATE OR REPLACE FUNCTION get_my_factory_id()
@@ -431,6 +447,30 @@ CREATE POLICY "correction_requests_write" ON correction_requests FOR ALL USING (
 
 CREATE POLICY "audit_log_read" ON audit_log FOR SELECT USING (factory_id = get_my_factory_id() AND get_my_role() = 'Admin');
 CREATE POLICY "audit_log_write" ON audit_log FOR INSERT WITH CHECK (factory_id = get_my_factory_id());
+
+CREATE POLICY "backup_records_admin_read" ON backup_records FOR SELECT
+  USING (factory_id = get_my_factory_id() AND get_my_role() = 'Admin');
+CREATE POLICY "backup_records_insert_own" ON backup_records FOR INSERT
+  WITH CHECK (factory_id = get_my_factory_id() AND user_id = auth.uid());
+CREATE POLICY "backup_records_update_own_sync" ON backup_records FOR UPDATE
+  USING (factory_id = get_my_factory_id() AND user_id = auth.uid())
+  WITH CHECK (factory_id = get_my_factory_id() AND user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION request_account_deletion(p_user_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  IF auth.uid() IS NULL OR p_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  UPDATE users
+  SET active = FALSE
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION request_account_deletion(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION request_account_deletion(UUID) TO authenticated;
 
 -- ─── Seed Data ────────────────────────────────────────────────
 -- Step 1: Insert factory

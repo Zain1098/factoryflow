@@ -38,13 +38,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = userAsync.value != null;
       final isLoading = userAsync.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
-      final isSplashRoute = state.matchedLocation == '/';
 
-      // Don't redirect while loading
+      // Don't redirect while loading initial session
       if (isLoading) return null;
 
-      // Not logged in → go to login (unless already there)
-      if (!isLoggedIn && !isLoginRoute && !isSplashRoute) return '/login';
+      // Not logged in → go to login
+      if (!isLoggedIn && !isLoginRoute) return '/login';
 
       // Logged in → skip login screen
       if (isLoggedIn && isLoginRoute) return '/dashboard';
@@ -170,7 +169,7 @@ class EntriesMenuScreen extends ConsumerWidget {
     ];
 
     if (role == null) return [];
-    if (role == UserRole.admin) return all;
+    if (role == UserRole.admin || role == UserRole.owner) return all;
     return all.where((e) => role.canAccessModule(e.module)).toList();
   }
 }

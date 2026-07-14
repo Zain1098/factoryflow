@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:uuid/uuid.dart';
 
-import '../constants/app_constants.dart';
 import '../constants/stock_stages.dart';
 
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
@@ -37,6 +37,26 @@ class DatabaseService {
 
   void _createTables() {
     final statements = [
+      '''CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT)''',
+      '''CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_user_id TEXT,
+        created_at TEXT,
+        active INTEGER DEFAULT 1,
+        sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS workspace_members (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'owner',
+        status TEXT NOT NULL DEFAULT 'active',
+        joined_at TEXT,
+        sync_status TEXT DEFAULT 'pending')''',
+      'CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace ON workspace_members(workspace_id)',
       '''CREATE TABLE IF NOT EXISTS parts (
         id TEXT PRIMARY KEY, factory_id TEXT, code TEXT, name TEXT,
         uom TEXT DEFAULT 'PCS', active INTEGER DEFAULT 1)''',
@@ -141,6 +161,19 @@ class DatabaseService {
         action TEXT, old_value_json TEXT, new_value_json TEXT,
         changed_by TEXT, changed_at TEXT, device TEXT,
         sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS backup_records (
+        id TEXT PRIMARY KEY,
+        factory_id TEXT,
+        user_id TEXT,
+        source_table TEXT NOT NULL,
+        source_record_id TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        backup_reason TEXT,
+        backed_up_at TEXT NOT NULL,
+        sync_status TEXT DEFAULT 'pending')''',
+      'CREATE INDEX IF NOT EXISTS idx_backup_user ON backup_records(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_backup_table ON backup_records(source_table)',
+      'CREATE INDEX IF NOT EXISTS idx_backup_at ON backup_records(backed_up_at)',
       // Indexes
       'CREATE INDEX IF NOT EXISTS idx_ledger_part_stage ON stock_ledger(part_id, stage)',
       'CREATE INDEX IF NOT EXISTS idx_ledger_date ON stock_ledger(date)',
@@ -149,7 +182,6 @@ class DatabaseService {
       'CREATE INDEX IF NOT EXISTS idx_productions_date ON productions(date)',
       'CREATE INDEX IF NOT EXISTS idx_dispatches_date ON final_dispatches(date)',
       'CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)',
-      'CREATE INDEX IF NOT EXISTS idx_sync_queue_due ON sync_queue(status, next_retry_at, created_at)',
       'CREATE INDEX IF NOT EXISTS idx_material_receives_part ON material_receives(part_id)',
       'CREATE INDEX IF NOT EXISTS idx_productions_part ON productions(part_id)',
       'CREATE INDEX IF NOT EXISTS idx_productions_machine ON productions(machine_id)',
@@ -196,6 +228,57 @@ class DatabaseService {
     if (!mrNames.contains('shortfall')) {
       db.execute('ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0');
     }
+  }
+
+  Future<void> setActiveWorkspaceId(String workspaceId) async {
+    db.execute(
+      'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+      ['active_workspace_id', workspaceId],
+    );
+  }
+
+  String get activeWorkspaceId {
+    final rows = db.select(
+      'SELECT value FROM app_settings WHERE key = ? LIMIT 1',
+      ['active_workspace_id'],
+    );
+    if (rows.isEmpty) return '';
+    return rows.first['value']?.toString() ?? '';
+  }
+
+  Future<void> upsertWorkspace({
+    required String id,
+    required String name,
+    required String ownerUserId,
+    String syncStatus = 'pending',
+  }) async {
+    await insertRecord('workspaces', {
+      'id': id,
+      'name': name,
+      'owner_user_id': ownerUserId,
+      'created_at': DateTime.now().toIso8601String(),
+      'active': 1,
+      'sync_status': syncStatus,
+    });
+  }
+
+  Future<void> upsertWorkspaceMember({
+    required String id,
+    required String workspaceId,
+    required String userId,
+    required String role,
+    String status = 'active',
+    String syncStatus = 'pending',
+  }) async {
+    await insertRecord('workspace_members', {
+      'id': id,
+      'workspace_id': workspaceId,
+      'user_id': userId,
+      'role': role,
+      'status': status,
+      'joined_at': DateTime.now().toIso8601String(),
+      'sync_status': syncStatus,
+    });
   }
 
   // ── Stock Ledger ──────────────────────────────────────────────────────────
@@ -305,51 +388,66 @@ class DatabaseService {
   // ── Master Data ───────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getActiveParts() async {
-    final result =
-        db.select('SELECT * FROM parts WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM parts WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getActiveMachines() async {
     final result = db.select(
-      'SELECT * FROM machines WHERE active = 1 ORDER BY sequence_order',
+      'SELECT * FROM machines WHERE active = 1 AND factory_id = ? ORDER BY sequence_order',
+      [activeWorkspaceId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getActiveSuppliers() async {
-    final result =
-        db.select('SELECT * FROM suppliers WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM suppliers WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getActiveVendors() async {
-    final result =
-        db.select('SELECT * FROM vendors WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM vendors WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getActiveCustomers() async {
-    final result =
-        db.select('SELECT * FROM customers WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM customers WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getActiveOperators() async {
-    final result =
-        db.select('SELECT * FROM operators WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM operators WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getVehicles() async {
     final result = db.select(
-        'SELECT * FROM vehicles WHERE active = 1 ORDER BY number_plate',);
+      'SELECT * FROM vehicles WHERE active = 1 AND factory_id = ? ORDER BY number_plate',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getDrivers() async {
-    final result =
-        db.select('SELECT * FROM drivers WHERE active = 1 ORDER BY name');
+    final result = db.select(
+      'SELECT * FROM drivers WHERE active = 1 AND factory_id = ? ORDER BY name',
+      [activeWorkspaceId],
+    );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
@@ -458,7 +556,7 @@ class DatabaseService {
       'old_value_json, new_value_json, changed_by, changed_at) VALUES (?,?,?,?,?,?,?,?,?)',
       [
         id,
-        AppConstants.defaultFactoryId,
+        activeWorkspaceId,
         tableName,
         recordId,
         action,
@@ -619,103 +717,92 @@ class DatabaseService {
     db.execute('UPDATE purchase_orders SET status = ? WHERE id = ?', [status, id]);
   }
 
-  // ── Seed Demo Data ────────────────────────────────────────────────────────
+  // ── Backup & Erase ────────────────────────────────────────────────────
 
-  Future<void> seedDemoData() async {
-    const factoryId = AppConstants.defaultFactoryId;
-    final parts = [
-      {
-        'id': 'part-001',
-        'factory_id': factoryId,
-        'code': 'V21',
-        'name': 'Part V21',
-        'uom': 'PCS',
-        'active': 1,
-      },
-      {
-        'id': 'part-002',
-        'factory_id': factoryId,
-        'code': 'V22',
-        'name': 'Part V22',
-        'uom': 'PCS',
-        'active': 1,
-      },
-    ];
-    // machine_code stores the batch letter — no more hardcoded switch statement
-    final machines = [
-      {
-        'id': 'mach-001',
-        'factory_id': factoryId,
-        'name': 'Bending',
-        'machine_code': 'B',
-        'sequence_order': 1,
-        'active': 1,
-      },
-      {
-        'id': 'mach-002',
-        'factory_id': factoryId,
-        'name': 'Notching',
-        'machine_code': 'N',
-        'sequence_order': 2,
-        'active': 1,
-      },
-      {
-        'id': 'mach-003',
-        'factory_id': factoryId,
-        'name': 'End Forming',
-        'machine_code': 'E',
-        'sequence_order': 3,
-        'active': 1,
-      },
-    ];
-    for (final part in parts) {
-      await insertRecord('parts', part);
+  /// Backs up every row of [table] into backup_records before erasing.
+  Future<void> backupTable({
+    required String table,
+    required String userId,
+    required String factoryId,
+    required String reason,
+  }) async {
+    final rows = db.select('SELECT * FROM $table');
+    final now = DateTime.now().toIso8601String();
+    for (final row in rows) {
+      final id = const Uuid().v4();
+      db.execute(
+        'INSERT OR IGNORE INTO backup_records '
+        '(id, factory_id, user_id, source_table, source_record_id, data_json, backup_reason, backed_up_at, sync_status) '
+        'VALUES (?,?,?,?,?,?,?,?,?)',
+        [
+          id, factoryId, userId, table,
+          row['id']?.toString() ?? id,
+          jsonEncode(Map<String, dynamic>.from(row)),
+          reason, now, 'pending',
+        ],
+      );
     }
-    for (final machine in machines) {
-      await insertRecord('machines', machine);
-    }
-    await insertRecord('suppliers', {
-      'id': 'sup-001',
-      'factory_id': factoryId,
-      'name': 'Steel Supplier',
-      'active': 1,
-    });
-    await insertRecord('vendors', {
-      'id': 'ven-001',
-      'factory_id': factoryId,
-      'name': 'Faco',
-      'active': 1,
-    });
-    await insertRecord('customers', {
-      'id': 'cust-001',
-      'factory_id': factoryId,
-      'name': 'Thal',
-      'is_default': 1,
-      'active': 1,
-    });
-    await insertRecord('operators', {
-      'id': 'op-001',
-      'factory_id': factoryId,
-      'name': 'Operator 1',
-      'active': 1,
-    });
-    await insertRecord('operators', {
-      'id': 'op-002',
-      'factory_id': factoryId,
-      'name': 'Operator 2',
-      'active': 1,
-    });
-    // Seed daily targets: 400 PCS/day for V21 (Mon–Sat = 1–6)
-    for (var day = 1; day <= 6; day++) {
-      await insertRecord('target_master', {
-        'id': 'target-v21-$day',
-        'factory_id': factoryId,
-        'part_id': 'part-001',
-        'day_of_week': day,
-        'target_qty': 400,
-        'effective_from': '2025-01-01',
-      });
-    }
+  }
+
+  Future<void> createBackupRecord({
+    required String sourceTable,
+    required String sourceRecordId,
+    required String userId,
+    required String factoryId,
+    required Map<String, dynamic> data,
+    required String reason,
+  }) async {
+    db.execute(
+      'INSERT OR IGNORE INTO backup_records '
+      '(id, factory_id, user_id, source_table, source_record_id, data_json, backup_reason, backed_up_at, sync_status) '
+      'VALUES (?,?,?,?,?,?,?,?,?)',
+      [
+        const Uuid().v4(),
+        factoryId,
+        userId,
+        sourceTable,
+        sourceRecordId,
+        jsonEncode(data),
+        reason,
+        DateTime.now().toIso8601String(),
+        'pending',
+      ],
+    );
+  }
+
+  /// Erases all rows from [table]. Call backupTable first.
+  void eraseTable(String table) {
+    db.execute('DELETE FROM $table');
+  }
+
+  /// Backs up then erases a single record by id.
+  Future<void> backupAndDeleteRecord({
+    required String table,
+    required String recordId,
+    required String userId,
+    required String factoryId,
+    required String reason,
+  }) async {
+    final rows = db.select('SELECT * FROM $table WHERE id = ?', [recordId]);
+    if (rows.isEmpty) return;
+    final now = DateTime.now().toIso8601String();
+    final backupId = const Uuid().v4();
+    db.execute(
+      'INSERT OR IGNORE INTO backup_records '
+      '(id, factory_id, user_id, source_table, source_record_id, data_json, backup_reason, backed_up_at, sync_status) '
+      'VALUES (?,?,?,?,?,?,?,?,?)',
+      [
+        backupId, factoryId, userId, table, recordId,
+        jsonEncode(Map<String, dynamic>.from(rows.first)),
+        reason, now, 'pending',
+      ],
+    );
+    db.execute('DELETE FROM $table WHERE id = ?', [recordId]);
+  }
+
+  Future<int> countTableRows(String table) async {
+    final r = db.select('SELECT COUNT(*) as cnt FROM $table');
+    return r.first['cnt'] as int;
   }
 
   void dispose() {

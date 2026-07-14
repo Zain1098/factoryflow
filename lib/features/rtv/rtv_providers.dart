@@ -43,7 +43,7 @@ class RtvRepository {
     );
     final currentCycles = cycleRows.first['cnt'] as int;
     if (currentCycles >= AppConstants.rtvMaxCycles) {
-      return const RtvResult(
+      return RtvResult(
         success: false,
         error: 'RTV cycle cap (${AppConstants.rtvMaxCycles}) reached. Escalated — Awaiting Admin Decision.',
         isEscalated: true,
@@ -77,7 +77,7 @@ class RtvRepository {
 
     final record = {
       'id': id,
-      'factory_id': AppConstants.defaultFactoryId,
+      'factory_id': _db.activeWorkspaceId,
       'batch_number': batchNumber,
       'cycle_number': cycleNumber,
       'date': dateStr,

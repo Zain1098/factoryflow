@@ -1,6 +1,8 @@
 // Web stub — sqlite3/dart:ffi not available on web.
 // Uses in-memory storage so the app can run on Chrome for UI testing.
 
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/stock_stages.dart';
 
@@ -129,11 +131,81 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> searchRecords({
     String? batchNumber,
     String? partId,
+    String? challanNumber,
     String? dateFrom,
     String? dateTo,
     int limit = 50,
   }) async =>
       [];
+
+  Future<void> backupTable({
+    required String table,
+    required String userId,
+    required String factoryId,
+    required String reason,
+  }) async {
+    final rows = List<Map<String, dynamic>>.from(_tables[table] ?? const []);
+    for (final row in rows) {
+      await createBackupRecord(
+        sourceTable: table,
+        sourceRecordId: row['id']?.toString() ??
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        userId: userId,
+        factoryId: factoryId,
+        data: row,
+        reason: reason,
+      );
+    }
+  }
+
+  Future<void> createBackupRecord({
+    required String sourceTable,
+    required String sourceRecordId,
+    required String userId,
+    required String factoryId,
+    required Map<String, dynamic> data,
+    required String reason,
+  }) async {
+    final backups = _tables.putIfAbsent('backup_records', () => []);
+    backups.add({
+      'id': 'backup-${DateTime.now().microsecondsSinceEpoch}',
+      'factory_id': factoryId,
+      'user_id': userId,
+      'source_table': sourceTable,
+      'source_record_id': sourceRecordId,
+      'data_json': jsonEncode(data),
+      'backup_reason': reason,
+      'backed_up_at': DateTime.now().toIso8601String(),
+      'sync_status': 'pending',
+    });
+  }
+
+  void eraseTable(String table) {
+    _tables[table] = [];
+  }
+
+  Future<void> backupAndDeleteRecord({
+    required String table,
+    required String recordId,
+    required String userId,
+    required String factoryId,
+    required String reason,
+  }) async {
+    final rows = _tables[table] ?? [];
+    final index = rows.indexWhere((row) => row['id'] == recordId);
+    if (index < 0) return;
+    await createBackupRecord(
+      sourceTable: table,
+      sourceRecordId: recordId,
+      userId: userId,
+      factoryId: factoryId,
+      data: rows[index],
+      reason: reason,
+    );
+    rows.removeAt(index);
+  }
+
+  Future<int> countTableRows(String table) async => _tables[table]?.length ?? 0;
 
   Future<void> seedDemoData() async {
     const factoryId = '00000000-0000-0000-0000-000000000001';

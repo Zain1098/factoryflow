@@ -18,13 +18,24 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 /// Polls pending sync count every 30 s — only when provider is alive.
 final pendingSyncCountProvider = StreamProvider<int>((ref) {
   final db = ref.watch(databaseServiceProvider);
-  return Stream.periodic(const Duration(seconds: 30), (_) => 0)
+  return Stream.periodic(const Duration(seconds: 15), (_) => 0)
       .asyncExpand((_) => Stream.fromFuture(db.countPendingSync()))
       .asBroadcastStream();
 });
 
-final connectivityProvider = StreamProvider<List<ConnectivityResult>>((ref) {
-  return Connectivity().onConnectivityChanged;
+/// Emits current connectivity immediately, then streams changes.
+final connectivityProvider =
+    StreamProvider<List<ConnectivityResult>>((ref) async* {
+  final connectivity = Connectivity();
+  yield await connectivity.checkConnectivity();
+  yield* connectivity.onConnectivityChanged;
+});
+
+/// Simple bool: true = at least one non-none interface available.
+final isOnlineProvider = Provider<bool>((ref) {
+  final conn = ref.watch(connectivityProvider).value;
+  if (conn == null) return true; // assume online until proven otherwise
+  return !conn.contains(ConnectivityResult.none);
 });
 
 /// Columns that are GENERATED in Supabase and must be stripped before upsert.
@@ -36,19 +47,29 @@ class SyncService {
 
   final DatabaseService _db;
   Timer? _syncTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
 
   void startPeriodicSync() {
-    _syncTimer?.cancel();
+    if (_syncTimer != null) return;
     _syncTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => syncPending(),
     );
+    _connectivitySubscription =
+        Connectivity().onConnectivityChanged.listen((results) {
+      if (!results.contains(ConnectivityResult.none)) {
+        unawaited(syncPending());
+      }
+    });
+    unawaited(syncPending());
   }
 
   void stopPeriodicSync() {
     _syncTimer?.cancel();
     _syncTimer = null;
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
   }
 
   Future<bool> isOnline() async {
@@ -86,7 +107,16 @@ class SyncService {
             ..remove('sync_status');
 
           if (operation == 'insert' || operation == 'update') {
-            await client.from(tableName).upsert(payload);
+            await client
+                .from(tableName)
+                .upsert(payload)
+                .timeout(const Duration(seconds: 12));
+          } else if (operation == 'delete') {
+            await client
+                .from(tableName)
+                .delete()
+                .eq('id', recordId)
+                .timeout(const Duration(seconds: 12));
           } else if (operation == 'ledger') {
             final result = await client.rpc(
               'write_stock_ledger_entry',
@@ -100,7 +130,7 @@ class SyncService {
                 'p_ref_table': payload['ref_table'],
                 'p_ref_id': payload['ref_id'],
               },
-            );
+            ).timeout(const Duration(seconds: 12));
             if (result is Map && result['success'] == false) {
               await _db.markRecordConflict(tableName, recordId);
               await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
@@ -160,8 +190,12 @@ class SyncService {
       if (failed > 0) {
         await NotificationService.instance.showSyncFailure(failed);
       }
-    } catch (_) {
-      // Supabase not configured — keep items pending silently
+    } catch (e) {
+      // Only swallow if Supabase is not configured at all
+      if (!e.toString().contains('not initialized') &&
+          !e.toString().contains('No Supabase')) {
+        rethrow;
+      }
     } finally {
       _isSyncing = false;
     }
@@ -195,9 +229,13 @@ class SyncService {
     final message = error
         .toString()
         .replaceAll(
-            RegExp(r'(?i)(apikey|authorization|bearer)\\s*[:=]\\s*\\S+'),
-            '[redacted]',)
-        .replaceAll(RegExp(r'eyJ[a-zA-Z0-9_\\-\.]+'), '[redacted]');
+          RegExp(
+            r'(apikey|authorization|bearer)\s*[:=]\s*\S+',
+            caseSensitive: false,
+          ),
+          '[redacted]',
+        )
+        .replaceAll(RegExp(r'eyJ[a-zA-Z0-9_.-]+'), '[redacted]');
     return message.length <= 500 ? message : '${message.substring(0, 500)}…';
   }
 

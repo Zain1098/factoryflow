@@ -22,6 +22,24 @@ AS $$
   SELECT role FROM public.users WHERE id = auth.uid();
 $$;
 
+CREATE TABLE IF NOT EXISTS public.backup_records (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  factory_id uuid NOT NULL REFERENCES public.factories(id),
+  user_id uuid REFERENCES public.users(id),
+  source_table text NOT NULL,
+  source_record_id text NOT NULL,
+  data_json jsonb NOT NULL,
+  backup_reason text,
+  backed_up_at timestamptz NOT NULL DEFAULT now(),
+  sync_status text DEFAULT 'pending'
+);
+
+CREATE INDEX IF NOT EXISTS idx_backup_records_user ON public.backup_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_backup_records_table ON public.backup_records(source_table);
+CREATE INDEX IF NOT EXISTS idx_backup_records_at ON public.backup_records(backed_up_at);
+
+ALTER TABLE public.backup_records ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "users_write" ON public.users;
 DROP POLICY IF EXISTS "parts_write" ON public.parts;
 DROP POLICY IF EXISTS "machines_write" ON public.machines;
@@ -33,6 +51,9 @@ DROP POLICY IF EXISTS "vehicles_write" ON public.vehicles;
 DROP POLICY IF EXISTS "drivers_write" ON public.drivers;
 DROP POLICY IF EXISTS "target_write" ON public.target_master;
 DROP POLICY IF EXISTS "stock_ledger_write" ON public.stock_ledger;
+DROP POLICY IF EXISTS "backup_records_admin_read" ON public.backup_records;
+DROP POLICY IF EXISTS "backup_records_insert_own" ON public.backup_records;
+DROP POLICY IF EXISTS "backup_records_update_own_sync" ON public.backup_records;
 
 CREATE POLICY "users_write" ON public.users FOR ALL
   USING (factory_id = public.get_my_factory_id() AND public.get_my_role() = 'Admin')
@@ -64,6 +85,33 @@ CREATE POLICY "drivers_write" ON public.drivers FOR ALL
 CREATE POLICY "target_write" ON public.target_master FOR ALL
   USING (factory_id = public.get_my_factory_id() AND public.get_my_role() = 'Admin')
   WITH CHECK (factory_id = public.get_my_factory_id() AND public.get_my_role() = 'Admin');
+CREATE POLICY "backup_records_admin_read" ON public.backup_records FOR SELECT
+  USING (factory_id = public.get_my_factory_id() AND public.get_my_role() = 'Admin');
+CREATE POLICY "backup_records_insert_own" ON public.backup_records FOR INSERT
+  WITH CHECK (factory_id = public.get_my_factory_id() AND user_id = auth.uid());
+CREATE POLICY "backup_records_update_own_sync" ON public.backup_records FOR UPDATE
+  USING (factory_id = public.get_my_factory_id() AND user_id = auth.uid())
+  WITH CHECK (factory_id = public.get_my_factory_id() AND user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION public.request_account_deletion(p_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL OR p_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  UPDATE public.users
+  SET active = false
+  WHERE id = p_user_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.request_account_deletion(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.request_account_deletion(uuid) TO authenticated;
 
 -- Ledger rows are append-only and may only be written through the function
 -- below. The function serializes balance changes per factory/part/stage.

@@ -1,23 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class AppShell extends StatelessWidget {
+import '../network/sync_service.dart';
+
+class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isOnline = ref.watch(isOnlineProvider);
+    final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
+
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          if (!isOnline)
+            MaterialBanner(
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
+              leading: const Icon(Icons.cloud_off_outlined, color: Colors.orange),
+              content: Text(
+                pendingSync > 0
+                    ? 'Offline — $pendingSync record(s) will sync when connected.'
+                    : 'Offline mode — all saved data is available.',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              actions: const [SizedBox.shrink()],
+            ),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _calculateIndex(context),
         onDestinationSelected: (index) => _onTap(context, index),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
-          NavigationDestination(icon: Icon(Icons.edit_note_outlined), selectedIcon: Icon(Icons.edit_note), label: 'Entries'),
+          NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard),
+              label: 'Dashboard'),
+          NavigationDestination(
+              icon: Icon(Icons.edit_note_outlined),
+              selectedIcon: Icon(Icons.edit_note),
+              label: 'Entries'),
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          NavigationDestination(icon: Icon(Icons.assessment_outlined), selectedIcon: Icon(Icons.assessment), label: 'Reports'),
+          NavigationDestination(
+              icon: Icon(Icons.assessment_outlined),
+              selectedIcon: Icon(Icons.assessment),
+              label: 'Reports'),
           NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],
       ),
@@ -35,9 +67,16 @@ class AppShell extends StatelessWidget {
 
   bool _isEntryRoute(String location) {
     const entryRoutes = [
-      '/entries', '/material-receive', '/production', '/machine-downtime',
-      '/bp-inspection', '/dispatch-faco', '/receive-faco', '/ap-inspection',
-      '/rtv', '/final-dispatch',
+      '/entries',
+      '/material-receive',
+      '/production',
+      '/machine-downtime',
+      '/bp-inspection',
+      '/dispatch-faco',
+      '/receive-faco',
+      '/ap-inspection',
+      '/rtv',
+      '/final-dispatch',
     ];
     return entryRoutes.any(location.startsWith);
   }

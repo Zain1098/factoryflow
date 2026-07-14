@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../core/database/database_service.dart';
 import '../../core/models/app_user.dart';
 import '../../core/constants/user_roles.dart';
 import '../../core/network/sync_service.dart';
@@ -82,7 +84,14 @@ class AuthRepository {
     final userId = response.user?.id;
     if (userId == null) return null;
     final user = await _fetchAppUser(client, userId);
-    if (user != null) await _saveLocalSession(user);
+    if (user != null && !user.active) {
+      await client.auth.signOut();
+      await _clearLocalSession();
+      throw Exception('This account is no longer active.');
+    }
+    if (user != null) {
+      await _saveLocalSession(user);
+    }
     return user;
   }
 
@@ -103,6 +112,55 @@ class AuthRepository {
     }
 
     return local;
+  }
+
+  /// Sign up: creates Supabase auth user, calls RPC to create workspace+profile.
+  Future<AppUser> signUp({
+    required String email,
+    required String password,
+    required String profileName,
+    required String workspaceName,
+    required DatabaseService db,
+  }) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+
+    await client.auth.signUp(email: email, password: password);
+
+    // RPC creates factories + users + workspace_members rows
+    final result = await client.rpc('create_user_workspace', params: {
+      'p_profile_name': profileName,
+      'p_workspace_name': workspaceName,
+    }) as Map<String, dynamic>;
+
+    final workspaceId = result['workspace_id'] as String;
+    final userId = result['user_id'] as String;
+
+    // Persist workspace locally
+    await db.upsertWorkspace(
+      id: workspaceId,
+      name: workspaceName,
+      ownerUserId: userId,
+      syncStatus: 'synced',
+    );
+    await db.upsertWorkspaceMember(
+      id: const Uuid().v4(),
+      workspaceId: workspaceId,
+      userId: userId,
+      role: 'owner',
+      syncStatus: 'synced',
+    );
+    await db.setActiveWorkspaceId(workspaceId);
+
+    final user = AppUser(
+      id: userId,
+      factoryId: workspaceId,
+      name: profileName,
+      email: email,
+      role: UserRole.owner,
+    );
+    await _saveLocalSession(user);
+    return user;
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
@@ -148,7 +206,32 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
       final user = await ref
           .read(authRepositoryProvider)
           .signIn(email: email, password: password);
-      if (user != null) _onLoginSuccess();
+      if (user != null) {
+        // Ensure activeWorkspaceId is set on every login (new device support)
+        await ref.read(databaseServiceProvider).setActiveWorkspaceId(user.factoryId);
+        _onLoginSuccess();
+      }
+      return user;
+    });
+  }
+
+  /// Sign up new user + create workspace.
+  Future<void> signUp({
+    required String email,
+    required String password,
+    required String profileName,
+    required String workspaceName,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final user = await ref.read(authRepositoryProvider).signUp(
+            email: email,
+            password: password,
+            profileName: profileName,
+            workspaceName: workspaceName,
+            db: ref.read(databaseServiceProvider),
+          );
+      _onLoginSuccess();
       return user;
     });
   }
@@ -164,12 +247,21 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
 
   void _onLoginSuccess() {
     ref.read(syncServiceProvider).startPeriodicSync();
-    ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase();
+    // Sync master data only if online — don't block or fail offline users
+    _syncMasterDataIfOnline();
   }
 
   void _onSessionRestored() {
-    // Start sync in background — won't block UI
     ref.read(syncServiceProvider).startPeriodicSync();
+    _syncMasterDataIfOnline();
+  }
+
+  void _syncMasterDataIfOnline() {
+    ref.read(syncServiceProvider).isOnline().then((online) {
+      if (online) {
+        ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase();
+      }
+    }).catchError((_) {});
   }
 
   /// Dev-only bypass — debug builds only.
