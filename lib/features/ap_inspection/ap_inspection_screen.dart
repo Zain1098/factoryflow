@@ -62,7 +62,9 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   void dispose() {
     _tabController.dispose();
     _batchCtrl.dispose();
-    for (final e in _entries) e.dispose();
+    for (final e in _entries) {
+      e.dispose();
+    }
     super.dispose();
   }
 
@@ -72,7 +74,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     setState(() => _entries.add(_ApPartEntry(
       partId: id,
       partName: '${part['code']} – ${part['name']}',
-    )));
+    ),),);
   }
 
   void _removeEntry(int idx) {
@@ -141,7 +143,9 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
 
   void _reset() {
     _batchCtrl.clear();
-    for (final e in _entries) e.dispose();
+    for (final e in _entries) {
+      e.dispose();
+    }
     setState(() {
       _entries.clear();
       _rejectReason = null;
@@ -200,7 +204,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             value: _rejectReason,
             items: kApRejectReasons.map((r) => DropdownMenuItem(
               value: r, child: Text(r),
-            )).toList(),
+            ),).toList(),
             onChanged: (v) => setState(() => _rejectReason = v),
           ),
           const SizedBox(height: 20),
@@ -293,14 +297,14 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 child: const Icon(Icons.verified, color: Colors.green, size: 20),
               ),
               title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text('✓$approved  ✗$rejected',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: const TextStyle(fontWeight: FontWeight.bold),),
                   if (rtv > 0)
                     Text(
                       'RTV $rtv',
@@ -383,7 +387,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
               children: [
                 Expanded(
                   child: Text(e.partName,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18, color: Colors.red),
@@ -560,12 +564,12 @@ class _ApRejectedStockTab extends ConsumerWidget {
                         Text(
                           '${totalQty.toInt()} PCS pending action',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
                         ),
                         Text(
                           'Scrap (write off) or Send to Faco vendor',
                           style: TextStyle(
-                              fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                              fontSize: 12, color: theme.colorScheme.onSurfaceVariant,),
                         ),
                       ],
                     ),
@@ -688,7 +692,7 @@ class _ApRejectedCardState extends ConsumerState<_ApRejectedCard> {
                 items: vendors.map((v) => DropdownMenuItem(
                   value: v['id'] as String,
                   child: Text(v['name'] as String),
-                )).toList(),
+                ),).toList(),
                 onChanged: (v) => setS(() => selectedVendorId = v),
               ),
               const SizedBox(height: 12),
@@ -740,7 +744,7 @@ class _ApRejectedCardState extends ConsumerState<_ApRejectedCard> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Sent to Faco — stock moved to At Faco'),
-            backgroundColor: Colors.green),
+            backgroundColor: Colors.green,),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -771,7 +775,7 @@ class _ApRejectedCardState extends ConsumerState<_ApRejectedCard> {
                   ),
                   child: Text(widget.partCode,
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.red, fontSize: 12)),
+                          fontWeight: FontWeight.bold, color: Colors.red, fontSize: 12,),),
                 ),
                 const SizedBox(width: 8),
                 Expanded(child: Text(widget.partName, style: const TextStyle(fontWeight: FontWeight.w600))),

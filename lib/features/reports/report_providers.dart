@@ -684,7 +684,7 @@ final holdMaterialReportProvider =
     LEFT JOIN machines m ON m.id = bi.machine_id
     WHERE bi.date BETWEEN ? AND ?
     ORDER BY bi.date DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   final bpHoldList = bpRows.map((r) {
     return BpHoldRow(
@@ -705,7 +705,7 @@ final holdMaterialReportProvider =
     LEFT JOIN vendors v ON v.id = r.vendor_id
     WHERE r.status != 'received' AND r.date BETWEEN ? AND ?
     ORDER BY r.date DESC
-  ''', [range.fromStr, range.toStr]);
+  ''', [range.fromStr, range.toStr],);
 
   final rtvHoldList = rtvRows.map((r) {
     final rtvDateStr = r['date'] as String;

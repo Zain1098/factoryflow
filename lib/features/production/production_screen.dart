@@ -354,7 +354,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                                     padding: EdgeInsets.zero,
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
-                                  ))
+                                  ),)
                               .toList(),
                         ),
                         const SizedBox(height: 6),
@@ -585,7 +585,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                     ),
                     const SizedBox(height: 6),
                     Text('${w['part_code'] ?? ''} – ${w['part_name'] ?? ''} · ${w['date'] ?? ''}',
-                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),),
                     const SizedBox(height: 8),
                     // Done machines
                     Wrap(
@@ -598,7 +598,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                           padding: EdgeInsets.zero,
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           visualDensity: VisualDensity.compact,
-                        )),
+                        ),),
                         ...missingIds.map((id) => Chip(
                           avatar: const Icon(Icons.pending_outlined, size: 14, color: Colors.orange),
                           label: Text(machineNameById(id), style: const TextStyle(fontSize: 11)),
@@ -606,7 +606,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                           padding: EdgeInsets.zero,
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           visualDensity: VisualDensity.compact,
-                        )),
+                        ),),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -742,7 +742,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       items: operators.map((o) => DropdownMenuItem(
                         value: o['id'] as String,
                         child: Text(o['name'] as String),
-                      )).toList(),
+                      ),).toList(),
                       onChanged: (v) {
                         if (v == null) return;
                         final match = operators.firstWhere((o) => o['id'] == v);
@@ -797,7 +797,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       items: kMachineStatuses.map((s) => DropdownMenuItem(
                         value: s,
                         child: Text(s),
-                      )).toList(),
+                      ),).toList(),
                       onChanged: (v) => setDialogState(() => localStatus = v ?? 'Running'),
                     ),
                     const SizedBox(height: 12),
@@ -823,7 +823,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       children: [50, 100, 200, 500].map((val) => ActionChip(
                         label: Text('+$val'),
                         onPressed: () => quickAddProd(val),
-                      )).toList(),
+                      ),).toList(),
                     ),
                     const SizedBox(height: 12),
 
@@ -848,7 +848,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       children: [1, 5, 10, 20].map((val) => ActionChip(
                         label: Text('+$val'),
                         onPressed: () => quickAddReject(val),
-                      )).toList(),
+                      ),).toList(),
                     ),
                     const SizedBox(height: 12),
 

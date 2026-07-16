@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
-import '../../core/services/stock_ledger_service.dart';
 
 class DashboardMachineStatus {
   const DashboardMachineStatus({
@@ -174,7 +173,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
       name: mName,
       status: status,
       todayQty: mQty,
-    ));
+    ),);
   }
 
   final totalMachines = machineStatuses.length;

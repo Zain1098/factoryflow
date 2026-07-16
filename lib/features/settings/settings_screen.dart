@@ -10,9 +10,39 @@ import '../../core/services/data_management_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
+import '../auth/account_settings_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  /// Builds avatar widget with network image if available, else first-letter fallback
+  static Widget _buildAvatar(BuildContext context, AppUser user) {
+    final theme = Theme.of(context);
+    if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 22,
+        backgroundColor: theme.colorScheme.primaryContainer,
+        child: ClipOval(
+          child: Image.network(
+            user.avatarUrl!,
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) =>
+                Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
+          ),
+        ),
+      );
+    }
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: theme.colorScheme.primaryContainer,
+      child: Text(
+        user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,11 +56,16 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           if (user != null)
             ListTile(
-              leading: CircleAvatar(
-                child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
-              ),
+              leading: _buildAvatar(context, user),
               title: Text(user.name),
               subtitle: Text('${user.role.value} · ${user.email}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const AccountSettingsScreen(),
+                ),
+              ),
             ),
           const Divider(),
           ListTile(

@@ -73,4 +73,4 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
 
 final productionFlowProvider =
     NotifierProvider<ProductionFlowNotifier, ProductionFlowConfig>(
-        ProductionFlowNotifier.new);
+        ProductionFlowNotifier.new,);

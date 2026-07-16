@@ -7,9 +7,7 @@ import 'core/database/database_service.dart';
 import 'core/router/app_router.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
-
-/// True only when Supabase SDK was successfully initialized at startup.
-final supabaseConnectedProvider = Provider<bool>((_) => false);
+import 'features/auth/auth_providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

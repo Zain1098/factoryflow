@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/network/sync_service.dart';
-import '../../main.dart';
 import 'auth_providers.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -87,6 +86,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    await ref.read(currentUserProvider.notifier).signInWithGoogle();
+    if (!mounted) return;
+    final s = ref.read(currentUserProvider);
+    if (s.hasError) _showError(_friendlyError(s.error));
+  }
+
   Future<void> _continueOffline() async {
     await ref.read(currentUserProvider.notifier).continueOffline();
   }
@@ -125,6 +131,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         msg.contains('SocketException') ||
         msg.contains('Failed host lookup')) {
       return 'No internet connection.';
+    }
+    if (msg.contains('canceled') || msg.contains('cancel')) {
+      return 'Google sign-in was canceled.';
     }
     return _isSignUp ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.';
   }
@@ -219,6 +228,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         _buildCard(theme, isDark, isLoading, connected && isOnline),
                         const SizedBox(height: 12),
 
+                        // Divider + Google button
+                        if (!_isSignUp) ...[
+                          _buildDividerWithText(theme, 'or'),
+                          const SizedBox(height: 12),
+                          _buildGoogleButton(theme, isLoading),
+                        ],
+                        const SizedBox(height: 12),
+
                         // Toggle sign-in / sign-up
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -256,6 +273,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDividerWithText(ThemeData theme, String text) {
+    return Row(
+      children: [
+        Expanded(child: Divider(color: theme.dividerColor)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Expanded(child: Divider(color: theme.dividerColor)),
+      ],
+    );
+  }
+
+  Widget _buildGoogleButton(ThemeData theme, bool isLoading) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: isLoading ? null : _signInWithGoogle,
+        icon: Image.network(
+          'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+          height: 20,
+          width: 20,
+          errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata, size: 24),
+        ),
+        label: const Text('Continue with Google'),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(double.infinity, 50),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          side: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.4),
           ),
         ),
       ),

@@ -259,7 +259,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                     items: list.map((b) => DropdownMenuItem(
                       value: b['batch_number'] as String,
                       child: Text('${b['batch_number']} (${b['part_code']})'),
-                    )).toList(),
+                    ),).toList(),
                     onChanged: (v) {
                       if (v == null) return;
                       final match = list.firstWhere((b) => b['batch_number'] == v);
@@ -301,7 +301,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                     ),
                     child: Text(part != null && part.isNotEmpty
                         ? '${part['code']} – ${part['name']}'
-                        : 'Select inspected batch first'),
+                        : 'Select inspected batch first',),
                   );
                 },
               )
