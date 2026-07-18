@@ -177,9 +177,23 @@ class DatabaseService {
         backup_reason TEXT,
         backed_up_at TEXT NOT NULL,
         sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS stock_adjustments (
+        id TEXT PRIMARY KEY,
+        factory_id TEXT,
+        user_id TEXT,
+        part_id TEXT,
+        stage TEXT,
+        previous_qty REAL,
+        adjusted_qty REAL,
+        new_qty REAL,
+        remarks TEXT,
+        created_at TEXT,
+        sync_status TEXT DEFAULT 'pending')''',
       'CREATE INDEX IF NOT EXISTS idx_backup_user ON backup_records(user_id)',
       'CREATE INDEX IF NOT EXISTS idx_backup_table ON backup_records(source_table)',
       'CREATE INDEX IF NOT EXISTS idx_backup_at ON backup_records(backed_up_at)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_adj_part ON stock_adjustments(part_id)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_adj_created ON stock_adjustments(created_at)',
       // Indexes
       'CREATE INDEX IF NOT EXISTS idx_ledger_part_stage ON stock_ledger(part_id, stage)',
       'CREATE INDEX IF NOT EXISTS idx_ledger_date ON stock_ledger(date)',
@@ -819,6 +833,29 @@ class DatabaseService {
       ],
     );
     db.execute('DELETE FROM $table WHERE id = ?', [recordId]);
+  }
+
+  // ── Stock Adjustments ─────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getStockAdjustments({
+    String? partId,
+    int limit = 100,
+  }) async {
+    final where = partId != null ? 'WHERE sa.part_id = ?' : '';
+    final params = partId != null ? [partId, limit] : [limit];
+    final result = db.select(
+      '''SELECT sa.*, p.name as part_name, p.code as part_code
+         FROM stock_adjustments sa
+         LEFT JOIN parts p ON p.id = sa.part_id
+         $where
+         ORDER BY sa.created_at DESC LIMIT ?''',
+      params,
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<void> insertStockAdjustment(Map<String, dynamic> data) async {
+    await insertRecord('stock_adjustments', data);
   }
 
   Future<int> countTableRows(String table) async {

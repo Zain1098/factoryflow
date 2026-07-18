@@ -5,12 +5,14 @@
 -- ============================================================
 
 -- ─── Extensions ──────────────────────────────────────────────
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- gen_random_uuid() is built into PostgreSQL 13+ (no extension needed).
+-- uuid-ossp kept as optional fallback only.
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ─── Master Tables ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS factories (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   address TEXT,
   timezone TEXT DEFAULT 'Asia/Karachi',
@@ -29,14 +31,14 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS operators (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   active BOOLEAN DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS parts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   code TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -45,7 +47,7 @@ CREATE TABLE IF NOT EXISTS parts (
 );
 
 CREATE TABLE IF NOT EXISTS machines (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   sequence_order INTEGER NOT NULL,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS machines (
 );
 
 CREATE TABLE IF NOT EXISTS suppliers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   contact TEXT,
@@ -62,7 +64,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 );
 
 CREATE TABLE IF NOT EXISTS vendors (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   contact TEXT,
@@ -72,7 +74,7 @@ CREATE TABLE IF NOT EXISTS vendors (
 );
 
 CREATE TABLE IF NOT EXISTS customers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   contact TEXT,
@@ -82,7 +84,7 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 CREATE TABLE IF NOT EXISTS vehicles (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   number_plate TEXT NOT NULL,
   type TEXT,
@@ -90,7 +92,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
 );
 
 CREATE TABLE IF NOT EXISTS drivers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   name TEXT NOT NULL,
   license_number TEXT,
@@ -99,7 +101,7 @@ CREATE TABLE IF NOT EXISTS drivers (
 );
 
 CREATE TABLE IF NOT EXISTS target_master (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   part_id UUID NOT NULL REFERENCES parts(id),
   day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
@@ -111,7 +113,7 @@ CREATE TABLE IF NOT EXISTS target_master (
 -- ─── Transaction Tables ───────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS material_receives (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   date DATE NOT NULL,
   time TIME,
@@ -125,7 +127,7 @@ CREATE TABLE IF NOT EXISTS material_receives (
 );
 
 CREATE TABLE IF NOT EXISTS productions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -145,7 +147,7 @@ CREATE TABLE IF NOT EXISTS productions (
 );
 
 CREATE TABLE IF NOT EXISTS machine_downtimes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   machine_id UUID NOT NULL REFERENCES machines(id),
   date DATE NOT NULL,
@@ -161,7 +163,7 @@ CREATE TABLE IF NOT EXISTS machine_downtimes (
 );
 
 CREATE TABLE IF NOT EXISTS bp_inspections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -175,7 +177,7 @@ CREATE TABLE IF NOT EXISTS bp_inspections (
 );
 
 CREATE TABLE IF NOT EXISTS dispatch_to_facos (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -191,7 +193,7 @@ CREATE TABLE IF NOT EXISTS dispatch_to_facos (
 );
 
 CREATE TABLE IF NOT EXISTS receive_from_facos (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -205,7 +207,7 @@ CREATE TABLE IF NOT EXISTS receive_from_facos (
 );
 
 CREATE TABLE IF NOT EXISTS ap_inspections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -221,7 +223,7 @@ CREATE TABLE IF NOT EXISTS ap_inspections (
 );
 
 CREATE TABLE IF NOT EXISTS rtvs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   cycle_number INTEGER NOT NULL DEFAULT 1 CHECK (cycle_number BETWEEN 1 AND 3),
@@ -238,7 +240,7 @@ CREATE TABLE IF NOT EXISTS rtvs (
 );
 
 CREATE TABLE IF NOT EXISTS rtv_reinspections (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   rtv_id UUID NOT NULL REFERENCES rtvs(id),
   date DATE NOT NULL,
@@ -251,7 +253,7 @@ CREATE TABLE IF NOT EXISTS rtv_reinspections (
 );
 
 CREATE TABLE IF NOT EXISTS final_dispatches (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   batch_number TEXT NOT NULL,
   date DATE NOT NULL,
@@ -267,7 +269,7 @@ CREATE TABLE IF NOT EXISTS final_dispatches (
 );
 
 CREATE TABLE IF NOT EXISTS stock_ledger (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   date DATE NOT NULL,
   time TIME,
@@ -282,7 +284,7 @@ CREATE TABLE IF NOT EXISTS stock_ledger (
 );
 
 CREATE TABLE IF NOT EXISTS correction_requests (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   table_name TEXT NOT NULL,
   record_id UUID NOT NULL,
@@ -297,7 +299,7 @@ CREATE TABLE IF NOT EXISTS correction_requests (
 );
 
 CREATE TABLE IF NOT EXISTS audit_log (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   table_name TEXT NOT NULL,
   record_id UUID NOT NULL,
@@ -310,7 +312,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE TABLE IF NOT EXISTS backup_records (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id UUID NOT NULL REFERENCES factories(id),
   user_id UUID REFERENCES users(id),
   source_table TEXT NOT NULL,

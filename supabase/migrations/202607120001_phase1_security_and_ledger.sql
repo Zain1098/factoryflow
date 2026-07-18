@@ -23,7 +23,7 @@ AS $$
 $$;
 
 CREATE TABLE IF NOT EXISTS public.backup_records (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   factory_id uuid NOT NULL REFERENCES public.factories(id),
   user_id uuid REFERENCES public.users(id),
   source_table text NOT NULL,

@@ -249,6 +249,24 @@ class StockLedgerService {
     return _db.getTotalBalanceByStage(stage.value);
   }
 
+  /// Manual stock adjustment — writes a ledger entry with ref_table='stock_adjustments'.
+  Future<StockLedgerResult> manualAdjustment({
+    required String partId,
+    required StockStage stage,
+    required LedgerDirection direction,
+    required double qty,
+    required String refId,
+  }) {
+    return _write(
+      partId: partId,
+      stage: stage,
+      direction: direction,
+      qty: qty,
+      refTable: 'stock_adjustments',
+      refId: refId,
+    );
+  }
+
   Future<StockLedgerResult> _writeIn({
     required String partId,
     required StockStage stage,

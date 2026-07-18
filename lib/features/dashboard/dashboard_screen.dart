@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/app_user.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -19,6 +20,12 @@ class DashboardScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: user != null
+            ? Padding(
+                padding: const EdgeInsets.all(8),
+                child: _buildUserAvatar(user),
+              )
+            : null,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -63,6 +70,12 @@ class DashboardScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
+              // ── First-time setup banner ──
+              if (data.rawMaterial == 0 &&
+                  data.bpStock == 0 &&
+                  data.todayProduction == 0)
+                _buildSetupBanner(context),
+
               // ── Top Premium Efficiency Header ──
               _buildEfficiencyHeader(context, data),
               const SizedBox(height: 16),
@@ -97,6 +110,64 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar(AppUser user) {
+    if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
+      return CircleAvatar(
+        backgroundImage: NetworkImage(user.avatarUrl!),
+        onBackgroundImageError: (_, __) {},
+        child: null,
+      );
+    }
+    return const CircleAvatar(
+      child: Icon(Icons.person, size: 20),
+    );
+  }
+
+  Widget _buildSetupBanner(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.rocket_launch_outlined, color: Colors.blue, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Welcome to FactoryFlow!',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Get started by adding Parts and initial stock in Settings.',
+                  style: TextStyle(fontSize: 12, color: Colors.blue),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () => context.go('/settings'),
+                  icon: const Icon(Icons.settings_outlined, size: 16),
+                  label: const Text('Go to Settings'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/app_config.dart';
 import 'core/database/database_service.dart';
 import 'core/router/app_router.dart';
+import 'core/services/biometric_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_providers.dart';
@@ -68,7 +69,101 @@ class FactoryFlowApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) => _BiometricGuard(child: child ?? const SizedBox.shrink()),
     );
+  }
+}
+
+// ── Biometric Guard ──────────────────────────────────────────────────────────
+
+/// Wraps the entire app. If biometric lock is enabled, shows an auth prompt
+/// before revealing the app content. Re-prompts if the app is resumed.
+class _BiometricGuard extends StatefulWidget {
+  const _BiometricGuard({required this.child});
+  final Widget child;
+
+  @override
+  State<_BiometricGuard> createState() => _BiometricGuardState();
+}
+
+class _BiometricGuardState extends State<_BiometricGuard>
+    with WidgetsBindingObserver {
+  bool _unlocked = false;
+  bool _checking = true;
+  final _biometric = BiometricService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkAndPrompt();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_unlocked) {
+      _checkAndPrompt();
+    }
+    // Lock again when app goes to background
+    if (state == AppLifecycleState.paused) {
+      _biometric.isEnabled().then((enabled) {
+        if (enabled && mounted) setState(() => _unlocked = false);
+      });
+    }
+  }
+
+  Future<void> _checkAndPrompt() async {
+    final enabled = await _biometric.isEnabled();
+    if (!enabled) {
+      if (mounted) setState(() { _unlocked = true; _checking = false; });
+      return;
+    }
+    if (mounted) setState(() => _checking = false);
+    final success = await _biometric.authenticate();
+    if (mounted) setState(() => _unlocked = success);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_checking) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      );
+    }
+    if (!_unlocked) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.fingerprint, size: 72, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'Biometric lock is enabled',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _checkAndPrompt,
+                  icon: const Icon(Icons.lock_open_outlined),
+                  label: const Text('Authenticate'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return widget.child;
   }
 }
 

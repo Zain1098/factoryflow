@@ -1,8 +1,6 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/models/app_user.dart';
@@ -166,12 +164,12 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
         const Icon(Icons.error_outline, color: Colors.white, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text(msg)),
-      ]),
+      ],),
       backgroundColor: Theme.of(context).colorScheme.error,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(16),
-    ));
+    ),);
   }
 
   void _showSuccess(String msg) {
@@ -181,12 +179,12 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
         const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text(msg)),
-      ]),
+      ],),
       backgroundColor: const Color(0xFF2A9D8F),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(16),
-    ));
+    ),);
   }
 
   @override
@@ -440,10 +438,11 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   }
 
   Widget _buildAvatarContent(AppUser? user) {
-    if (user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty) {
+    final url = user?.avatarUrl?.trim();
+    if (url != null && url.isNotEmpty) {
       return ClipOval(
         child: Image.network(
-          user.avatarUrl!,
+          url,
           width: 112,
           height: 112,
           fit: BoxFit.cover,
@@ -464,11 +463,11 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   }
 
   Widget _buildDefaultAvatar(AppUser? user) {
-    if (user == null) {
+    if (user == null || user.name.isEmpty) {
       return const Icon(Icons.person, size: 48, color: Colors.grey);
     }
     return Text(
-      user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+      user.name[0].toUpperCase(),
       style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
     );
   }

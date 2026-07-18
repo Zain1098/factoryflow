@@ -4,7 +4,7 @@
 -- ── workspace_members ─────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.workspace_members (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES public.factories(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   role text NOT NULL DEFAULT 'owner',
@@ -149,8 +149,8 @@ SET search_path = public
 AS $$
 DECLARE
   v_user_id uuid := auth.uid();
-  v_workspace_id uuid := uuid_generate_v4();
-  v_member_id uuid := uuid_generate_v4();
+  v_workspace_id uuid := gen_random_uuid();
+  v_member_id uuid := gen_random_uuid();
   v_email text;
 BEGIN
   IF v_user_id IS NULL THEN

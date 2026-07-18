@@ -6,11 +6,19 @@ import '../../core/providers/master_data_providers.dart';
 import '../../core/providers/batch_config_provider.dart';
 import '../../core/providers/production_flow_provider.dart';
 import '../../core/models/app_user.dart';
+import '../../core/services/biometric_service.dart';
 import '../../core/services/data_management_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
+import 'stock_management_screen.dart';
+
+// ── Biometric toggle provider ─────────────────────────────────────────────────────
+
+final _biometricEnabledProvider = FutureProvider<bool>((ref) {
+  return ref.watch(biometricServiceProvider).isEnabled();
+});
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -95,6 +103,48 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (val) {
               ref.read(batchConfigProvider.notifier).toggle(val);
             },
+          ),
+          const Divider(),
+          const _SectionLabel('Security'),
+          Consumer(
+            builder: (context, ref, _) {
+              final biometricAsync = ref.watch(_biometricEnabledProvider);
+              final svc = ref.read(biometricServiceProvider);
+              return FutureBuilder<bool>(
+                future: svc.isAvailable(),
+                builder: (context, snap) {
+                  final available = snap.data ?? false;
+                  return SwitchListTile(
+                    secondary: const Icon(Icons.fingerprint),
+                    title: const Text('Biometric Lock'),
+                    subtitle: Text(
+                      available
+                          ? 'Require fingerprint/face on app open'
+                          : 'Not available on this device',
+                    ),
+                    value: biometricAsync.value ?? false,
+                    onChanged: available
+                        ? (val) async {
+                            await svc.setEnabled(val);
+                            ref.invalidate(_biometricEnabledProvider);
+                          }
+                        : null,
+                  );
+                },
+              );
+            },
+          ),
+          const Divider(),
+          const _SectionLabel('Stock'),
+          ListTile(
+            leading: const Icon(Icons.inventory_outlined),
+            title: const Text('Stock Management'),
+            subtitle: const Text('Adjust stock levels and view history'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const StockManagementScreen()),
+            ),
           ),
           const Divider(),
           const _SectionLabel('Production Flow'),

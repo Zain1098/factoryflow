@@ -86,6 +86,61 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getDrivers() async =>
       List<Map<String, dynamic>>.from(_tables['drivers'] ?? []);
 
+  // ── Workspace methods ────────────────────────────────────────────────────
+
+  Future<void> setActiveWorkspaceId(String workspaceId) async {
+    _tables.putIfAbsent('app_settings', () => []);
+    final list = _tables['app_settings']!;
+    final idx = list.indexWhere((r) => r['key'] == 'active_workspace_id');
+    if (idx >= 0) {
+      list[idx] = {'key': 'active_workspace_id', 'value': workspaceId};
+    } else {
+      list.add({'key': 'active_workspace_id', 'value': workspaceId});
+    }
+  }
+
+  String get activeWorkspaceId {
+    final list = _tables['app_settings'] ?? [];
+    final idx = list.indexWhere((r) => r['key'] == 'active_workspace_id');
+    if (idx < 0) return '';
+    return list[idx]['value']?.toString() ?? '';
+  }
+
+  Future<void> upsertWorkspace({
+    required String id,
+    required String name,
+    required String ownerUserId,
+    String syncStatus = 'pending',
+  }) async {
+    await insertRecord('workspaces', {
+      'id': id,
+      'name': name,
+      'owner_user_id': ownerUserId,
+      'created_at': DateTime.now().toIso8601String(),
+      'active': 1,
+      'sync_status': syncStatus,
+    });
+  }
+
+  Future<void> upsertWorkspaceMember({
+    required String id,
+    required String workspaceId,
+    required String userId,
+    required String role,
+    String status = 'active',
+    String syncStatus = 'pending',
+  }) async {
+    await insertRecord('workspace_members', {
+      'id': id,
+      'workspace_id': workspaceId,
+      'user_id': userId,
+      'role': role,
+      'status': status,
+      'joined_at': DateTime.now().toIso8601String(),
+      'sync_status': syncStatus,
+    });
+  }
+
   Future<void> insertRecord(String table, Map<String, dynamic> data) async {
     _tables.putIfAbsent(table, () => []);
     final list = _tables[table]!;
@@ -206,6 +261,20 @@ class DatabaseService {
   }
 
   Future<int> countTableRows(String table) async => _tables[table]?.length ?? 0;
+
+  Future<List<Map<String, dynamic>>> getStockAdjustments({
+    String? partId,
+    int limit = 100,
+  }) async {
+    final list = List<Map<String, dynamic>>.from(_tables['stock_adjustments'] ?? []);
+    final filtered = partId != null ? list.where((r) => r['part_id'] == partId).toList() : list;
+    filtered.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+    return filtered.take(limit).toList();
+  }
+
+  Future<void> insertStockAdjustment(Map<String, dynamic> data) async {
+    await insertRecord('stock_adjustments', data);
+  }
 
   Future<void> seedDemoData() async {
     const factoryId = '00000000-0000-0000-0000-000000000001';

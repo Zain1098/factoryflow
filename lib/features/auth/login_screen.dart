@@ -118,6 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   String _friendlyError(Object? e) {
     final msg = e?.toString() ?? '';
+    debugPrint('🔴 AUTH ERROR: $msg'); // always log to terminal
     if (msg.contains('Invalid login') || msg.contains('invalid_credentials')) {
       return 'Incorrect email or password.';
     }
@@ -135,6 +136,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (msg.contains('canceled') || msg.contains('cancel')) {
       return 'Google sign-in was canceled.';
     }
+    if (msg.contains('already registered') || msg.contains('duplicate')) {
+      return 'This email is already registered. Try signing in.';
+    }
+    if (msg.contains('weak_password') || msg.contains('6 characters')) {
+      return 'Password must be at least 6 characters.';
+    }
+    if (msg.contains('does not exist') || msg.contains('permission denied') || msg.contains('function')) {
+      return 'Server setup incomplete — Supabase migrations not applied. Contact developer.';
+    }
+    // Show actual error in debug, generic for release
+    if (kDebugMode) return msg;
     return _isSignUp ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.';
   }
 
@@ -259,11 +271,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             ),
                           ],
                         ),
-
-                        if (kDebugMode) ...[
-                          const SizedBox(height: 12),
-                          _buildDevLogin(),
-                        ],
 
                         const SizedBox(height: 24),
                         _buildFooter(theme),
@@ -640,21 +647,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildDevLogin() {
-    return OutlinedButton.icon(
-      onPressed: () => ref.read(currentUserProvider.notifier).devLogin(),
-      icon: const Icon(Icons.developer_mode_outlined, size: 18),
-      label: const Text('Dev Login (Debug Only)'),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 46),
-        side: const BorderSide(color: Colors.orange),
-        foregroundColor: Colors.orange,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _buildFooter(ThemeData theme) {
+Widget _buildFooter(ThemeData theme) {
     return Text(
       '© ${DateTime.now().year} FactoryFlow · Secure Manufacturing ERP',
       textAlign: TextAlign.center,

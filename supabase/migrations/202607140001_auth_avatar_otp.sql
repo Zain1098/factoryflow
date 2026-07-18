@@ -6,7 +6,7 @@ ALTER TABLE IF EXISTS public.users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
 -- ── OTP verification codes table ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.otp_codes (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   code TEXT NOT NULL,
   purpose TEXT NOT NULL CHECK (purpose IN ('email_change', 'password_change')),
@@ -206,7 +206,7 @@ BEGIN
     );
   ELSE
     -- New user — create workspace and profile
-    v_workspace_id := uuid_generate_v4();
+    v_workspace_id := gen_random_uuid();
 
     INSERT INTO public.factories (id, name, active)
     VALUES (v_workspace_id, p_workspace_name, TRUE);
@@ -215,7 +215,7 @@ BEGIN
     VALUES (p_user_id, v_workspace_id, p_name, p_email, 'owner', TRUE, p_avatar_url);
 
     INSERT INTO public.workspace_members (id, workspace_id, user_id, role, status)
-    VALUES (uuid_generate_v4(), v_workspace_id, p_user_id, 'owner', 'active');
+    VALUES (gen_random_uuid(), v_workspace_id, p_user_id, 'owner', 'active');
 
     RETURN jsonb_build_object(
       'is_new', TRUE,
