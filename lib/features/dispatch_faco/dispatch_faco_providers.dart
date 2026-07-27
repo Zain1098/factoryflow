@@ -1,19 +1,21 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
-import '../../core/constants/stock_stages.dart';
+import '../../core/providers/production_flow_provider.dart';
 import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
 
 class DispatchFacoRepository {
-  DispatchFacoRepository(this._db, this._sync, this._ledger);
+  DispatchFacoRepository(this._db, this._sync, this._ledger, this._flow);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final ProductionFlowConfig _flow;
 
   Future<DispatchFacoResult> save({
     required String batchNumber,
@@ -27,6 +29,23 @@ class DispatchFacoRepository {
     required String createdBy,
     DateTime? recordedAt,
   }) async {
+    // Multi-stage validation: If enabled, check if batch has completed the final machine sequence
+    if (_flow.isMultiStage && _flow.requireFinalMachineForDispatch && batchNumber.isNotEmpty) {
+      final finalMachineId = _flow.requiredMachineIds.last;
+      final check = _db.db.select(
+        'SELECT COUNT(*) as cnt FROM productions WHERE batch_number = ? AND machine_id = ?',
+        [batchNumber, finalMachineId],
+      );
+      if ((check.first['cnt'] as int) == 0) {
+        final mRow = _db.db.select('SELECT name FROM machines WHERE id = ?', [finalMachineId]);
+        final mName = mRow.isNotEmpty ? mRow.first['name'] as String : 'Final Stage Machine';
+        return DispatchFacoResult(
+          success: false,
+          error: 'Batch "$batchNumber" is still Work-In-Progress (BP stock). It must complete $mName (Final Sequence) before vendor dispatch.',
+        );
+      }
+    }
+
     // Validate: qty <= BP stock (PRD 4.5)
     final available = await _ledger.getAvailableStock(partId, StockStage.bpStock);
     if (qty > available) {
@@ -110,6 +129,7 @@ final dispatchFacoRepositoryProvider = Provider<DispatchFacoRepository>((ref) {
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(productionFlowProvider),
   );
 });
 

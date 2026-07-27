@@ -144,6 +144,17 @@ class DatabaseService {
         part_id TEXT, customer_id TEXT, dispatch_qty REAL, vehicle_id TEXT,
         driver_id TEXT, challan_number TEXT, photo_url TEXT, remarks TEXT,
         created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS dispatch_sessions (
+        id TEXT PRIMARY KEY, factory_id TEXT, date TEXT, time TEXT,
+        customer_id TEXT, vehicle_id TEXT, driver_id TEXT,
+        challan_number TEXT, remarks TEXT, created_by TEXT,
+        sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS dispatch_items (
+        id TEXT PRIMARY KEY, session_id TEXT NOT NULL, factory_id TEXT,
+        part_id TEXT, dispatch_qty REAL,
+        sync_status TEXT DEFAULT 'pending')''',
+      'CREATE INDEX IF NOT EXISTS idx_dispatch_items_session ON dispatch_items(session_id)',
+      'CREATE INDEX IF NOT EXISTS idx_dispatch_sessions_date ON dispatch_sessions(date)',
       '''CREATE TABLE IF NOT EXISTS stock_ledger (
         id TEXT PRIMARY KEY, factory_id TEXT, date TEXT, time TEXT,
         part_id TEXT, stage TEXT, direction TEXT, qty REAL,

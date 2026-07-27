@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'ap_inspection_providers.dart';
@@ -13,16 +12,21 @@ class ApInspectionScreen extends ConsumerStatefulWidget {
   ConsumerState<ApInspectionScreen> createState() => _ApInspectionScreenState();
 }
 
-// One part row in the session
 class _ApPartEntry {
-  _ApPartEntry({required this.partId, required this.partName});
+  _ApPartEntry({
+    required this.partId,
+    required this.partCode,
+    required this.partName,
+    required this.availableQty,
+  });
 
   final String partId;
+  final String partCode;
   final String partName;
+  final double availableQty;
 
   final checkedCtrl = TextEditingController();
   final rejectedCtrl = TextEditingController(text: '0');
-
   final rtvQtyCtrl = TextEditingController(text: '0');
 
   double get checked => double.tryParse(checkedCtrl.text) ?? 0;
@@ -30,7 +34,7 @@ class _ApPartEntry {
   double get rtvQty => double.tryParse(rtvQtyCtrl.text) ?? 0;
   double get approved => (checked - rejected - rtvQty).clamp(0, double.infinity);
   bool get isBalanced => (approved + rejected + rtvQty - checked).abs() < 0.001;
-  bool get isRtvValid => rtvQty >= 0 && rtvQty <= checked;
+  bool get exceedsAvailable => checked > availableQty;
 
   void dispose() {
     checkedCtrl.dispose();
@@ -43,7 +47,6 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  final _batchCtrl = TextEditingController();
   String? _rejectReason;
   DateTime _recordedAt = DateTime.now();
   final List<_ApPartEntry> _entries = [];
@@ -61,20 +64,21 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    _batchCtrl.dispose();
     for (final e in _entries) {
       e.dispose();
     }
     super.dispose();
   }
 
-  void _addPart(Map<String, dynamic> part) {
-    final id = part['id'] as String;
+  void _addPart(Map<String, dynamic> stockItem) {
+    final id = stockItem['id'] as String;
     if (_entries.any((e) => e.partId == id)) return;
     setState(() => _entries.add(_ApPartEntry(
-      partId: id,
-      partName: '${part['code']} – ${part['name']}',
-    ),),);
+          partId: id,
+          partCode: stockItem['code'] as String,
+          partName: stockItem['name'] as String,
+          availableQty: (stockItem['balance'] as num).toDouble(),
+        )));
   }
 
   void _removeEntry(int idx) {
@@ -83,25 +87,21 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   }
 
   Future<void> _save() async {
-    if (_batchCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Batch number required');
-      return;
-    }
     if (_entries.isEmpty) {
       setState(() => _error = 'Add at least one part');
       return;
     }
     for (final e in _entries) {
       if (e.checked <= 0) {
-        setState(() => _error = '${e.partName}: Qty Checked must be > 0');
+        setState(() => _error = '${e.partCode}: Qty Checked must be > 0');
+        return;
+      }
+      if (e.exceedsAvailable) {
+        setState(() => _error = '${e.partCode}: Checked (${e.checked.toInt()}) exceeds available stock (${e.availableQty.toInt()})');
         return;
       }
       if (!e.isBalanced) {
-        setState(() => _error = '${e.partName}: Approved + Rejected ≠ Checked');
-        return;
-      }
-      if (!e.isRtvValid) {
-        setState(() => _error = '${e.partName}: RTV qty invalid');
+        setState(() => _error = '${e.partCode}: OK + Rejected + RTV must equal Checked');
         return;
       }
     }
@@ -112,9 +112,14 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(apInspectionRepositoryProvider);
 
+      // Auto-generate batch number
+      final now = _recordedAt;
+      final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+      final batchNumber = 'AP-$dateStr-${_entries.length}P';
+
       for (final e in _entries) {
         final result = await repo.save(
-          batchNumber: _batchCtrl.text.trim(),
+          batchNumber: batchNumber,
           partId: e.partId,
           qtyChecked: e.checked,
           approvedQty: e.approved,
@@ -125,14 +130,16 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           rtvQty: e.rtvQty,
         );
         if (!result.success) {
-          setState(() => _error = '${e.partName}: ${result.error}');
+          setState(() => _error = '${e.partCode}: ${result.error}');
           return;
         }
       }
 
-      setState(() => _success = 'AP Inspection saved for ${_entries.length} part(s)!');
+      setState(() => _success = 'AP Inspection saved! Batch: $batchNumber');
       ref.invalidate(apInspectionListProvider);
       ref.invalidate(apRejectedStockProvider);
+      ref.invalidate(apOkStockProvider);
+      ref.invalidate(rtvStockProvider);
       _reset();
     } catch (e) {
       setState(() => _error = e.toString());
@@ -142,7 +149,6 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   }
 
   void _reset() {
-    _batchCtrl.clear();
     for (final e in _entries) {
       e.dispose();
     }
@@ -169,14 +175,14 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [_buildForm(), const _ApRejectedStockTab(), _buildHistory()],
+        children: [_buildForm(), const _ApRejectedTab(), _buildHistory()],
       ),
     );
   }
 
   Widget _buildForm() {
-    final parts = ref.watch(partsProvider);
     final theme = Theme.of(context);
+    final apStockAsync = ref.watch(pendingApStockProvider);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -190,70 +196,86 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           ),
           const SizedBox(height: 16),
 
-          const SectionHeader('Batch & Reject Reason'),
-          AppFormField(
-            label: 'Batch Number',
-            controller: _batchCtrl,
-            prefixIcon: const Icon(Icons.qr_code_2),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
-          ),
-          const SizedBox(height: 12),
+          // Reject reason
           AppDropdown<String>(
-            label: 'Reject Reason (common)',
+            label: 'Reject Reason (if any)',
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _rejectReason,
-            items: kApRejectReasons.map((r) => DropdownMenuItem(
-              value: r, child: Text(r),
-            ),).toList(),
+            items: kApRejectReasons.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
             onChanged: (v) => setState(() => _rejectReason = v),
           ),
           const SizedBox(height: 20),
 
-          const SectionHeader('Parts Inspected Today'),
-          parts.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load parts: $e'),
-            data: (list) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: list.map((p) {
-                    final alreadyAdded = _entries.any((e) => e.partId == p['id']);
-                    return FilterChip(
-                      label: Text('${p['code']}'),
-                      selected: alreadyAdded,
-                      onSelected: alreadyAdded ? null : (_) => _addPart(p),
-                      avatar: alreadyAdded ? const Icon(Icons.check, size: 14) : null,
-                    );
-                  }).toList(),
-                ),
-                if (_entries.isEmpty) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: theme.colorScheme.outlineVariant),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Tap a part chip above to add it',
-                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          // After Plating stock — select parts to inspect
+          Row(
+            children: [
+              Text('PENDING AP STOCK', style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.primary, fontWeight: FontWeight.bold,
+              )),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Parts received from Faco vendor, waiting for AP inspection',
+                child: Icon(Icons.info_outline, size: 14, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          apStockAsync.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (e, _) => ErrorBanner('Could not load AP stock: $e'),
+            data: (items) {
+              if (items.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    'No pending AP stock.\nReceive material from Faco vendor first.',
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              }
+              return Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: items.map((item) {
+                  final alreadyAdded = _entries.any((e) => e.partId == item['id']);
+                  final balance = (item['balance'] as num).toInt();
+                  return FilterChip(
+                    label: Text('${item['code']} (${balance} PCS)'),
+                    selected: alreadyAdded,
+                    onSelected: alreadyAdded ? null : (_) => _addPart(item),
+                    avatar: alreadyAdded
+                        ? const Icon(Icons.check, size: 14)
+                        : const Icon(Icons.add, size: 14),
+                    selectedColor: theme.colorScheme.primaryContainer,
+                  );
+                }).toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+
+          if (_entries.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  'Tap a part chip above to add it for inspection',
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
 
           for (int i = 0; i < _entries.length; i++)
             _PartEntryCard(
               entry: _entries[i],
-              index: i,
               onRemove: () => _removeEntry(i),
               onChanged: () => setState(() {}),
             ),
@@ -287,7 +309,6 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, i) {
             final r = records[i];
-            final isSynced = r['sync_status'] == 'synced';
             final approved = (r['approved_qty'] as num?)?.toInt() ?? 0;
             final rejected = (r['rejected_qty'] as num?)?.toInt() ?? 0;
             final rtv = (r['rtv_qty'] as num?)?.toInt() ?? 0;
@@ -297,24 +318,17 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 child: const Icon(Icons.verified, color: Colors.green, size: 20),
               ),
               title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
+                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text('✓$approved  ✗$rejected',
-                      style: const TextStyle(fontWeight: FontWeight.bold),),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                   if (rtv > 0)
-                    Text(
-                      'RTV $rtv',
-                      style: const TextStyle(fontSize: 11, color: Colors.deepOrange),
-                    ),
-                  Icon(
-                    isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
-                    size: 14,
-                    color: isSynced ? Colors.green : Colors.orange,
-                  ),
+                    Text('RTV $rtv',
+                        style: const TextStyle(fontSize: 11, color: Colors.deepOrange)),
                 ],
               ),
             );
@@ -330,13 +344,11 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
 class _PartEntryCard extends StatefulWidget {
   const _PartEntryCard({
     required this.entry,
-    required this.index,
     required this.onRemove,
     required this.onChanged,
   });
 
   final _ApPartEntry entry;
-  final int index;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
 
@@ -367,15 +379,18 @@ class _PartEntryCardState extends State<_PartEntryCard> {
   Widget build(BuildContext context) {
     final e = widget.entry;
     final theme = Theme.of(context);
+    final hasError = e.checked > 0 && (e.exceedsAvailable || !e.isBalanced);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: e.isBalanced && e.checked > 0
-              ? Colors.green.withValues(alpha: 0.4)
-              : theme.colorScheme.outlineVariant,
+          color: hasError
+              ? Colors.red.withValues(alpha: 0.5)
+              : e.isBalanced && e.checked > 0
+                  ? Colors.green.withValues(alpha: 0.4)
+                  : theme.colorScheme.outlineVariant,
         ),
       ),
       child: Padding(
@@ -386,9 +401,28 @@ class _PartEntryCardState extends State<_PartEntryCard> {
             Row(
               children: [
                 Expanded(
-                  child: Text(e.partName,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(e.partCode,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(e.partName,
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Available: ${e.availableQty.toInt()} PCS',
+                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSecondaryContainer),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18, color: Colors.red),
                   onPressed: widget.onRemove,
@@ -421,70 +455,80 @@ class _PartEntryCardState extends State<_PartEntryCard> {
             ),
             const SizedBox(height: 10),
             NumberFormField(
-              label: 'RTV Stock',
+              label: 'RTV Qty (return to vendor)',
               controller: e.rtvQtyCtrl,
               allowDecimal: false,
               prefixIcon: const Icon(Icons.undo, size: 18),
             ),
             if (e.checked > 0) ...[
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: e.isBalanced
-                      ? Colors.green.withValues(alpha: 0.08)
-                      : Colors.red.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          e.isBalanced ? Icons.verified_outlined : Icons.error_outline,
-                          size: 16,
-                          color: e.isBalanced ? Colors.green : Colors.red,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Approved: ${e.approved.toInt()} PCS',
-                          style: TextStyle(
-                            color: e.isBalanced ? Colors.green : Colors.red,
-                            fontWeight: FontWeight.bold,
+              if (e.exceedsAvailable)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '⚠ Checked qty exceeds available stock (${e.availableQty.toInt()} PCS)',
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: e.isBalanced
+                        ? Colors.green.withValues(alpha: 0.08)
+                        : Colors.orange.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            e.isBalanced ? Icons.verified_outlined : Icons.pending_outlined,
+                            size: 16,
+                            color: e.isBalanced ? Colors.green : Colors.orange,
                           ),
-                        ),
-                      ],
-                    ),
-                    if (e.rejected > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          '✗ ${e.rejected.toInt()} → AP Rejected',
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                          const SizedBox(width: 6),
+                          Text(
+                            'OK: ${e.approved.toInt()} PCS',
+                            style: TextStyle(
+                              color: e.isBalanced ? Colors.green : Colors.orange,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                  ],
-                ),
-              ),
-              if (e.rtvQty > 0) ...[
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _SplitChip(
-                    label: '${e.rtvQty.toInt()} PCS -> RTV Stock',
-                    color: Colors.deepOrange,
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          if (e.rejected > 0)
+                            _SplitChip(
+                              label: '✗ ${e.rejected.toInt()} Rejected',
+                              color: Colors.red,
+                            ),
+                          if (e.rtvQty > 0)
+                            _SplitChip(
+                              label: '↩ ${e.rtvQty.toInt()} RTV',
+                              color: Colors.deepOrange,
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              if (!e.isBalanced && !e.exceedsAvailable && e.checked > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'OK + Rejected + RTV = ${(e.approved + e.rejected + e.rtvQty).toInt()} ≠ Checked ${e.checked.toInt()}',
+                    style: const TextStyle(color: Colors.orange, fontSize: 11),
+                  ),
+                ),
             ],
           ],
         ),
@@ -493,11 +537,8 @@ class _PartEntryCardState extends State<_PartEntryCard> {
   }
 }
 
-// ─── AP Rejected Stock Tab ────────────────────────────────────────────────────
-
 class _SplitChip extends StatelessWidget {
   const _SplitChip({required this.label, required this.color});
-
   final String label;
   final Color color;
 
@@ -509,20 +550,16 @@ class _SplitChip extends StatelessWidget {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+      child: Text(label,
+          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
 
-class _ApRejectedStockTab extends ConsumerWidget {
-  const _ApRejectedStockTab();
+// ─── AP Rejected Tab — record only, no actions ────────────────────────────────
+
+class _ApRejectedTab extends ConsumerWidget {
+  const _ApRejectedTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -544,7 +581,6 @@ class _ApRejectedStockTab extends ConsumerWidget {
 
         return Column(
           children: [
-            // Summary banner
             Container(
               margin: const EdgeInsets.all(12),
               padding: const EdgeInsets.all(14),
@@ -562,14 +598,13 @@ class _ApRejectedStockTab extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${totalQty.toInt()} PCS pending action',
+                          '${totalQty.toInt()} PCS AP Rejected',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
+                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
                         ),
                         Text(
-                          'Scrap (write off) or Send to Faco vendor',
-                          style: TextStyle(
-                              fontSize: 12, color: theme.colorScheme.onSurfaceVariant,),
+                          'Will be scrapped via SAP system',
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -584,15 +619,28 @@ class _ApRejectedStockTab extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final item = items[i];
-                  final qty = (item['qty'] as num?)?.toDouble() ?? 0;
-                  return _ApRejectedCard(
-                    partId: item['part_id'] as String,
-                    partCode: item['part_code'] as String? ?? '',
-                    partName: item['part_name'] as String? ?? '',
-                    qty: qty,
-                    onAction: () {
-                      ref.invalidate(apRejectedStockProvider);
-                    },
+                  final qty = (item['qty'] as num?)?.toInt() ?? 0;
+                  return Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: Colors.red.withValues(alpha: 0.2)),
+                    ),
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.red.withValues(alpha: 0.1),
+                        child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                      ),
+                      title: Text(
+                        '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text('Pending SAP scrap confirmation'),
+                      trailing: Text(
+                        '$qty PCS',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+                      ),
+                    ),
                   );
                 },
               ),
@@ -600,221 +648,6 @@ class _ApRejectedStockTab extends ConsumerWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _ApRejectedCard extends ConsumerStatefulWidget {
-  const _ApRejectedCard({
-    required this.partId,
-    required this.partCode,
-    required this.partName,
-    required this.qty,
-    required this.onAction,
-  });
-
-  final String partId;
-  final String partCode;
-  final String partName;
-  final double qty;
-  final VoidCallback onAction;
-
-  @override
-  ConsumerState<_ApRejectedCard> createState() => _ApRejectedCardState();
-}
-
-class _ApRejectedCardState extends ConsumerState<_ApRejectedCard> {
-  bool _loading = false;
-
-  Future<void> _scrap() async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Scrap Rejected Stock',
-      message:
-          'Mark ${widget.qty.toInt()} PCS of ${widget.partName} as scrapped?\n'
-          'This will remove them from stock permanently.',
-      confirmLabel: 'Scrap',
-      isDestructive: true,
-    );
-    if (!confirmed) return;
-
-    setState(() => _loading = true);
-    final user = ref.read(currentUserProvider).value;
-    final repo = ref.read(apInspectionRepositoryProvider);
-    final result = await repo.scrapRejected(
-      partId: widget.partId,
-      qty: widget.qty,
-      createdBy: user?.id ?? 'unknown',
-    );
-    setState(() => _loading = false);
-
-    if (!mounted) return;
-    if (result.success) {
-      widget.onAction();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Scrapped successfully'), backgroundColor: Colors.orange),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Failed'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _sendToFaco() async {
-    final vendors = ref.read(vendorsProvider).value ?? [];
-    if (vendors.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No vendors found. Add vendors in Settings.')),
-      );
-      return;
-    }
-
-    String? selectedVendorId;
-    double sendQty = widget.qty;
-    final qtyCtrl = TextEditingController(text: widget.qty.toInt().toString());
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          title: const Text('Send to Faco Vendor'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Part: ${widget.partCode} – ${widget.partName}'),
-              const SizedBox(height: 12),
-              AppDropdown<String>(
-                label: 'Vendor',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.local_shipping_outlined),
-                value: selectedVendorId,
-                items: vendors.map((v) => DropdownMenuItem(
-                  value: v['id'] as String,
-                  child: Text(v['name'] as String),
-                ),).toList(),
-                onChanged: (v) => setS(() => selectedVendorId = v),
-              ),
-              const SizedBox(height: 12),
-              NumberFormField(
-                label: 'Qty to Send (max ${widget.qty.toInt()})',
-                controller: qtyCtrl,
-                allowDecimal: false,
-                prefixIcon: const Icon(Icons.move_up_outlined),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                if (selectedVendorId == null) return;
-                final q = double.tryParse(qtyCtrl.text) ?? 0;
-                if (q <= 0 || q > widget.qty) return;
-                sendQty = q;
-                Navigator.pop(ctx, true);
-              },
-              child: const Text('Confirm Dispatch'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    qtyCtrl.dispose();
-    if (confirmed != true || selectedVendorId == null) return;
-
-    setState(() => _loading = true);
-    final user = ref.read(currentUserProvider).value;
-    final repo = ref.read(apInspectionRepositoryProvider);
-    final result = await repo.sendToFaco(
-      partId: widget.partId,
-      qty: sendQty,
-      vendorId: selectedVendorId!,
-      createdBy: user?.id ?? 'unknown',
-    );
-    setState(() => _loading = false);
-
-    if (!mounted) return;
-    if (result.success) {
-      widget.onAction();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Sent to Faco — stock moved to At Faco'),
-            backgroundColor: Colors.green,),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.error ?? 'Failed'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.red.withValues(alpha: 0.25)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(widget.partCode,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.red, fontSize: 12,),),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(widget.partName, style: const TextStyle(fontWeight: FontWeight.w600))),
-                Text(
-                  '${widget.qty.toInt()} PCS',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _scrap,
-                      icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                      label: const Text('Scrap (Done)', style: TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _sendToFaco,
-                      icon: const Icon(Icons.local_shipping_outlined, size: 16),
-                      label: const Text('Send to Faco'),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.orange),
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
     );
   }
 }

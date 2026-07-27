@@ -77,9 +77,20 @@ class SyncService {
     return !result.contains(ConnectivityResult.none);
   }
 
+  Future<bool> isSupabaseReady() async {
+    try {
+      final client = Supabase.instance.client;
+      // Also check if auth session exists or client is active
+      return client.auth.currentSession != null || client.auth.currentUser != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<SyncResult> syncPending() async {
     if (_isSyncing) return const SyncResult(skipped: true);
     if (!await isOnline()) return const SyncResult(offline: true);
+    if (!await isSupabaseReady()) return const SyncResult(skipped: true);
 
     _isSyncing = true;
     int synced = 0;
@@ -187,7 +198,7 @@ class SyncService {
         }
       }
 
-      if (failed > 0) {
+      if (failed > 0 && await isSupabaseReady()) {
         await NotificationService.instance.showSyncFailure(failed);
       }
     } catch (e) {

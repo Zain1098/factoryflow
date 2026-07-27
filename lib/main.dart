@@ -36,6 +36,8 @@ Future<void> main() async {
         ),
       ).timeout(const Duration(seconds: 5));
       supabaseConnected = true;
+      // Initialize Google Sign-In after Supabase is ready
+      await initGoogleSignIn().catchError((_) {});
     } catch (_) {
       // Offline or misconfigured — app continues in offline mode.
     }

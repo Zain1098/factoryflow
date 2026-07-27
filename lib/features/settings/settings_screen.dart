@@ -1,24 +1,111 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/models/app_user.dart';
+import '../../core/network/sync_service.dart';
 import '../../core/providers/batch_config_provider.dart';
 import '../../core/providers/production_flow_provider.dart';
-import '../../core/models/app_user.dart';
 import '../../core/services/biometric_service.dart';
 import '../../core/services/data_management_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
-import 'stock_management_screen.dart';
+import '../corrections/corrections_screen.dart';
+import '../notifications/notifications_screen.dart';
 
 // ── Biometric toggle provider ─────────────────────────────────────────────────────
 
 final _biometricEnabledProvider = FutureProvider<bool>((ref) {
   return ref.watch(biometricServiceProvider).isEnabled();
 });
+
+// ── Notification Preferences Provider ────────────────────────────────────────
+
+class _NotifPrefs {
+  const _NotifPrefs({
+    this.enableNotifications = true,
+    this.soundEnabled = true,
+    this.vibrationEnabled = true,
+    this.productionAlerts = true,
+    this.syncAlerts = true,
+    this.downtimeAlerts = true,
+  });
+
+  final bool enableNotifications;
+  final bool soundEnabled;
+  final bool vibrationEnabled;
+  final bool productionAlerts;
+  final bool syncAlerts;
+  final bool downtimeAlerts;
+
+  _NotifPrefs copyWith({
+    bool? enableNotifications,
+    bool? soundEnabled,
+    bool? vibrationEnabled,
+    bool? productionAlerts,
+    bool? syncAlerts,
+    bool? downtimeAlerts,
+  }) =>
+      _NotifPrefs(
+        enableNotifications: enableNotifications ?? this.enableNotifications,
+        soundEnabled: soundEnabled ?? this.soundEnabled,
+        vibrationEnabled: vibrationEnabled ?? this.vibrationEnabled,
+        productionAlerts: productionAlerts ?? this.productionAlerts,
+        syncAlerts: syncAlerts ?? this.syncAlerts,
+        downtimeAlerts: downtimeAlerts ?? this.downtimeAlerts,
+      );
+}
+
+class _NotifPrefsNotifier extends Notifier<_NotifPrefs> {
+  @override
+  _NotifPrefs build() {
+    _load();
+    return const _NotifPrefs();
+  }
+
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    state = _NotifPrefs(
+      enableNotifications: p.getBool('notif_enabled') ?? true,
+      soundEnabled: p.getBool('notif_sound') ?? true,
+      vibrationEnabled: p.getBool('notif_vibration') ?? true,
+      productionAlerts: p.getBool('notif_production') ?? true,
+      syncAlerts: p.getBool('notif_sync') ?? true,
+      downtimeAlerts: p.getBool('notif_downtime') ?? true,
+    );
+  }
+
+  Future<void> _save(_NotifPrefs prefs) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('notif_enabled', prefs.enableNotifications);
+    await p.setBool('notif_sound', prefs.soundEnabled);
+    await p.setBool('notif_vibration', prefs.vibrationEnabled);
+    await p.setBool('notif_production', prefs.productionAlerts);
+    await p.setBool('notif_sync', prefs.syncAlerts);
+    await p.setBool('notif_downtime', prefs.downtimeAlerts);
+    state = prefs;
+  }
+
+  Future<void> toggle(bool Function(_NotifPrefs) getter, _NotifPrefs Function(bool) updater, bool val) async {
+    await _save(updater(val));
+  }
+
+  Future<void> setEnabled(bool v) => _save(state.copyWith(enableNotifications: v));
+  Future<void> setSound(bool v) => _save(state.copyWith(soundEnabled: v));
+  Future<void> setVibration(bool v) => _save(state.copyWith(vibrationEnabled: v));
+  Future<void> setProductionAlerts(bool v) => _save(state.copyWith(productionAlerts: v));
+  Future<void> setSyncAlerts(bool v) => _save(state.copyWith(syncAlerts: v));
+  Future<void> setDowntimeAlerts(bool v) => _save(state.copyWith(downtimeAlerts: v));
+}
+
+final _notifPrefsProvider =
+    NotifierProvider<_NotifPrefsNotifier, _NotifPrefs>(_NotifPrefsNotifier.new);
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -28,13 +115,13 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
       return CircleAvatar(
-        radius: 22,
+        radius: 26,
         backgroundColor: theme.colorScheme.primaryContainer,
         child: ClipOval(
           child: Image.network(
             user.avatarUrl!,
-            width: 44,
-            height: 44,
+            width: 52,
+            height: 52,
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) =>
                 Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : '?'),
@@ -43,11 +130,11 @@ class SettingsScreen extends ConsumerWidget {
       );
     }
     return CircleAvatar(
-      radius: 22,
+      radius: 26,
       backgroundColor: theme.colorScheme.primaryContainer,
       child: Text(
         user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
       ),
     );
   }
@@ -57,25 +144,88 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final user = ref.watch(currentUserProvider).value;
     final showBatchNumber = ref.watch(batchConfigProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        centerTitle: false,
+      ),
       body: ListView(
         children: [
+          // ── User Profile Card ───────────────────────────────────────────────
           if (user != null)
-            ListTile(
-              leading: _buildAvatar(context, user),
-              title: Text(user.name),
-              subtitle: Text('${user.role.value} · ${user.email}'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const AccountSettingsScreen(),
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    theme.colorScheme.primaryContainer,
+                    theme.colorScheme.secondaryContainer,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AccountSettingsScreen(),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    _buildAvatar(context, user),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user.name,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            user.email,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              user.role.value.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                  ],
                 ),
               ),
             ),
-          const Divider(),
+
+          // ── Appearance ──────────────────────────────────────────────────────
+          const _SectionLabel('Appearance'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Theme'),
@@ -97,7 +247,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.qr_code_2_outlined),
-            title: const Text('Batch Tracking'),
+            title: const Text('Batch Number Tracking'),
             subtitle: const Text('Enable batch numbers on entries and forms'),
             value: showBatchNumber,
             onChanged: (val) {
@@ -105,6 +255,37 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const Divider(),
+
+          // ── Notifications ──────────────────────────────────────────────────
+          const _SectionLabel('Notifications'),
+          _NotificationsSection(),
+          ListTile(
+            leading: const Icon(Icons.notifications_none_outlined),
+            title: const Text('View All Notifications'),
+            subtitle: const Text('Machine alerts, downtime, RTV & more'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+            ),
+          ),
+          const Divider(),
+
+          // ── Corrections ─────────────────────────────────────────────────────
+          const _SectionLabel('Corrections'),
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('Correction Requests'),
+            subtitle: const Text('Review, approve or reject edit requests'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const CorrectionsScreen()),
+            ),
+          ),
+          const Divider(),
+
+          // ── Security ───────────────────────────────────────────────────────
           const _SectionLabel('Security'),
           Consumer(
             builder: (context, ref, _) {
@@ -135,23 +316,13 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const Divider(),
-          const _SectionLabel('Stock'),
-          ListTile(
-            leading: const Icon(Icons.inventory_outlined),
-            title: const Text('Stock Management'),
-            subtitle: const Text('Adjust stock levels and view history'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const StockManagementScreen()),
-            ),
-          ),
-          const Divider(),
+
+          // ── Production Flow ────────────────────────────────────────────────
           const _SectionLabel('Production Flow'),
           ListTile(
             leading: const Icon(Icons.account_tree_outlined),
-            title: const Text('Multi-Machine Flow'),
-            subtitle: const Text('Define which machines a part must pass through'),
+            title: const Text('Multi-Machine Flow & Rules'),
+            subtitle: const Text('Configure machine sequence (M1→M2→M3) & dispatch rules'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
@@ -159,6 +330,22 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(),
+
+          // ── Database & Sync ────────────────────────────────────────────────
+          const _SectionLabel('Database & Cloud Sync'),
+          ListTile(
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('Database & Cloud Sync Status'),
+            subtitle: const Text('Local SQLite status, pending queue & cloud sync'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _DatabaseSyncStatusPage()),
+            ),
+          ),
+          const Divider(),
+
+          // ── Master Data ────────────────────────────────────────────────────
           const _SectionLabel('Master Data'),
           ListTile(
             leading: const Icon(Icons.people_outline),
@@ -171,13 +358,13 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.local_shipping_outlined),
-            title: const Text('Suppliers'),
-            subtitle: const Text('Add, rename or remove material suppliers'),
+            leading: const Icon(Icons.precision_manufacturing_outlined),
+            title: const Text('Machines'),
+            subtitle: const Text('Add, rename, reorder machines & set sequence'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(builder: (_) => const _SuppliersPage()),
+              MaterialPageRoute<void>(builder: (_) => const _MachinesPage()),
             ),
           ),
           ListTile(
@@ -191,16 +378,48 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.precision_manufacturing_outlined),
-            title: const Text('Machines'),
-            subtitle: const Text('Add, rename or remove machines'),
+            leading: const Icon(Icons.local_shipping_outlined),
+            title: const Text('Suppliers'),
+            subtitle: const Text('Add, rename or remove material suppliers'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(builder: (_) => const _MachinesPage()),
+              MaterialPageRoute<void>(builder: (_) => const _SuppliersPage()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.store_outlined),
+            title: const Text('Vendors (Faco / Plating)'),
+            subtitle: const Text('Add, rename or remove plating vendors'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _VendorsPage()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outlined),
+            title: const Text('Drivers'),
+            subtitle: const Text('Add, rename or remove drivers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _DriversPage()),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.directions_car_outlined),
+            title: const Text('Vehicles'),
+            subtitle: const Text('Add or remove vehicle number plates'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const _VehiclesPage()),
             ),
           ),
           const Divider(),
+
+          // ── Data Management ────────────────────────────────────────────────
           const _SectionLabel('Data Management'),
           ListTile(
             leading: const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
@@ -215,12 +434,17 @@ class SettingsScreen extends ConsumerWidget {
           if (user != null)
             ListTile(
               leading: const Icon(Icons.no_accounts_outlined, color: Colors.red),
-              title: const Text('Delete My Account',
-                  style: TextStyle(color: Colors.red),),
+              title: const Text(
+                'Delete My Account',
+                style: TextStyle(color: Colors.red),
+              ),
               subtitle: const Text('Remove account access and clear local data'),
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
           const Divider(),
+
+          // ── About ───────────────────────────────────────────────────────────
+          const _SectionLabel('About'),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('App Version'),
@@ -228,8 +452,8 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const ListTile(
             leading: Icon(Icons.factory_outlined),
-            title: Text('FactoryFlow Manufacturing ERP'),
-            subtitle: Text('PRD v2.4 — Phase 1'),
+            title: Text('ProFlow Manufacturing ERP'),
+            subtitle: Text('FactoryFlow PRD v2.4 — Phase 1'),
           ),
           const Divider(),
           ListTile(
@@ -240,11 +464,71 @@ class SettingsScreen extends ConsumerWidget {
               if (context.mounted) context.go('/login');
             },
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 }
+
+// ─── Notifications Section Widget ─────────────────────────────────────────────
+
+class _NotificationsSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefs = ref.watch(_notifPrefsProvider);
+    final notifier = ref.read(_notifPrefsProvider.notifier);
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.notifications_active_outlined),
+          title: const Text('Enable Notifications'),
+          subtitle: const Text('Turn on/off all app notifications'),
+          value: prefs.enableNotifications,
+          onChanged: notifier.setEnabled,
+        ),
+        if (prefs.enableNotifications) ...[
+          SwitchListTile(
+            secondary: const Icon(Icons.volume_up_outlined),
+            title: const Text('Notification Sound'),
+            value: prefs.soundEnabled,
+            onChanged: notifier.setSound,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.vibration_outlined),
+            title: const Text('Vibration'),
+            value: prefs.vibrationEnabled,
+            onChanged: notifier.setVibration,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.precision_manufacturing_outlined),
+            title: const Text('Production Alerts'),
+            subtitle: const Text('Target miss, shift completion'),
+            value: prefs.productionAlerts,
+            onChanged: notifier.setProductionAlerts,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('Sync Status Alerts'),
+            subtitle: const Text('Cloud sync success or failure'),
+            value: prefs.syncAlerts,
+            onChanged: notifier.setSyncAlerts,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.build_circle_outlined),
+            title: const Text('Machine Downtime Alerts'),
+            subtitle: const Text('Breakdowns and maintenance events'),
+            value: prefs.downtimeAlerts,
+            onChanged: notifier.setDowntimeAlerts,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─── Section Label ─────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label);
@@ -326,8 +610,6 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
   }
 
   Future<void> _showEditDialog(String? id, String? current) async {
-    // Controllers live inside StatefulBuilder so they are never accessed
-    // after the dialog is dismissed (fixes "used after disposed" crash).
     String? resultName;
     await showDialog<void>(
       context: context,
@@ -588,9 +870,6 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
   }
 
   Future<void> _showEditDialog(String? id, String? currentCode, String? currentName) async {
-    // Controllers live inside StatefulBuilder so they are never accessed
-    // after the dialog is dismissed (fixes "used after disposed" crash and
-    // the 99903px RenderFlex overflow caused by keyboard insets).
     String? resultCode;
     String? resultName;
     await showDialog<void>(
@@ -754,8 +1033,6 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
   Future<void> _showEditDialog(
     String? id, String? currentName, String? currentCode, int? currentSeq,
   ) async {
-    // Controllers live inside StatefulBuilder so they are never accessed
-    // after the dialog is dismissed (fixes "used after disposed" crash).
     String? resultName;
     String? resultCode;
     int? resultSeq;
@@ -855,6 +1132,350 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
   }
 }
 
+// ─── Vendors Page ─────────────────────────────────────────────────────────────
+
+class _VendorsPage extends ConsumerStatefulWidget {
+  const _VendorsPage();
+  @override
+  ConsumerState<_VendorsPage> createState() => _VendorsPageState();
+}
+
+class _VendorsPageState extends ConsumerState<_VendorsPage> {
+  @override
+  Widget build(BuildContext context) {
+    final vendors = ref.watch(vendorsProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Vendors (Faco / Plating)')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(null, null),
+        child: const Icon(Icons.add),
+      ),
+      body: vendors.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        data: (list) {
+          if (list.isEmpty) {
+            return const EmptyState(
+              message: 'No vendors yet.\nTap + to add a plating vendor.',
+              icon: Icons.store_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final v = list[i];
+              final name = v['name'] as String? ?? v['company_name'] as String? ?? '—';
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  child: const Icon(Icons.store_outlined, size: 20),
+                ),
+                title: Text(name),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: () => _confirmDelete(v['id'] as String, name),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog(String? id, String? current) async {
+    String? resultName;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController(text: current ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: Text(id == null ? 'Add Vendor' : 'Edit Vendor'),
+              content: SingleChildScrollView(
+                child: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Vendor Name',
+                    hintText: 'e.g. Al-Madina Plating',
+                  ),
+                  textCapitalization: TextCapitalization.words,
+                  onSubmitted: (_) {
+                    if (ctrl.text.trim().isNotEmpty) {
+                      resultName = ctrl.text.trim();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    if (ctrl.text.trim().isEmpty) return;
+                    resultName = ctrl.text.trim();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (resultName == null || resultName!.isEmpty) return;
+    // Insert using masterDataRepository — vendors table already exists in DB
+    final db = ref.read(masterDataRepositoryProvider);
+    // We insert directly as vendor (name field)
+    await db.insertVendorByName(resultName!);
+  }
+
+  Future<void> _confirmDelete(String id, String name) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove Vendor',
+      message: 'Remove "$name"?',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(masterDataRepositoryProvider).deactivateVendor(id);
+  }
+}
+
+// ─── Drivers Page ─────────────────────────────────────────────────────────────
+
+class _DriversPage extends ConsumerStatefulWidget {
+  const _DriversPage();
+  @override
+  ConsumerState<_DriversPage> createState() => _DriversPageState();
+}
+
+class _DriversPageState extends ConsumerState<_DriversPage> {
+  @override
+  Widget build(BuildContext context) {
+    final drivers = ref.watch(driversProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Drivers')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(null, null),
+        child: const Icon(Icons.add),
+      ),
+      body: drivers.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        data: (list) {
+          if (list.isEmpty) {
+            return const EmptyState(
+              message: 'No drivers yet.\nTap + to add one.',
+              icon: Icons.person_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final d = list[i];
+              final name = d['name'] as String;
+              return ListTile(
+                leading: CircleAvatar(child: Text(name[0].toUpperCase())),
+                title: Text(name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(d['id'] as String, name),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(d['id'] as String, name),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog(String? id, String? current) async {
+    String? resultName;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController(text: current ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: Text(id == null ? 'Add Driver' : 'Edit Driver'),
+              content: SingleChildScrollView(
+                child: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Driver Name'),
+                  textCapitalization: TextCapitalization.words,
+                  onSubmitted: (_) {
+                    if (ctrl.text.trim().isNotEmpty) {
+                      resultName = ctrl.text.trim();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    if (ctrl.text.trim().isEmpty) return;
+                    resultName = ctrl.text.trim();
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(id == null ? 'Add' : 'Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (resultName == null || resultName!.isEmpty) return;
+    final repo = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await repo.insertDriver(resultName!);
+    } else {
+      await repo.updateDriver(id, resultName!);
+    }
+  }
+
+  Future<void> _confirmDelete(String id, String name) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove Driver',
+      message: 'Remove "$name"?',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(masterDataRepositoryProvider).deactivateDriver(id);
+  }
+}
+
+// ─── Vehicles Page ────────────────────────────────────────────────────────────
+
+class _VehiclesPage extends ConsumerStatefulWidget {
+  const _VehiclesPage();
+  @override
+  ConsumerState<_VehiclesPage> createState() => _VehiclesPageState();
+}
+
+class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
+  @override
+  Widget build(BuildContext context) {
+    final vehicles = ref.watch(vehiclesProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Vehicles')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(null, null),
+        child: const Icon(Icons.add),
+      ),
+      body: vehicles.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        data: (list) {
+          if (list.isEmpty) {
+            return const EmptyState(
+              message: 'No vehicles yet.\nTap + to add a number plate.',
+              icon: Icons.directions_car_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final v = list[i];
+              final plate = v['number_plate'] as String? ?? '—';
+              return ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.directions_car_outlined, size: 18)),
+                title: Text(plate),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: () => _confirmDelete(v['id'] as String, plate),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog(String? id, String? current) async {
+    String? resultPlate;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController(text: current ?? '');
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: const Text('Add Vehicle'),
+              content: SingleChildScrollView(
+                child: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Number Plate',
+                    hintText: 'e.g. LHR-1234',
+                  ),
+                  textCapitalization: TextCapitalization.characters,
+                  onSubmitted: (_) {
+                    if (ctrl.text.trim().isNotEmpty) {
+                      resultPlate = ctrl.text.trim();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () {
+                    if (ctrl.text.trim().isEmpty) return;
+                    resultPlate = ctrl.text.trim();
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (resultPlate == null || resultPlate!.isEmpty) return;
+    await ref.read(masterDataRepositoryProvider).insertVehicle(resultPlate!);
+  }
+
+  Future<void> _confirmDelete(String id, String plate) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Remove Vehicle',
+      message: 'Remove "$plate"?',
+      confirmLabel: 'Remove',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(masterDataRepositoryProvider).deactivateVehicle(id);
+  }
+}
+
 // ─── Account Delete Helper ────────────────────────────────────────────────────
 
 Future<void> _confirmDeleteAccount(
@@ -862,8 +1483,6 @@ Future<void> _confirmDeleteAccount(
   WidgetRef ref,
   AppUser user,
 ) async {
-  // Controller lives inside StatefulBuilder so it is never accessed after
-  // the dialog is dismissed (fixes "used after disposed" crash).
   bool confirmed = false;
   await showDialog<void>(
     context: context,
@@ -938,7 +1557,196 @@ Future<void> _confirmDeleteAccount(
   if (context.mounted) context.go('/login');
 }
 
-// ─── Production Flow Settings Page ──────────────────────────────────────────
+// ─── Database & Sync Status Page ──────────────────────────────────────────────
+
+class _DatabaseSyncStatusPage extends ConsumerWidget {
+  const _DatabaseSyncStatusPage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendingCount = ref.watch(pendingSyncCountProvider).value ?? 0;
+    final isOnline = ref.watch(isOnlineProvider);
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Database & Sync Status')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // 1. Local Database Status Card
+          Card(
+            elevation: 0,
+            color: Colors.blue.withValues(alpha: 0.08),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.blue.withValues(alpha: 0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.storage_rounded, color: Colors.blue, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Local App Database',
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              'Engine: SQLite (Native High Speed)',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle, size: 14, color: Colors.green),
+                            SizedBox(width: 4),
+                            Text('Active & Saved', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Data Guarantee: All machines, parts, and production logs are IMMEDIATELY saved in your device SQLite database. Your data is 100% safe even when offline.',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 2. Cloud Sync Status Card
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: theme.dividerColor),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isOnline ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                        color: isOnline ? Colors.indigo : Colors.grey,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cloud Sync (Supabase)',
+                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              isOnline ? 'Network Connected' : 'Offline Mode',
+                              style: TextStyle(fontSize: 12, color: isOnline ? Colors.indigo : Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Pending Sync Items in Queue:'),
+                      Chip(
+                        label: Text(
+                          '$pendingCount records',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: pendingCount > 0 ? Colors.orange.shade800 : Colors.green.shade800,
+                          ),
+                        ),
+                        backgroundColor: pendingCount > 0 ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final res = await ref.read(syncServiceProvider).syncPending();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                res.synced > 0
+                                    ? 'Successfully synced ${res.synced} records to cloud database.'
+                                    : (res.offline ? 'Offline — Device is not connected to internet.' : 'Local database is fully up to date.'),
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.sync),
+                      label: const Text('Sync Pending Records Now'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 3. Information Card
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.amber, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Why did "Sync Failed" appear earlier?\n'
+                    'Cloud sync runs in the background when cloud account is connected. '
+                    'If cloud sync is unreachable, local SQLite storage keeps all your machine & setting entries safe on this device!',
+                    style: TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Multi-Machine Flow Page ──────────────────────────────────────────────────
 
 class _ProductionFlowPage extends ConsumerWidget {
   const _ProductionFlowPage();
@@ -950,7 +1758,7 @@ class _ProductionFlowPage extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Multi-Machine Flow')),
+      appBar: AppBar(title: const Text('Multi-Machine Flow & Rules')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -961,8 +1769,9 @@ class _ProductionFlowPage extends ConsumerWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Text(
-              'When enabled, a batch is marked WIP until all selected machines have recorded production. '
-              'Only complete batches can be dispatched to Faco.',
+              'Customize how parts move through machines in your factory. '
+              'In Multi-Stage mode (e.g. M1 -> M2 -> M3), half-processed parts remain in BP/WIP stock '
+              'and cannot be dispatched to vendors until the final machine finishes.',
               style: TextStyle(fontSize: 13),
             ),
           ),
@@ -970,45 +1779,102 @@ class _ProductionFlowPage extends ConsumerWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
-            title: const Text('Enable Multi-Machine Flow'),
-            subtitle: Text(flow.enabled ? 'Active — WIP tracking ON' : 'Disabled — single machine mode'),
+            title: const Text('Enable Multi-Machine Sequence Routing'),
+            subtitle: Text(
+              flow.enabled
+                  ? 'Active — Multi-stage WIP tracking enabled'
+                  : 'Disabled — Single machine direct production mode',
+            ),
             value: flow.enabled,
             onChanged: (v) => ref.read(productionFlowProvider.notifier).setEnabled(v),
           ),
           if (flow.enabled) ...[
             const Divider(),
+            const SizedBox(height: 8),
+            Text(
+              'Production Mode',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            RadioListTile<ProductionMode>(
+              value: ProductionMode.multiStageSequential,
+              groupValue: flow.productionMode,
+              onChanged: (m) {
+                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+              },
+              title: const Text('Multi-Stage Sequential Flow (Recommended)'),
+              subtitle: const Text('Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.'),
+            ),
+            RadioListTile<ProductionMode>(
+              value: ProductionMode.directSingleStage,
+              groupValue: flow.productionMode,
+              onChanged: (m) {
+                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+              },
+              title: const Text('Direct Single-Stage Mode'),
+              subtitle: const Text('Every machine entry immediately counts as completed final production.'),
+            ),
+            const Divider(),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.block_outlined, color: Colors.orange),
+              title: const Text('Require Final Machine Completion for Vendor Dispatch'),
+              subtitle: const Text('Prevent vendor dispatch for batches that have not completed the final sequence machine.'),
+              value: flow.requireFinalMachineForDispatch,
+              onChanged: (v) => ref.read(productionFlowProvider.notifier).setRequireFinalMachineForDispatch(v),
+            ),
+            const Divider(),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'Required Machines (select all that a part must pass through)',
+                'Required Machine Sequence (select in order M1 -> M2 -> M3)',
                 style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             machines.when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => Text('Error: $e'),
-              data: (list) => Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: list.map((m) {
-                  final id = m['id'] as String;
-                  final name = m['name'] as String;
-                  final isSelected = flow.requiredMachineIds.contains(id);
-                  return FilterChip(
-                    label: Text(name),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      final updated = [...flow.requiredMachineIds];
-                      if (selected) {
-                        updated.add(id);
-                      } else {
-                        updated.remove(id);
-                      }
-                      ref.read(productionFlowProvider.notifier).setRequiredMachines(updated);
-                    },
-                  );
-                }).toList(),
-              ),
+              data: (list) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: list.map((m) {
+                        final id = m['id'] as String;
+                        final name = m['name'] as String;
+                        final seqIdx = flow.getMachineSequenceIndex(id);
+                        final isSelected = flow.requiredMachineIds.contains(id);
+
+                        return FilterChip(
+                          avatar: isSelected
+                              ? CircleAvatar(
+                                  radius: 10,
+                                  backgroundColor: theme.colorScheme.primary,
+                                  child: Text(
+                                    '$seqIdx',
+                                    style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                  ),
+                                )
+                              : null,
+                          label: Text(isSelected ? '$name (Seq $seqIdx)' : name),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            final updated = [...flow.requiredMachineIds];
+                            if (selected) {
+                              updated.add(id);
+                            } else {
+                              updated.remove(id);
+                            }
+                            ref.read(productionFlowProvider.notifier).setRequiredMachines(updated);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                );
+              },
             ),
             if (flow.requiredMachineIds.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -1023,9 +1889,11 @@ class _ProductionFlowPage extends ConsumerWidget {
                   children: [
                     const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
                     const SizedBox(width: 8),
-                    Text(
-                      '${flow.requiredMachineIds.length} machines required for a batch to be Ready',
-                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                    Expanded(
+                      child: Text(
+                        'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
+                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ],
                 ),

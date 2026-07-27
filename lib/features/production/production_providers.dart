@@ -11,11 +11,12 @@ const _uuid = Uuid();
 // ─── Production Repository ────────────────────────────────────────────────────
 
 class ProductionRepository {
-  ProductionRepository(this._db, this._sync, this._ledger);
+  ProductionRepository(this._db, this._sync, this._ledger, this._flow);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final ProductionFlowConfig _flow;
 
   /// Generates batch number using machine_code from DB — no hardcoded letters.
   Future<String> generateBatchNumber({
@@ -32,6 +33,34 @@ class ProductionRepository {
     );
     final seq = (existing.first['cnt'] as int) + 1;
     return '$prefix-${seq.toString().padLeft(3, '0')}';
+  }
+
+  /// Returns active WIP batch for a specific part (if any)
+  Map<String, dynamic>? getWipBatchForPart(String partId, List<String> requiredMachineIds) {
+    if (requiredMachineIds.isEmpty) return null;
+    final rows = _db.db.select(
+      'SELECT pr.batch_number, pr.part_id, pr.date, p.code as part_code, '
+      'GROUP_CONCAT(pr.machine_id) as done_machines '
+      'FROM productions pr '
+      'LEFT JOIN parts p ON p.id = pr.part_id '
+      'WHERE pr.part_id = ? '
+      'GROUP BY pr.batch_number '
+      'ORDER BY pr.date DESC LIMIT 10',
+      [partId],
+    );
+    for (final row in rows) {
+      final doneMachines = (row['done_machines'] as String? ?? '')
+          .split(',').where((s) => s.isNotEmpty).toList();
+      final missing = requiredMachineIds.where((id) => !doneMachines.contains(id)).toList();
+      if (missing.isNotEmpty) {
+        final map = Map<String, dynamic>.from(row);
+        map['missing_machine_ids'] = missing;
+        map['done_machine_ids'] = doneMachines;
+        map['next_machine_id'] = missing.first;
+        return map;
+      }
+    }
+    return null;
   }
 
   /// Returns which required machines have already been recorded for this batch.
@@ -137,7 +166,13 @@ class ProductionRepository {
 
     await _db.insertRecord('productions', record);
 
-    if (goodQty > 0) {
+    // Determine if batch is still WIP or completes final machine sequence
+    final isFinalStage = _flow.isFinalMachine(machineId);
+    final isWip = _flow.isMultiStage && !isFinalStage;
+
+    // Only add to BP stock when NOT in WIP state
+    // Multi-stage: only on final machine. Direct/disabled: always.
+    if (goodQty > 0 && !isWip) {
       final ledgerResult = await _ledger.productionToBpStock(
         partId: partId,
         goodQty: goodQty,
@@ -148,7 +183,7 @@ class ProductionRepository {
       }
     }
 
-    // FIXED: Strip good_qty (generated column in Supabase) from sync payload
+    // Strip good_qty (generated column in Supabase) from sync payload
     final syncPayload = Map<String, dynamic>.from(record)..remove('good_qty');
     await _sync.queueInsert(
       tableName: 'productions',
@@ -156,7 +191,12 @@ class ProductionRepository {
       payload: syncPayload,
     );
 
-    return ProductionResult(success: true, recordId: id, batchNumber: batchNumber, isWip: false);
+    return ProductionResult(
+      success: true,
+      recordId: id,
+      batchNumber: batchNumber,
+      isWip: isWip,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
@@ -179,6 +219,7 @@ final productionRepositoryProvider = Provider<ProductionRepository>((ref) {
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(productionFlowProvider),
   );
 });
 

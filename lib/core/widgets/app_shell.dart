@@ -90,7 +90,11 @@ class _AppShellState extends ConsumerState<AppShell> {
               selectedIcon: Icon(Icons.assessment),
               label: 'Reports',
             ),
-            NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
           ],
         ),
       ),
@@ -103,7 +107,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (_isEntryRoute(location)) return 1;
     if (location.startsWith('/search')) return 2;
     if (location.startsWith('/reports')) return 3;
-    return 4;
+    if (_isSettingsRoute(location)) return 4;
+    return 0;
   }
 
   bool _isEntryRoute(String location) {
@@ -122,6 +127,15 @@ class _AppShellState extends ConsumerState<AppShell> {
     return entryRoutes.any(location.startsWith);
   }
 
+  bool _isSettingsRoute(String location) {
+    const settingsRoutes = [
+      '/settings',
+      '/notifications',
+      '/corrections',
+    ];
+    return settingsRoutes.any(location.startsWith);
+  }
+
   void _onTap(BuildContext context, int index) {
     switch (index) {
       case 0:
@@ -133,44 +147,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       case 3:
         context.go('/reports');
       case 4:
-        _showMoreMenu(context);
+        context.go('/settings');
     }
-  }
-
-  void _showMoreMenu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('Notifications'),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.go('/notifications');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('Settings'),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.go('/settings');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.gavel_outlined),
-              title: const Text('Corrections'),
-              onTap: () {
-                Navigator.pop(ctx);
-                context.go('/corrections');
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

@@ -53,6 +53,8 @@ final googleSignInProvider = Provider<GoogleSignIn>((ref) {
 });
 
 Future<void> initGoogleSignIn() async {
+  // serverClientId is read from android/app/src/main/res/values/strings.xml
+  // on Android. On web, initialize() takes no arguments.
   await GoogleSignIn.instance.initialize();
 }
 
@@ -171,7 +173,7 @@ class AuthRepository {
         'p_name': googleUser.displayName ?? googleUser.email.split('@').first,
         'p_avatar_url': googleUser.photoUrl ?? '',
         'p_workspace_name': 'My Workspace',
-      });
+      },);
 
       final workspaceId = result['workspace_id'] as String;
       final isNew = result['is_new'] as bool? ?? false;
@@ -198,7 +200,7 @@ class AuthRepository {
         await _saveLocalSession(appUser.copyWith(
           authProvider: 'google',
           avatarUrl: googleUser.photoUrl ?? appUser.avatarUrl,
-        ));
+        ),);
       }
       return appUser;
     } on Exception {
@@ -263,7 +265,7 @@ class AuthRepository {
       result = await client.rpc('create_user_workspace', params: {
         'p_profile_name': profileName,
         'p_workspace_name': workspaceName,
-      });
+      },);
     } catch (e) {
       throw Exception('Workspace setup failed: $e');
     }
@@ -314,7 +316,7 @@ class AuthRepository {
       'p_user_id': userId,
       'p_purpose': purpose,
       'p_new_value': newValue,
-    });
+    },);
     return result as String;
   }
 
@@ -329,7 +331,7 @@ class AuthRepository {
       'p_user_id': userId,
       'p_code': code,
       'p_purpose': purpose,
-    });
+    },);
     return result as Map<String, dynamic>;
   }
 
@@ -344,7 +346,7 @@ class AuthRepository {
       'p_user_id': userId,
       'p_name': name,
       'p_avatar_url': avatarUrl,
-    });
+    },);
   }
 
   Future<void> updateAuthEmail({
@@ -356,7 +358,7 @@ class AuthRepository {
     await client.rpc('update_user_email_after_otp', params: {
       'p_user_id': userId,
       'p_new_email': newEmail,
-    });
+    },);
   }
 
   Future<void> changePassword(String newPassword) async {
@@ -623,7 +625,7 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
   }
 
   Future<String?> verifyPasswordChangeOtp(
-      String code, String newPassword) async {
+      String code, String newPassword,) async {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {

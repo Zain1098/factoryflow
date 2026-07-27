@@ -236,7 +236,7 @@ class StockLedgerService {
       partId: partId,
       stage: StockStage.approvedAp,
       qty: qty,
-      refTable: 'final_dispatches',
+      refTable: 'dispatch_items',
       refId: refId,
     );
   }

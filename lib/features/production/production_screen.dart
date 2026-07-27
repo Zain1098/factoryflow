@@ -87,6 +87,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
       final repo = ref.read(productionRepositoryProvider);
       final savedBatches = <String>[];
 
+      bool anyWip = false;
+      bool anyFinal = false;
+
       for (final entry in _sessionEntries) {
         for (int i = 0; i < entry.machineIds.length; i++) {
           final result = await repo.save(
@@ -106,14 +109,21 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
           );
           if (result.success && result.batchNumber != null) {
             savedBatches.add(result.batchNumber!);
+            if (result.isWip) anyWip = true; else anyFinal = true;
           } else if (!result.success) {
             throw Exception(result.error ?? 'Failed to save entry');
           }
         }
       }
 
+      final msg = anyFinal && !anyWip
+          ? '✅ Production complete! Added to BP Stock.'
+          : anyWip && !anyFinal
+              ? '⏳ Saved as WIP — not yet in BP Stock. Continue on next machine.'
+              : '✅ Session saved (mixed WIP + final stages).';
+
       setState(() {
-        _success = 'Saved ${_sessionEntries.length} operator session entries!';
+        _success = msg;
         _generatedBatches = savedBatches;
         _sessionEntries.clear();
       });
@@ -137,6 +147,41 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
       _success = null;
       _generatedBatches = [];
     });
+  }
+
+  void _showWipSuggestBanner(Map<String, dynamic> wip, ProductionFlowConfig flow) {
+    final batchNumber = wip['batch_number'] as String? ?? '';
+    final nextMachineId = wip['next_machine_id'] as String?;
+    final machines = ref.read(machinesProvider).value ?? [];
+    final nextMachineName = nextMachineId != null
+        ? (machines.where((m) => m['id'] == nextMachineId).firstOrNull?['name'] as String? ?? 'Next Machine')
+        : 'Next Machine';
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 8),
+        backgroundColor: Colors.orange.shade800,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('WIP Batch Found!', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Batch $batchNumber needs $nextMachineName next.',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'Continue',
+          textColor: Colors.yellow,
+          onPressed: () {
+            setState(() {
+              _wipBatchNumber = batchNumber;
+            });
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -233,10 +278,20 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       onChanged: (v) {
                         if (v == null) return;
                         final part = list.firstWhere((p) => p['id'] == v);
+                        final flow = ref.read(productionFlowProvider);
                         setState(() {
                           _partId = v;
                           _partCode = part['code'] as String;
+                          _wipBatchNumber = null;
                         });
+                        // Auto-detect WIP batch for this part
+                        if (flow.isMultiStage) {
+                          final wip = ref.read(productionRepositoryProvider)
+                              .getWipBatchForPart(v, flow.requiredMachineIds);
+                          if (wip != null) {
+                            _showWipSuggestBanner(wip, flow);
+                          }
+                        }
                       },
                     ),
                   ),
@@ -567,8 +622,12 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                           decoration: BoxDecoration(
                             color: Colors.orange.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                           ),
-                          child: const Text('WIP', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 11)),
+                          child: Text(
+                            'BP Stock (Stage ${doneIds.length}/${doneIds.length + missingIds.length})',
+                            style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -760,33 +819,61 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen>
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: machines.map((m) {
-                        final mId = m['id'] as String;
-                        final mName = m['name'] as String;
-                        final mCode = m['machine_code'] as String? ?? mId.substring(0, 1);
-                        final isSelected = localMachineIds.contains(mId);
-                        return FilterChip(
-                          label: Text(mName),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setDialogState(() {
-                              if (selected) {
-                                localMachineIds.add(mId);
-                                localMachineNames.add(mName);
-                                localMachineCodes.add(mCode);
-                              } else {
-                                localMachineIds.remove(mId);
-                                localMachineNames.remove(mName);
-                                localMachineCodes.remove(mCode);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
+                    Builder(builder: (context) {
+                      final flow = ref.read(productionFlowProvider);
+                      return Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: machines.map((m) {
+                          final mId = m['id'] as String;
+                          final mName = m['name'] as String;
+                          final mCode = m['machine_code'] as String? ?? mId.substring(0, 1);
+                          final isSelected = localMachineIds.contains(mId);
+                          final seqIdx = flow.isMultiStage ? flow.getMachineSequenceIndex(mId) : 0;
+                          final isFinal = flow.isMultiStage && flow.isFinalMachine(mId);
+                          return FilterChip(
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(mName),
+                                if (seqIdx > 0) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: isFinal ? Colors.green.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      isFinal ? 'Final' : 'WIP',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: isFinal ? Colors.green : Colors.orange,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setDialogState(() {
+                                if (selected) {
+                                  localMachineIds.add(mId);
+                                  localMachineNames.add(mName);
+                                  localMachineCodes.add(mCode);
+                                } else {
+                                  localMachineIds.remove(mId);
+                                  localMachineNames.remove(mName);
+                                  localMachineCodes.remove(mCode);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      );
+                    }),
                     const SizedBox(height: 12),
 
                     // Status Dropdown

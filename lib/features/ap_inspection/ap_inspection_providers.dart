@@ -122,6 +122,25 @@ class ApInspectionRepository {
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
+  /// RTV stock grouped by vendor — shows vendor, part, qty, date, reason
+  Future<List<Map<String, dynamic>>> getRtvStock() async {
+    final rows = _db.db.select(
+      '''SELECT ai.date, ai.batch_number, ai.rtv_qty, ai.reject_reason_id as reason,
+                p.id as part_id, p.code as part_code, p.name as part_name,
+                COALESCE(sl.running_balance, 0) as current_balance
+         FROM ap_inspections ai
+         LEFT JOIN parts p ON p.id = ai.part_id
+         LEFT JOIN stock_ledger sl ON sl.part_id = ai.part_id AND sl.stage = 'rtv_stock'
+           AND sl.created_at = (
+             SELECT MAX(created_at) FROM stock_ledger
+             WHERE part_id = ai.part_id AND stage = 'rtv_stock'
+           )
+         WHERE ai.rtv_qty > 0
+         ORDER BY ai.date DESC LIMIT 100''',
+    );
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
   /// Scrap AP rejected qty (write off — mark done)
   Future<ApInspectionResult> scrapRejected({
     required String partId,
@@ -202,6 +221,21 @@ final apInspectionListProvider = FutureProvider<List<Map<String, dynamic>>>((ref
 
 final apRejectedStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(apInspectionRepositoryProvider).getApRejectedStock();
+});
+
+/// After Plating stock waiting for AP inspection
+final pendingApStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(databaseServiceProvider).getBalancesByStage('pending_ap');
+});
+
+/// AP OK stock ready for final dispatch
+final apOkStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(databaseServiceProvider).getBalancesByStage('approved_ap');
+});
+
+/// RTV stock — vendor-wise breakdown
+final rtvStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(apInspectionRepositoryProvider).getRtvStock();
 });
 
 class ApInspectionResult {
