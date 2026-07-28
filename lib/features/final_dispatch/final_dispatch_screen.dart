@@ -82,7 +82,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
           availableQty: (stockItem['balance'] as num).toDouble(),
-        )));
+        ),),);
   }
 
   void _removeItem(int idx) {
@@ -106,7 +106,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
       }
       if (item.exceedsAvailable) {
         setState(() => _error =
-            '${item.partCode}: Qty (${item.qty.toInt()}) exceeds available AP OK stock (${item.availableQty.toInt()})');
+            '${item.partCode}: Qty (${item.qty.toInt()}) exceeds available AP OK stock (${item.availableQty.toInt()})',);
         return;
       }
     }
@@ -129,7 +129,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           partId: i.partId,
           partCode: i.partCode,
           qty: i.qty,
-        )).toList(),
+        ),).toList(),
       );
 
       if (result.success) {
@@ -264,7 +264,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
             children: [
               Text('AP OK STOCK — SELECT PARTS', style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.primary, fontWeight: FontWeight.bold,
-              )),
+              ),),
             ],
           ),
           const SizedBox(height: 8),
@@ -341,7 +341,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Total Dispatch',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),),
                   Text(
                     '${_items.fold(0.0, (s, i) => s + i.qty).toInt()} PCS (${_items.length} parts)',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: theme.colorScheme.primary),
@@ -365,7 +365,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
               items: list.map((c) => DropdownMenuItem(
                 value: c['id'] as String,
                 child: Text(c['name'] as String),
-              )).toList(),
+              ),).toList(),
               onChanged: (v) => setState(() => _customerId = v),
             ),
           ),
@@ -385,7 +385,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     items: list.map((v) => DropdownMenuItem(
                       value: v['id'] as String,
                       child: Text(v['number_plate'] as String),
-                    )).toList(),
+                    ),).toList(),
                     onChanged: (v) => setState(() => _vehicleId = v),
                   ),
                 ),
@@ -410,7 +410,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     items: list.map((d) => DropdownMenuItem(
                       value: d['id'] as String,
                       child: Text(d['name'] as String),
-                    )).toList(),
+                    ),).toList(),
                     onChanged: (v) => setState(() => _driverId = v),
                   ),
                 ),
@@ -450,7 +450,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                       const Icon(Icons.receipt_long_outlined),
                       const SizedBox(width: 8),
                       Text('Challan: $_savedChallan',
-                          style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+                          style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold),),
                     ],
                   ),
                 ),
@@ -508,7 +508,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                           child: Text(
                             session['date'] as String? ?? '—',
                             style: const TextStyle(
-                                color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 12),
+                                color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 12,),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -521,7 +521,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                         Text(
                           '$totalQty PCS',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo),
+                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo,),
                         ),
                         const SizedBox(width: 6),
                         Icon(
@@ -534,7 +534,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     if (session['challan_number'] != null) ...[
                       const SizedBox(height: 4),
                       Text('Challan: ${session['challan_number']}',
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),),
                     ],
                     if (session['vehicle_plate'] != null || session['driver_name'] != null) ...[
                       const SizedBox(height: 4),
@@ -568,7 +568,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                               ),
                             ],
                           ),
-                        )),
+                        ),),
                   ],
                 ),
               ),
@@ -630,11 +630,11 @@ class _DispatchItemCardState extends State<_DispatchItemCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(item.partCode,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: const TextStyle(fontWeight: FontWeight.bold),),
                   Text(item.partName,
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),),
                   Text('Available: ${item.availableQty.toInt()} PCS',
-                      style: TextStyle(fontSize: 11, color: theme.colorScheme.primary)),
+                      style: TextStyle(fontSize: 11, color: theme.colorScheme.primary),),
                 ],
               ),
             ),

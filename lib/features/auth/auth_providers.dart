@@ -3,8 +3,8 @@ import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -53,27 +53,29 @@ final googleSignInProvider = Provider<GoogleSignIn>((ref) {
 });
 
 Future<void> initGoogleSignIn() async {
-  // serverClientId is read from android/app/src/main/res/values/strings.xml
-  // on Android. On web, initialize() takes no arguments.
-  await GoogleSignIn.instance.initialize();
+  await GoogleSignIn.instance.initialize(
+    serverClientId: '758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com',
+  );
 }
 
-// ─── Local session storage ────────────────────────────────────────────────────
+// ─── Secure local session storage ────────────────────────────────────────────
+
+const _secureStorage = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+);
 
 Future<void> _saveLocalSession(AppUser user) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_kSessionKey, jsonEncode(user.toJson()));
-  await prefs.setString(_kSessionCreatedKey, DateTime.now().toIso8601String());
-  await prefs.setString(_kSessionProviderKey, user.authProvider);
+  await _secureStorage.write(key: _kSessionKey, value: jsonEncode(user.toJson()));
+  await _secureStorage.write(key: _kSessionCreatedKey, value: DateTime.now().toIso8601String());
+  await _secureStorage.write(key: _kSessionProviderKey, value: user.authProvider);
 }
 
 Future<AppUser?> _loadLocalSession() async {
   try {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kSessionKey);
+    final raw = await _secureStorage.read(key: _kSessionKey);
     if (raw == null) return null;
 
-    final createdStr = prefs.getString(_kSessionCreatedKey);
+    final createdStr = await _secureStorage.read(key: _kSessionCreatedKey);
     if (createdStr != null) {
       final created = DateTime.tryParse(createdStr);
       if (created != null &&
@@ -95,10 +97,7 @@ Future<AppUser?> _loadLocalSession() async {
 }
 
 Future<void> _clearLocalSession() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(_kSessionKey);
-  await prefs.remove(_kSessionCreatedKey);
-  await prefs.remove(_kSessionProviderKey);
+  await _secureStorage.deleteAll();
 }
 
 // ─── Auth Repository ──────────────────────────────────────────────────────────
@@ -251,12 +250,13 @@ class AuthRepository {
       throw Exception('Sign-up failed: email may already be registered.');
     }
 
-    // Step 2: Sign in immediately so auth.uid() is valid for the RPC.
-    // signUp alone does not always establish an active JWT session.
-    try {
-      await client.auth.signInWithPassword(email: email, password: password);
-    } on AuthException catch (e) {
-      throw Exception('Auto sign-in after signup failed: ${e.message}');
+    // Step 2: Sign in only if signUp didn't return a session.
+    if (response.session == null) {
+      try {
+        await client.auth.signInWithPassword(email: email, password: password);
+      } on AuthException catch (e) {
+        throw Exception('Auto sign-in after signup failed: ${e.message}');
+      }
     }
 
     // Step 3: Call RPC — auth.uid() is now valid

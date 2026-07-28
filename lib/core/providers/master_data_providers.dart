@@ -220,6 +220,68 @@ class MasterDataRepository {
     _bump();
   }
 
+  Future<String> insertVendor(String name) async {
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'factory_id': _db.activeWorkspaceId,
+      'name': name,
+      'active': 1,
+    };
+    await _db.insertRecord('vendors', data);
+    await _sync.queueInsert(tableName: 'vendors', recordId: id, payload: data);
+    _bump();
+    return id;
+  }
+
+  // alias used by settings screen
+  Future<String> insertVendorByName(String name) => insertVendor(name);
+
+  Future<void> updateVendor(String id, String name) async {
+    _db.db.execute('UPDATE vendors SET name = ? WHERE id = ?', [name, id]);
+    await _sync.queueInsert(
+      tableName: 'vendors',
+      recordId: id,
+      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'name': name},
+    );
+    _bump();
+  }
+
+  Future<void> deactivateVendor(String id) async {
+    _db.db.execute('UPDATE vendors SET active = 0 WHERE id = ?', [id]);
+    _bump();
+  }
+
+  Future<void> updateDriver(String id, String name) async {
+    _db.db.execute('UPDATE drivers SET name = ? WHERE id = ?', [name, id]);
+    await _sync.queueInsert(
+      tableName: 'drivers',
+      recordId: id,
+      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'name': name},
+    );
+    _bump();
+  }
+
+  Future<void> deactivateDriver(String id) async {
+    _db.db.execute('UPDATE drivers SET active = 0 WHERE id = ?', [id]);
+    _bump();
+  }
+
+  Future<void> updateVehicle(String id, String numberPlate) async {
+    _db.db.execute('UPDATE vehicles SET number_plate = ? WHERE id = ?', [numberPlate, id]);
+    await _sync.queueInsert(
+      tableName: 'vehicles',
+      recordId: id,
+      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'number_plate': numberPlate},
+    );
+    _bump();
+  }
+
+  Future<void> deactivateVehicle(String id) async {
+    _db.db.execute('UPDATE vehicles SET active = 0 WHERE id = ?', [id]);
+    _bump();
+  }
+
   Future<String> insertVehicle(String numberPlate) async {
     final id = _uuid.v4();
     final data = {

@@ -422,13 +422,48 @@ class DatabaseService {
     };
   }
 
-  /// Today's target for a given day-of-week (0=Sun … 6=Sat).
+  /// Today's target — sum of all part targets for the given day-of-week.
+  /// Falls back to 500 only if NO targets are configured at all.
   Future<double> getTodayTarget(int dayOfWeek) async {
     final result = db.select(
       'SELECT COALESCE(SUM(target_qty), 0) AS total FROM target_master WHERE day_of_week = ?',
       [dayOfWeek],
     );
-    return (result.first['total'] as num?)?.toDouble() ?? 0;
+    final total = (result.first['total'] as num?)?.toDouble() ?? 0;
+    if (total > 0) return total;
+    // No targets configured — check if any targets exist at all
+    final anyRow = db.select('SELECT COUNT(*) as cnt FROM target_master');
+    final hasAny = (anyRow.first['cnt'] as int) > 0;
+    return hasAny ? 0 : 500; // 500 only as first-run default
+  }
+
+  // ── Target Master CRUD ────────────────────────────────────────────────────
+
+  List<Map<String, dynamic>> getTargets() {
+    final result = db.select(
+      'SELECT tm.*, p.name as part_name, p.code as part_code '
+      'FROM target_master tm '
+      'LEFT JOIN parts p ON p.id = tm.part_id '
+      'ORDER BY p.name, tm.day_of_week',
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  void upsertTarget({
+    required String id,
+    required String partId,
+    required int dayOfWeek,
+    required int targetQty,
+  }) {
+    db.execute(
+      'INSERT OR REPLACE INTO target_master (id, factory_id, part_id, day_of_week, target_qty, effective_from) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      [id, activeWorkspaceId, partId, dayOfWeek, targetQty, DateTime.now().toIso8601String().substring(0, 10)],
+    );
+  }
+
+  void deleteTarget(String id) {
+    db.execute('DELETE FROM target_master WHERE id = ?', [id]);
   }
 
   // ── Master Data ───────────────────────────────────────────────────────────

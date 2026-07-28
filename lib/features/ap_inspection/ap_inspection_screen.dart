@@ -78,7 +78,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
           availableQty: (stockItem['balance'] as num).toDouble(),
-        )));
+        ),),);
   }
 
   void _removeEntry(int idx) {
@@ -211,7 +211,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             children: [
               Text('PENDING AP STOCK', style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.primary, fontWeight: FontWeight.bold,
-              )),
+              ),),
               const SizedBox(width: 8),
               Tooltip(
                 message: 'Parts received from Faco vendor, waiting for AP inspection',
@@ -244,7 +244,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                   final alreadyAdded = _entries.any((e) => e.partId == item['id']);
                   final balance = (item['balance'] as num).toInt();
                   return FilterChip(
-                    label: Text('${item['code']} (${balance} PCS)'),
+                    label: Text('${item['code']} ($balance PCS)'),
                     selected: alreadyAdded,
                     onSelected: alreadyAdded ? null : (_) => _addPart(item),
                     avatar: alreadyAdded
@@ -318,17 +318,17 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 child: const Icon(Icons.verified, color: Colors.green, size: 20),
               ),
               title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text('✓$approved  ✗$rejected',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: const TextStyle(fontWeight: FontWeight.bold),),
                   if (rtv > 0)
                     Text('RTV $rtv',
-                        style: const TextStyle(fontSize: 11, color: Colors.deepOrange)),
+                        style: const TextStyle(fontSize: 11, color: Colors.deepOrange),),
                 ],
               ),
             );
@@ -405,9 +405,9 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(e.partCode,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),),
                       Text(e.partName,
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),),
                     ],
                   ),
                 ),
@@ -551,7 +551,7 @@ class _SplitChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label,
-          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),),
     );
   }
 }
@@ -600,7 +600,7 @@ class _ApRejectedTab extends ConsumerWidget {
                         Text(
                           '${totalQty.toInt()} PCS AP Rejected',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
                         ),
                         Text(
                           'Will be scrapped via SAP system',
@@ -634,11 +634,11 @@ class _ApRejectedTab extends ConsumerWidget {
                         '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      subtitle: Text('Pending SAP scrap confirmation'),
+                      subtitle: const Text('Pending SAP scrap confirmation'),
                       trailing: Text(
                         '$qty PCS',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red),
+                            fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
                       ),
                     ),
                   );

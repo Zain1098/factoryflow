@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../core/database/database_service.dart';
 import '../../core/providers/master_data_providers.dart';
 import '../../core/models/app_user.dart';
 import '../../core/network/sync_service.dart';
@@ -15,7 +17,6 @@ import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
 import '../corrections/corrections_screen.dart';
-import '../notifications/notifications_screen.dart';
 
 // ── Biometric toggle provider ─────────────────────────────────────────────────────
 
@@ -107,6 +108,22 @@ final _notifPrefsProvider =
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+Widget _masterTile(
+  BuildContext context,
+  IconData icon,
+  String title,
+  String subtitle,
+  Widget page,
+) {
+  return ListTile(
+    leading: Icon(icon),
+    title: Text(title),
+    subtitle: Text(subtitle),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
+  );
+}
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -153,17 +170,14 @@ class SettingsScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
-          // ── User Profile Card ───────────────────────────────────────────────
+          // ── User Profile Card ────────────────────────────────────────────────
           if (user != null)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primaryContainer,
-                    theme.colorScheme.secondaryContainer,
-                  ],
+                  colors: [theme.colorScheme.primaryContainer, theme.colorScheme.secondaryContainer],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -171,12 +185,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AccountSettingsScreen(),
-                  ),
-                ),
+                onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountSettingsScreen())),
                 child: Row(
                   children: [
                     _buildAvatar(context, user),
@@ -185,19 +194,9 @@ class SettingsScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            user.name,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          Text(user.name, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 2),
-                          Text(
-                            user.email,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                          Text(user.email, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -207,12 +206,7 @@ class SettingsScreen extends ConsumerWidget {
                             ),
                             child: Text(
                               user.role.value.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.primary,
-                                letterSpacing: 1,
-                              ),
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: theme.colorScheme.primary, letterSpacing: 1),
                             ),
                           ),
                         ],
@@ -224,8 +218,37 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
 
-          // ── Appearance ──────────────────────────────────────────────────────
-          const _SectionLabel('Appearance'),
+          // ── PRODUCTION ────────────────────────────────────────────────────
+          const _SectionLabel('Production'),
+          ListTile(
+            leading: const Icon(Icons.track_changes_outlined),
+            title: const Text('Daily Production Targets'),
+            subtitle: const Text('Part-wise & day-wise targets'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionTargetsPage())),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_tree_outlined),
+            title: const Text('Multi-Machine Flow'),
+            subtitle: const Text('Machine sequence, WIP & dispatch rules'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionFlowPage())),
+          ),
+          const Divider(),
+
+          // ── MASTER DATA ──────────────────────────────────────────────────
+          const _SectionLabel('Master Data'),
+          _masterTile(context, Icons.category_outlined, 'Parts', 'Add, edit or remove parts', const _PartsPage()),
+          _masterTile(context, Icons.precision_manufacturing_outlined, 'Machines', 'Add, reorder & set machine sequence', const _MachinesPage()),
+          _masterTile(context, Icons.people_outline, 'Operators', 'Add or remove operators', const _OperatorsPage()),
+          _masterTile(context, Icons.local_shipping_outlined, 'Suppliers', 'Material suppliers', const _SuppliersPage()),
+          _masterTile(context, Icons.store_outlined, 'Vendors (Faco)', 'Plating vendors', const _VendorsPage()),
+          _masterTile(context, Icons.person_outlined, 'Drivers', 'Add or remove drivers', const _DriversPage()),
+          _masterTile(context, Icons.directions_car_outlined, 'Vehicles', 'Number plates', const _VehiclesPage()),
+          const Divider(),
+
+          // ── APP SETTINGS ─────────────────────────────────────────────────
+          const _SectionLabel('App Settings'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Theme'),
@@ -237,56 +260,17 @@ class SettingsScreen extends ConsumerWidget {
                 ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
               ],
               selected: {themeMode},
-              onSelectionChanged: (s) =>
-                  ref.read(themeModeProvider.notifier).setThemeMode(s.first),
-              style: const ButtonStyle(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
+              onSelectionChanged: (s) => ref.read(themeModeProvider.notifier).setThemeMode(s.first),
+              style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact),
             ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.qr_code_2_outlined),
             title: const Text('Batch Number Tracking'),
-            subtitle: const Text('Enable batch numbers on entries and forms'),
+            subtitle: const Text('Show batch numbers on entries'),
             value: showBatchNumber,
-            onChanged: (val) {
-              ref.read(batchConfigProvider.notifier).toggle(val);
-            },
+            onChanged: (val) => ref.read(batchConfigProvider.notifier).toggle(val),
           ),
-          const Divider(),
-
-          // ── Notifications ──────────────────────────────────────────────────
-          const _SectionLabel('Notifications'),
-          _NotificationsSection(),
-          ListTile(
-            leading: const Icon(Icons.notifications_none_outlined),
-            title: const Text('View All Notifications'),
-            subtitle: const Text('Machine alerts, downtime, RTV & more'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
-            ),
-          ),
-          const Divider(),
-
-          // ── Corrections ─────────────────────────────────────────────────────
-          const _SectionLabel('Corrections'),
-          ListTile(
-            leading: const Icon(Icons.gavel_outlined),
-            title: const Text('Correction Requests'),
-            subtitle: const Text('Review, approve or reject edit requests'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const CorrectionsScreen()),
-            ),
-          ),
-          const Divider(),
-
-          // ── Security ───────────────────────────────────────────────────────
-          const _SectionLabel('Security'),
           Consumer(
             builder: (context, ref, _) {
               final biometricAsync = ref.watch(_biometricEnabledProvider);
@@ -298,164 +282,62 @@ class SettingsScreen extends ConsumerWidget {
                   return SwitchListTile(
                     secondary: const Icon(Icons.fingerprint),
                     title: const Text('Biometric Lock'),
-                    subtitle: Text(
-                      available
-                          ? 'Require fingerprint/face on app open'
-                          : 'Not available on this device',
-                    ),
+                    subtitle: Text(available ? 'Fingerprint / face unlock' : 'Not available on this device'),
                     value: biometricAsync.value ?? false,
-                    onChanged: available
-                        ? (val) async {
-                            await svc.setEnabled(val);
-                            ref.invalidate(_biometricEnabledProvider);
-                          }
-                        : null,
+                    onChanged: available ? (val) async { await svc.setEnabled(val); ref.invalidate(_biometricEnabledProvider); } : null,
                   );
                 },
               );
             },
           ),
-          const Divider(),
-
-          // ── Production Flow ────────────────────────────────────────────────
-          const _SectionLabel('Production Flow'),
           ListTile(
-            leading: const Icon(Icons.account_tree_outlined),
-            title: const Text('Multi-Machine Flow & Rules'),
-            subtitle: const Text('Configure machine sequence (M1→M2→M3) & dispatch rules'),
+            leading: const Icon(Icons.notifications_none_outlined),
+            title: const Text('Notifications'),
+            subtitle: const Text('Alerts, sound & vibration preferences'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _ProductionFlowPage()),
-            ),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _NotificationsPage())),
           ),
           const Divider(),
 
-          // ── Database & Sync ────────────────────────────────────────────────
-          const _SectionLabel('Database & Cloud Sync'),
+          // ── SYSTEM ───────────────────────────────────────────────────────
+          const _SectionLabel('System'),
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined),
+            title: const Text('Correction Requests'),
+            subtitle: const Text('Review, approve or reject edit requests'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const CorrectionsScreen())),
+          ),
           ListTile(
             leading: const Icon(Icons.cloud_sync_outlined),
-            title: const Text('Database & Cloud Sync Status'),
-            subtitle: const Text('Local SQLite status, pending queue & cloud sync'),
+            title: const Text('Cloud Sync Status'),
+            subtitle: const Text('Pending queue & sync history'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _DatabaseSyncStatusPage()),
-            ),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _DatabaseSyncStatusPage())),
           ),
-          const Divider(),
-
-          // ── Master Data ────────────────────────────────────────────────────
-          const _SectionLabel('Master Data'),
-          ListTile(
-            leading: const Icon(Icons.people_outline),
-            title: const Text('Operators'),
-            subtitle: const Text('Add, rename or remove operators'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _OperatorsPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.precision_manufacturing_outlined),
-            title: const Text('Machines'),
-            subtitle: const Text('Add, rename, reorder machines & set sequence'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _MachinesPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.category_outlined),
-            title: const Text('Parts'),
-            subtitle: const Text('Add, rename or remove parts'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _PartsPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.local_shipping_outlined),
-            title: const Text('Suppliers'),
-            subtitle: const Text('Add, rename or remove material suppliers'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _SuppliersPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.store_outlined),
-            title: const Text('Vendors (Faco / Plating)'),
-            subtitle: const Text('Add, rename or remove plating vendors'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _VendorsPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_outlined),
-            title: const Text('Drivers'),
-            subtitle: const Text('Add, rename or remove drivers'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _DriversPage()),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.directions_car_outlined),
-            title: const Text('Vehicles'),
-            subtitle: const Text('Add or remove vehicle number plates'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _VehiclesPage()),
-            ),
-          ),
-          const Divider(),
-
-          // ── Data Management ────────────────────────────────────────────────
-          const _SectionLabel('Data Management'),
           ListTile(
             leading: const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
             title: const Text('Erase Data'),
-            subtitle: const Text('Clear a section or all transaction records'),
+            subtitle: const Text('Clear transaction records'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const _EraseDataPage()),
-            ),
+            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _EraseDataPage())),
           ),
           if (user != null)
             ListTile(
               leading: const Icon(Icons.no_accounts_outlined, color: Colors.red),
-              title: const Text(
-                'Delete My Account',
-                style: TextStyle(color: Colors.red),
-              ),
-              subtitle: const Text('Remove account access and clear local data'),
+              title: const Text('Delete My Account', style: TextStyle(color: Colors.red)),
+              subtitle: const Text('Remove access and clear local data'),
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
           const Divider(),
 
-          // ── About ───────────────────────────────────────────────────────────
+          // ── ABOUT ────────────────────────────────────────────────────────
           const _SectionLabel('About'),
           const ListTile(
             leading: Icon(Icons.info_outline),
-            title: Text('App Version'),
-            trailing: Text('1.0.0', style: TextStyle(color: Colors.grey)),
-          ),
-          const ListTile(
-            leading: Icon(Icons.factory_outlined),
             title: Text('ProFlow Manufacturing ERP'),
-            subtitle: Text('FactoryFlow PRD v2.4 — Phase 1'),
+            subtitle: Text('FactoryFlow v1.0.0'),
           ),
-          const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
@@ -466,6 +348,22 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Notifications Page ───────────────────────────────────────────────────────
+
+class _NotificationsPage extends ConsumerWidget {
+  const _NotificationsPage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Notifications')),
+      body: SingleChildScrollView(
+        child: _NotificationsSection(),
       ),
     );
   }
@@ -2091,6 +1989,324 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                   ),
               ],
             ),
+    );
+  }
+}
+
+// ─── Production Targets Page ──────────────────────────────────────────────────
+// Smart grid: select a part → see all 7 days in one table → edit inline.
+// "Apply to all days" button fills the whole week in one tap.
+
+class _ProductionTargetsPage extends ConsumerStatefulWidget {
+  const _ProductionTargetsPage();
+  @override
+  ConsumerState<_ProductionTargetsPage> createState() => _ProductionTargetsPageState();
+}
+
+class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> {
+  static const _dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  // partId → {dayOfWeek → {id, qty}}
+  Map<String, Map<int, Map<String, dynamic>>> _targetMap = {};
+  List<Map<String, dynamic>> _parts = [];
+  String? _selectedPartId;
+  bool _loading = true;
+
+  // per-day controllers for the selected part
+  final List<TextEditingController> _ctrls =
+      List.generate(7, (_) => TextEditingController());
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _load() {
+    final db = ref.read(databaseServiceProvider);
+    final parts = ref.read(partsProvider).value ?? [];
+    final targets = db.getTargets();
+
+    // Build map: partId → dayOfWeek → {id, qty}
+    final map = <String, Map<int, Map<String, dynamic>>>{};
+    for (final t in targets) {
+      final pid = t['part_id'] as String? ?? '';
+      final day = (t['day_of_week'] as int?) ?? 0;
+      map.putIfAbsent(pid, () => {});
+      map[pid]![day] = {'id': t['id'], 'qty': t['target_qty']};
+    }
+
+    setState(() {
+      _parts = parts;
+      _targetMap = map;
+      _loading = false;
+      // auto-select first part
+      if (_selectedPartId == null && parts.isNotEmpty) {
+        _selectedPartId = parts.first['id'] as String;
+      }
+      _refreshControllers();
+    });
+  }
+
+  void _refreshControllers() {
+    if (_selectedPartId == null) return;
+    final dayMap = _targetMap[_selectedPartId] ?? {};
+    for (int d = 0; d < 7; d++) {
+      final qty = dayMap[d]?['qty'] as int?;
+      _ctrls[d].text = qty != null ? qty.toString() : '';
+    }
+  }
+
+  void _saveDay(int day) {
+    if (_selectedPartId == null) return;
+    final qty = int.tryParse(_ctrls[day].text.trim());
+    final db = ref.read(databaseServiceProvider);
+    final existing = _targetMap[_selectedPartId]?[day];
+    if (qty == null || qty <= 0) {
+      // delete if cleared
+      if (existing != null) {
+        db.deleteTarget(existing['id'] as String);
+        _targetMap[_selectedPartId]?.remove(day);
+      }
+      return;
+    }
+    final id = existing?['id'] as String? ?? const Uuid().v4();
+    db.upsertTarget(id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty);
+    _targetMap.putIfAbsent(_selectedPartId!, () => {});
+    _targetMap[_selectedPartId!]![day] = {'id': id, 'qty': qty};
+  }
+
+  /// Fill all 7 days with the value from the first non-empty field, or show dialog.
+  void _applyToAllDays() {
+    final firstVal = _ctrls.map((c) => int.tryParse(c.text.trim())).firstWhere(
+      (v) => v != null && v > 0,
+      orElse: () => null,
+    );
+    if (firstVal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a target for at least one day first.')),
+      );
+      return;
+    }
+    for (int d = 0; d < 7; d++) {
+      _ctrls[d].text = firstVal.toString();
+      _saveDay(d);
+    }
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('All days set to $firstVal PCS')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+    if (_parts.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Daily Production Targets')),
+        body: const EmptyState(
+          message: 'No parts found.\nAdd parts first in Settings → Master Data → Parts.',
+          icon: Icons.category_outlined,
+        ),
+      );
+    }
+
+    final dayMap = _targetMap[_selectedPartId] ?? {};
+    final totalWeekTarget = dayMap.values.fold(0, (s, v) => s + ((v['qty'] as int?) ?? 0));
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Daily Production Targets'),
+        actions: [
+          TextButton.icon(
+            onPressed: _applyToAllDays,
+            icon: const Icon(Icons.copy_all_outlined, size: 18),
+            label: const Text('Apply to All Days'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Part selector tabs
+          if (_parts.length > 1)
+            Container(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: _parts.map((p) {
+                    final pid = p['id'] as String;
+                    final isSelected = pid == _selectedPartId;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text('${p['code']} – ${p['name']}'),
+                        selected: isSelected,
+                        onSelected: (_) {
+                          setState(() => _selectedPartId = pid);
+                          _refreshControllers();
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Info banner
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Set target per day. Leave blank = no target that day. '
+                          'Tap "Apply to All Days" to copy one value to all 7 days instantly.',
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 7-day grid
+                ...List.generate(7, (day) {
+                  final isToday = DateTime.now().weekday % 7 == day;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        // Day label
+                        Container(
+                          width: 52,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isToday
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                _dayLabels[day],
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: isToday
+                                      ? theme.colorScheme.onPrimary
+                                      : theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              if (isToday)
+                                Text(
+                                  'Today',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: theme.colorScheme.onPrimary.withValues(alpha: 0.8),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Target input
+                        Expanded(
+                          child: TextField(
+                            controller: _ctrls[day],
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              hintText: 'No target',
+                              suffixText: 'PCS',
+                              isDense: true,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onChanged: (_) => _saveDay(day),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Quick +50 / -50
+                        Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                final v = int.tryParse(_ctrls[day].text) ?? 0;
+                                _ctrls[day].text = (v + 50).toString();
+                                _saveDay(day);
+                                setState(() {});
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('+50', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            GestureDetector(
+                              onTap: () {
+                                final v = int.tryParse(_ctrls[day].text) ?? 0;
+                                final newV = (v - 50).clamp(0, 99999);
+                                _ctrls[day].text = newV > 0 ? newV.toString() : '';
+                                _saveDay(day);
+                                setState(() {});
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('-50', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+
+                const Divider(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Weekly Total Target', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('$totalWeekTarget PCS', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontSize: 16)),
+                  ],
+                ),
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

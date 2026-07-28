@@ -68,7 +68,7 @@ class DashboardData {
     rawMaterial: 0, bpStock: 0, atFaco: 0, pendingAp: 0,
     approvedAp: 0, apRejected: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
     todayApReject: 0, todayDispatch: 0, pendingSyncCount: 0,
-    todayTarget: 500, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
+    todayTarget: 0, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
     machineStatuses: [], weeklyData: [],
   );
 
@@ -129,12 +129,8 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final syncCount = await db.countPendingSync();
 
   // Active targets for today
-  final weekday = today.weekday % 7; // Sunday=0, Monday=1, etc.
-  final targetRows = db.db.select(
-    "SELECT SUM(target_qty) as total_target FROM target_master WHERE day_of_week = ?",
-    [weekday],
-  );
-  final todayTarget = (targetRows.first['total_target'] as num?)?.toDouble() ?? 500.0;
+  final weekday = today.weekday % 7; // Sunday=0, Monday=1 ... Saturday=6
+  final todayTarget = await db.getTodayTarget(weekday);
 
   // Machine list and statuses
   final machinesList = db.db.select("SELECT id, name FROM machines WHERE active = 1");

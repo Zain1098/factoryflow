@@ -158,7 +158,7 @@ class EntriesMenuScreen extends ConsumerWidget {
   List<_EntryItem> _entriesForRole(UserRole? role) {
     final all = [
       const _EntryItem('Material Receive', 'Raw material intake', '/material-receive', Icons.inventory_2, 'material_receive'),
-      const _EntryItem('Production', 'Machine production entry', '/production', Icons.precision_manufacturing, 'production'),
+      const _EntryItem('Daily Production', 'Machine production entry', '/production', Icons.precision_manufacturing, 'production'),
       const _EntryItem('Machine Downtime', 'Breakdown & maintenance', '/machine-downtime', Icons.build, 'machine_downtime'),
       const _EntryItem('BP Inspection', 'Pre-plating QC', '/bp-inspection', Icons.fact_check, 'bp_inspection'),
       const _EntryItem('Dispatch to Faco', 'Send to plating vendor', '/dispatch-faco', Icons.local_shipping, 'dispatch_faco'),

@@ -38,8 +38,9 @@ Future<void> main() async {
       supabaseConnected = true;
       // Initialize Google Sign-In after Supabase is ready
       await initGoogleSignIn().catchError((_) {});
-    } catch (_) {
+    } catch (e) {
       // Offline or misconfigured — app continues in offline mode.
+      debugPrint('Supabase init failed: $e');
     }
   }
 
@@ -134,33 +135,27 @@ class _BiometricGuardState extends State<_BiometricGuard>
   @override
   Widget build(BuildContext context) {
     if (_checking) {
-      return const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(body: Center(child: CircularProgressIndicator())),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!_unlocked) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.fingerprint, size: 72, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text(
-                  'Biometric lock is enabled',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: _checkAndPrompt,
-                  icon: const Icon(Icons.lock_open_outlined),
-                  label: const Text('Authenticate'),
-                ),
-              ],
-            ),
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.fingerprint, size: 72, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'Biometric lock is enabled',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: _checkAndPrompt,
+                icon: const Icon(Icons.lock_open_outlined),
+                label: const Text('Authenticate'),
+              ),
+            ],
           ),
         ),
       );
