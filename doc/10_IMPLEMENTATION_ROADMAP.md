@@ -34,11 +34,13 @@ Deliverable: signed gap report and safe migration plan.
   conflict, insufficient-stock rollback, RPC privileges, and non-member
   authorization. Live preflight still shows 3 production rows, 0 ledger rows,
   and 0 duplicate stage groups.
-- `ATOMIC_PRODUCTION_SYNC_ENABLED` now defaults to true. New production saves
-  use the atomic server RPC, while legacy `insert` and `ledger` queue handlers
-  remain available for already-pending records.
+- `ATOMIC_PRODUCTION_SYNC_ENABLED` remains false because the live server ledger
+  currently has no baseline rows. Enabling server-authoritative production
+  before stock reconciliation would correctly produce insufficient-stock
+  conflicts. Legacy sync remains active until the ledger baseline is proven.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
+  server-ledger baseline reconciliation and atomic rollout activation,
   remaining live SECURITY DEFINER privilege cleanup from the advisor baseline,
   migration fixture, and CI baseline.
 

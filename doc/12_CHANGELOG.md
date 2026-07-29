@@ -28,8 +28,10 @@
   migration `20260729174535`. Existing data counts remained 3 production rows
   and 0 ledger rows; the RPC, stage constraint, indexes, and intended
   authenticated-only privileges were verified.
-- Enabled `ATOMIC_PRODUCTION_SYNC_ENABLED` by default after post-deployment
-  verification. Older pending queue operations remain backward compatible.
+- Kept `ATOMIC_PRODUCTION_SYNC_ENABLED` disabled after deployment because the
+  live ledger baseline is empty. This prevents new server-authoritative
+  production commands from becoming false insufficient-stock conflicts before
+  ledger reconciliation. Older queue operations remain backward compatible.
 - Verified the migration in an isolated PostgreSQL-compatible runtime: schema
   compilation, one event plus three ledger inserts, idempotent retry, duplicate
   conflict, insufficient-stock no-write behavior, anonymous privilege denial,

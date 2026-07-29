@@ -178,5 +178,7 @@ atomic_production_posting`. Post-deployment checks confirmed unchanged row
 counts, the expanded stage constraint, both composite indexes, the new RPC, and
 authenticated-only execution for both stock-writing RPCs.
 
-`ATOMIC_PRODUCTION_SYNC_ENABLED` now defaults to true. Legacy queue handlers
-remain in place for already-pending pre-deployment mutations.
+`ATOMIC_PRODUCTION_SYNC_ENABLED` remains false because live stock-ledger rows
+are currently zero. Server stock must be reconciled against the trusted local
+ledger and pending queue before the atomic path is enabled. Legacy queue
+handlers remain in place for current and already-pending mutations.
