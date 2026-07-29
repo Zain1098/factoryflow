@@ -23,9 +23,17 @@ Deliverable: signed gap report and safe migration plan.
   back in one local SQLite transaction.
 - Ledger queue items now use the existing server stock RPC operation instead of
   a direct table upsert.
+- New production saves now queue one versioned mutation envelope containing the
+  production event and all related ledger rows. A forward Supabase migration
+  defines the atomic/idempotent `post_production_stage` RPC and
+  membership-aware authorization; live deployment remains pending controlled
+  migration verification. The client path is guarded by
+  `ATOMIC_PRODUCTION_SYNC_ENABLED=false` until that deployment is verified, so
+  current production sync remains backward compatible.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
-  migration fixture, and CI baseline.
+  Supabase migration staging/RLS verification, live SECURITY DEFINER privilege
+  cleanup from the advisor baseline, migration fixture, and CI baseline.
 
 ## Phase 1 - Foundation
 - App shell, routing, themes

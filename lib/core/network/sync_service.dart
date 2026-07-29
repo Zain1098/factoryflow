@@ -204,9 +204,32 @@ class SyncService {
               conflicts++;
               continue;
             }
+          } else if (operation == 'production_post') {
+            final result = await client.rpc(
+              'post_production_stage',
+              params: {'p_command': payload},
+            ).timeout(const Duration(seconds: 15));
+            if (result is Map && result['success'] == false) {
+              await _db.markProductionPostingConflict(recordId);
+              await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+              await _logSyncHistory(
+                tableName: tableName,
+                recordId: recordId,
+                operation: operation,
+                status: 'conflict',
+                errorMessage:
+                    result['error']?.toString() ?? 'RPC conflict detected',
+              );
+              conflicts++;
+              continue;
+            }
           }
 
-          await _db.markRecordSynced(tableName, recordId);
+          if (operation == 'production_post') {
+            await _db.markProductionPostingSynced(recordId);
+          } else {
+            await _db.markRecordSynced(tableName, recordId);
+          }
           await _db.updateSyncStatus(id, 'synced', attempts: attempts);
           await _logSyncHistory(
             tableName: tableName,
@@ -328,6 +351,24 @@ class SyncService {
       tableName: 'stock_ledger',
       recordId: recordId,
       operation: 'ledger',
+      payload: payload,
+    );
+    if (triggerSync) await schedulePendingSync();
+  }
+
+  /// Queues one atomic server command containing a production event and every
+  /// stock-ledger movement caused by that event.
+  Future<void> queueProductionPost({
+    required String recordId,
+    required Map<String, dynamic> payload,
+    bool triggerSync = true,
+  }) async {
+    final factoryId = payload['factory_id']?.toString() ?? '';
+    if (factoryId.isEmpty) return;
+    await _db.enqueueSync(
+      tableName: 'productions',
+      recordId: recordId,
+      operation: 'production_post',
       payload: payload,
     );
     if (triggerSync) await schedulePendingSync();

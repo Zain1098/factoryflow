@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
@@ -72,12 +73,20 @@ class MachineEntry {
 // ─── Repository ───────────────────────────────────────────────────────────────
 
 class ProductionRepository {
-  ProductionRepository(this._db, this._sync, this._ledger, this._flow);
+  ProductionRepository(
+    this._db,
+    this._sync,
+    this._ledger,
+    this._flow, [
+    this._atomicProductionSyncEnabled =
+        AppConstants.atomicProductionSyncEnabled,
+  ]);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
   final ProductionFlowConfig _flow;
+  final bool _atomicProductionSyncEnabled;
 
   String? get _activeFactoryId {
     final factoryId = _db.activeWorkspaceId.trim();
@@ -284,6 +293,7 @@ class ProductionRepository {
     final isComplete = !_flow.isMultiStage ||
         allRequired.every((id) => savedMachineIds.contains(id));
     final isWip = !isComplete;
+    final deviceId = await _db.getOrCreateDeviceId();
 
     // Validate the complete batch before recording anything. The in-memory
     // balances include earlier entries in this same submission, so Bending →
@@ -330,6 +340,7 @@ class ProductionRepository {
             rejectQty: entry.rejectQty,
             refId: id,
             triggerSync: false,
+            queueForSync: !_atomicProductionSyncEnabled,
           );
           if (!ledgerResult.success) {
             throw _ProductionPostingFailure(
@@ -359,13 +370,33 @@ class ProductionRepository {
           await _db.insertRecord('productions', record);
 
           final syncPayload = Map<String, dynamic>.from(record)
-            ..remove('good_qty');
-          await _sync.queueInsert(
-            tableName: 'productions',
-            recordId: id,
-            payload: syncPayload,
-            triggerSync: false,
-          );
+            ..remove('good_qty')
+            ..remove('sync_status');
+          if (_atomicProductionSyncEnabled) {
+            final ledgerEntries = await _db.getProductionLedgerEntries(id);
+            await _sync.queueProductionPost(
+              recordId: id,
+              payload: {
+                'command_id': id,
+                'device_id': deviceId,
+                'user_id': createdBy,
+                'factory_id': factoryId,
+                'created_at': now.toUtc().toIso8601String(),
+                'schema_version': AppConstants.syncEnvelopeSchemaVersion,
+                'app_version': AppConstants.appVersion,
+                'production': syncPayload,
+                'ledger_entries': ledgerEntries,
+              },
+              triggerSync: false,
+            );
+          } else {
+            await _sync.queueInsert(
+              tableName: 'productions',
+              recordId: id,
+              payload: syncPayload,
+              triggerSync: false,
+            );
+          }
         }
       });
     } on _ProductionPostingFailure catch (error) {

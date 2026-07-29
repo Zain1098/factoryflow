@@ -4,6 +4,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import '../constants/stock_stages.dart';
 
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
@@ -26,12 +27,16 @@ class DatabaseService {
     _initialized = true;
   }
 
+  Future<T> runInTransaction<T>(Future<T> Function() action) => action();
+
   Future<double> getCurrentBalance(String partId, String stage) async => 0;
   Future<double> getTotalBalanceByStage(String stage) async => 0;
 
   Future<Map<String, double>> getAllStageTotals() async => {};
 
-  Future<Map<String, double>> getTodayProductionSummary(String todayStr) async => {
+  Future<Map<String, double>> getTodayProductionSummary(
+          String todayStr) async =>
+      {
         'production': 0,
         'bp_reject': 0,
         'ap_reject': 0,
@@ -40,7 +45,8 @@ class DatabaseService {
 
   Future<double> getTodayTarget(int dayOfWeek) async => 0;
 
-  Future<List<Map<String, dynamic>>> getBalancesByStage(String stage) async => [];
+  Future<List<Map<String, dynamic>>> getBalancesByStage(String stage) async =>
+      [];
 
   Future<void> updateCorrectionStatus({
     required String id,
@@ -58,8 +64,12 @@ class DatabaseService {
     Map<String, dynamic>? newValue,
   }) async {}
 
-  Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(String partId) async => [];
-  Future<List<Map<String, dynamic>>> getAllPurchaseOrders({int limit = 50}) async => [];
+  Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
+          String partId) async =>
+      [];
+  Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
+          {int limit = 50}) async =>
+      [];
   Future<void> updatePurchaseOrderStatus(String id, String status) async {}
 
   Future<List<Map<String, dynamic>>> getActiveParts() async =>
@@ -97,6 +107,17 @@ class DatabaseService {
     } else {
       list.add({'key': 'active_workspace_id', 'value': workspaceId});
     }
+  }
+
+  Future<String> getOrCreateDeviceId() async {
+    _tables.putIfAbsent('app_settings', () => []);
+    final list = _tables['app_settings']!;
+    final idx = list.indexWhere((r) => r['key'] == 'device_id');
+    if (idx >= 0) return list[idx]['value']?.toString() ?? '';
+
+    final deviceId = const Uuid().v4();
+    list.add({'key': 'device_id', 'value': deviceId});
+    return deviceId;
   }
 
   String get activeWorkspaceId {
@@ -169,6 +190,38 @@ class DatabaseService {
   }) async {}
   Future<void> markRecordSynced(String table, String id) async {}
   Future<void> markRecordConflict(String table, String id) async {}
+
+  Future<List<Map<String, dynamic>>> getProductionLedgerEntries(
+    String productionId,
+  ) async {
+    return (_tables['stock_ledger'] ?? [])
+        .where(
+          (row) =>
+              row['ref_table'] == 'productions' &&
+              row['ref_id'] == productionId,
+        )
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  Future<void> markProductionPostingSynced(String productionId) async {
+    _setPostingSyncStatus(productionId, 'synced');
+  }
+
+  Future<void> markProductionPostingConflict(String productionId) async {
+    _setPostingSyncStatus(productionId, 'conflict');
+  }
+
+  void _setPostingSyncStatus(String productionId, String status) {
+    for (final row in _tables['productions'] ?? const []) {
+      if (row['id'] == productionId) row['sync_status'] = status;
+    }
+    for (final row in _tables['stock_ledger'] ?? const []) {
+      if (row['ref_table'] == 'productions' && row['ref_id'] == productionId) {
+        row['sync_status'] = status;
+      }
+    }
+  }
 
   Future<StockLedgerResult> writeStockLedgerEntry({
     required String id,
@@ -280,9 +333,13 @@ class DatabaseService {
     String? partId,
     int limit = 100,
   }) async {
-    final list = List<Map<String, dynamic>>.from(_tables['stock_adjustments'] ?? []);
-    final filtered = partId != null ? list.where((r) => r['part_id'] == partId).toList() : list;
-    filtered.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+    final list =
+        List<Map<String, dynamic>>.from(_tables['stock_adjustments'] ?? []);
+    final filtered = partId != null
+        ? list.where((r) => r['part_id'] == partId).toList()
+        : list;
+    filtered.sort((a, b) =>
+        (b['created_at'] as String).compareTo(a['created_at'] as String));
     return filtered.take(limit).toList();
   }
 
@@ -370,8 +427,10 @@ class _FakeDb {
   _FakeDb(this._tables);
   final Map<String, List<Map<String, dynamic>>> _tables;
 
-  List<Map<String, dynamic>> select(String sql,
-          [List<Object?> params = const [],]) =>
+  List<Map<String, dynamic>> select(
+    String sql, [
+    List<Object?> params = const [],
+  ]) =>
       [];
 
   void execute(String sql, [List<Object?> params = const []]) {}

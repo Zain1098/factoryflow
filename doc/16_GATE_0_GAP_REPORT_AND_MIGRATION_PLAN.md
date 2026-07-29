@@ -18,12 +18,14 @@ No runtime behavior or database schema is changed by this report.
 - Local persistence uses native `sqlite3` and the existing
   `factoryflow.sqlite` file.
 - Supabase remains the remote Auth/Postgres/Storage platform.
-- Five forward Supabase migration files are present.
+- Six forward Supabase migration files are present; the newest atomic
+  production-posting migration is local-only pending controlled staging.
 - Operational modules exist for material receive, production, downtime, BP/AP
   inspection, Faco dispatch/receive, RTV, final dispatch, reports, search,
   corrections, notifications, settings, and dashboard.
-- Stock movement is centralized through `StockLedgerService`, but business event,
-  ledger, and sync-queue writes are not consistently one local transaction.
+- Stock movement is centralized through `StockLedgerService`. Production event,
+  ledger, and sync-queue writes are now one local transaction; other
+  stock-changing flows still require the same audit and characterization.
 - Local schema is created with `CREATE TABLE IF NOT EXISTS` plus compatibility
   `ALTER TABLE` checks. There is no formal local schema version.
 - Automated coverage currently consists of configuration/offline-startup tests;
@@ -35,12 +37,13 @@ No runtime behavior or database schema is changed by this report.
 | Priority | Requirement | Current state | Risk |
 |---|---|---|---|
 | P0 | Drift is the locked local database | App directly uses `sqlite3` | Unapproved architecture divergence and no generated migration model |
-| P0 | Atomic event + ledger + projection + queue posting | Several flows perform separate writes | Partial failure can leave orphan ledger or event data |
-| P0 | Idempotent mutation envelope | UUID records exist, but `client_mutation_id`, `idempotency_key`, device, version, and dependencies are incomplete | Duplicate effect or ambiguous retry |
+| P0 | Atomic event + ledger + projection + queue posting | Production is atomic locally and has a staged server RPC behind a disabled rollout flag; other flows still perform separate writes | Partial failure can leave orphan ledger or event data until the server migration is verified and outside production |
+| P0 | Idempotent mutation envelope | Production now carries command UUID, device/user/factory/time/schema/app metadata; other mutations and dependency metadata remain incomplete | Duplicate effect or ambiguous retry outside the migrated slice |
 | P0 | Domain-aware conflict review | Queue can mark conflict, but no complete `sync_conflicts` record/reviewer/resolution model exists | Conflict cannot be safely reviewed or audited |
 | P0 | Versioned local migrations | Compatibility checks mutate schema without a schema-version contract | Upgrade behavior cannot be reliably tested or rolled back |
 | P0 | Factory isolation | Most writes are scoped; selected batch/helper/report queries still need a complete audit | Cross-workspace data mixing |
 | P0 | Ledger-only stock truth | Ledger service exists; some reporting/query paths require proof that they do not calculate an alternative balance | Inconsistent stock display |
+| P0 | SECURITY DEFINER privileges | Live Supabase advisors report anonymous execution grants on existing RPCs; the staged production migration revokes anonymous access only for the two ledger/production posting RPCs | Exposed privileged function surface requires a separate full privilege audit |
 | P1 | Typed domain/application errors | Many repositories and widgets use maps, strings, and generic exceptions | Weak validation and unclear recovery actions |
 | P1 | Draft separation | No canonical `draft_forms` persistence/status model | Long form recovery and no-stock draft guarantee are absent |
 | P1 | Structured diagnostics | Basic sync history exists; device/schema/mutation correlation is incomplete | Slow production support and weak audit evidence |

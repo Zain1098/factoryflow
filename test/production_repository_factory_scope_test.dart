@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:factoryflow/core/database/database_service_native.dart';
 import 'package:factoryflow/core/network/sync_service.dart';
 import 'package:factoryflow/core/providers/production_flow_provider.dart';
@@ -27,6 +29,7 @@ void main() {
         enabled: true,
         requiredMachineIds: ['machine-a1', 'machine-a2'],
       ),
+      true,
     );
 
     await databaseService.insertRecord('productions', {
@@ -227,6 +230,110 @@ void main() {
             row['table_name'] == 'stock_ledger' && row['operation'] == 'ledger',
       ),
       isTrue,
+    );
+  });
+
+  test('production save queues one atomic command with all ledger rows',
+      () async {
+    final result = await repository.saveJob(
+      partId: 'part-a',
+      partCode: 'PART-A',
+      entries: [
+        MachineEntry(
+          machineId: 'machine-a1',
+          machineName: 'Bending',
+          machineCode: 'B',
+          sequenceIndex: 1,
+          isFinal: false,
+          operatorId: 'operator-a',
+          operatorName: 'Operator A',
+          shiftId: 'A',
+          productionQty: 10,
+          rejectQty: 1,
+        ),
+      ],
+      createdBy: 'user-a',
+      recordedAt: DateTime.utc(2026, 7, 29, 12),
+    );
+
+    expect(result.error, isEmpty);
+    final queued = sqliteDatabase.select(
+      'SELECT table_name, record_id, operation, payload '
+      'FROM sync_queue ORDER BY id',
+    );
+    expect(queued, hasLength(1));
+    expect(queued.single['table_name'], 'productions');
+    expect(queued.single['operation'], 'production_post');
+
+    final payload =
+        jsonDecode(queued.single['payload'] as String) as Map<String, dynamic>;
+    expect(payload['command_id'], queued.single['record_id']);
+    expect(payload['factory_id'], 'factory-a');
+    expect(payload['device_id'], isNotEmpty);
+    expect(payload['user_id'], 'user-a');
+    expect(payload['schema_version'], 1);
+    expect(payload['app_version'], '1.0.0+1');
+    expect(payload['production']['good_qty'], isNull);
+    expect(payload['ledger_entries'], hasLength(3));
+
+    final ledgerRows = sqliteDatabase.select(
+      "SELECT sync_status FROM stock_ledger "
+      "WHERE ref_table = 'productions' AND ref_id = ?",
+      [queued.single['record_id']],
+    );
+    expect(ledgerRows, hasLength(3));
+    expect(ledgerRows.every((row) => row['sync_status'] == 'pending'), isTrue);
+  });
+
+  test('legacy sync remains available until server migration is activated',
+      () async {
+    final legacyRepository = ProductionRepository(
+      databaseService,
+      SyncService(databaseService),
+      ledgerService,
+      const ProductionFlowConfig(
+        enabled: true,
+        requiredMachineIds: ['machine-a1', 'machine-a2'],
+      ),
+      false,
+    );
+
+    final result = await legacyRepository.saveJob(
+      partId: 'part-a',
+      partCode: 'PART-A',
+      entries: [
+        MachineEntry(
+          machineId: 'machine-a1',
+          machineName: 'Bending',
+          machineCode: 'B',
+          sequenceIndex: 1,
+          isFinal: false,
+          operatorId: 'operator-a',
+          operatorName: 'Operator A',
+          shiftId: 'A',
+          productionQty: 10,
+          rejectQty: 0,
+        ),
+      ],
+      createdBy: 'user-a',
+      recordedAt: DateTime.utc(2026, 7, 29, 13),
+    );
+
+    expect(result.error, isEmpty);
+    final queued = sqliteDatabase.select(
+      'SELECT table_name, operation FROM sync_queue ORDER BY id',
+    );
+    expect(queued, hasLength(3));
+    expect(
+      queued.where((row) => row['operation'] == 'ledger'),
+      hasLength(2),
+    );
+    expect(
+      queued.where(
+        (row) =>
+            row['table_name'] == 'productions' && row['operation'] == 'insert',
+      ),
+      hasLength(1),
     );
   });
 }

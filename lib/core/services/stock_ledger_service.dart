@@ -274,6 +274,7 @@ class StockLedgerService {
     required double rejectQty,
     required String refId,
     bool triggerSync = true,
+    bool queueForSync = true,
   }) async {
     final available = await getAvailableStockAtStage(partId, inputStage);
     if (inputQty > available) {
@@ -293,6 +294,7 @@ class StockLedgerService {
       qty: inputQty,
       refId: refId,
       triggerSync: triggerSync,
+      queueForSync: queueForSync,
     );
     if (!outResult.success) return outResult;
 
@@ -305,6 +307,7 @@ class StockLedgerService {
         qty: goodQty,
         refId: refId,
         triggerSync: triggerSync,
+        queueForSync: queueForSync,
       );
       if (!goodResult.success) return goodResult;
     }
@@ -318,6 +321,7 @@ class StockLedgerService {
         qty: rejectQty,
         refId: refId,
         triggerSync: triggerSync,
+        queueForSync: queueForSync,
       );
       if (!rejectResult.success) return rejectResult;
     }
@@ -389,6 +393,7 @@ class StockLedgerService {
     required double qty,
     required String refId,
     required bool triggerSync,
+    required bool queueForSync,
   }) async {
     final factoryId = _db.activeWorkspaceId;
     final ledgerId = _uuid.v4();
@@ -404,7 +409,7 @@ class StockLedgerService {
       refId: refId,
     );
 
-    if (result.success) {
+    if (result.success && queueForSync) {
       await _sync.queueLedger(
         recordId: ledgerId,
         payload: {

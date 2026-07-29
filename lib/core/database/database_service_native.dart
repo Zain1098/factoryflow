@@ -324,6 +324,22 @@ class DatabaseService {
     );
   }
 
+  Future<String> getOrCreateDeviceId() async {
+    final rows = db.select(
+      'SELECT value FROM app_settings WHERE key = ? LIMIT 1',
+      ['device_id'],
+    );
+    final existing = rows.isEmpty ? '' : rows.first['value']?.toString() ?? '';
+    if (existing.isNotEmpty) return existing;
+
+    final deviceId = const Uuid().v4();
+    db.execute(
+      'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+      ['device_id', deviceId],
+    );
+    return deviceId;
+  }
+
   String get activeWorkspaceId {
     final rows = db.select(
       'SELECT value FROM app_settings WHERE key = ? LIMIT 1',
@@ -648,6 +664,42 @@ class DatabaseService {
 
   Future<void> markRecordConflict(String table, String id) async {
     db.execute("UPDATE $table SET sync_status = 'conflict' WHERE id = ?", [id]);
+  }
+
+  Future<List<Map<String, dynamic>>> getProductionLedgerEntries(
+    String productionId,
+  ) async {
+    final result = db.select(
+      'SELECT id, factory_id, part_id, stage, direction, qty, ref_table, ref_id '
+      'FROM stock_ledger WHERE ref_table = ? AND ref_id = ? '
+      'ORDER BY created_at, rowid',
+      ['productions', productionId],
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<void> markProductionPostingSynced(String productionId) async {
+    db.execute(
+      "UPDATE productions SET sync_status = 'synced' WHERE id = ?",
+      [productionId],
+    );
+    db.execute(
+      "UPDATE stock_ledger SET sync_status = 'synced' "
+      "WHERE ref_table = 'productions' AND ref_id = ?",
+      [productionId],
+    );
+  }
+
+  Future<void> markProductionPostingConflict(String productionId) async {
+    db.execute(
+      "UPDATE productions SET sync_status = 'conflict' WHERE id = ?",
+      [productionId],
+    );
+    db.execute(
+      "UPDATE stock_ledger SET sync_status = 'conflict' "
+      "WHERE ref_table = 'productions' AND ref_id = ?",
+      [productionId],
+    );
   }
 
   // ── Correction Requests ───────────────────────────────────────────────────
