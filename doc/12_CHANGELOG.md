@@ -1,5 +1,15 @@
 # Documentation Changelog
 
+## v3.0-dev - 2026-07-29
+- Added the Gate 0 repository gap report and safe migration plan.
+- Recorded current native sqlite3 divergence from the locked Drift architecture.
+- Recommended staged Drift adoption over the existing database file, subject to
+  an approved ADR and migration tests.
+- Documented data-at-risk, rollback conditions, security requirements, and Gate
+  0 exit criteria.
+- Added production-page widget regression coverage for narrow mobile rendering
+  and actionable parts-loading errors instead of a blank page.
+
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.
 - Separated PRD, business rules, architecture, database/sync, coding, UX, security, testing, roadmap, and AI rules.

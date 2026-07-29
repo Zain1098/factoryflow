@@ -10,6 +10,17 @@
 
 Deliverable: signed gap report and safe migration plan.
 
+### Current Gate 0 status - 2026-07-29
+- Repository checkpoint pushed at commit `5a55d17`.
+- Repository, schema, migrations, screens, and current tests inventoried.
+- Gap report and staged migration recommendation documented in
+  `16_GATE_0_GAP_REPORT_AND_MIGRATION_PLAN.md`.
+- Production blank-screen characterization tests added for narrow mobile layout
+  and visible parts-loading failure.
+- Pending approval: ADR for staged Drift adoption over the existing SQLite file.
+- Pending work: database/ledger characterization tests, backup/restore proof,
+  migration fixture, and CI baseline.
+
 ## Phase 1 - Foundation
 - App shell, routing, themes
 - Auth and profiles
