@@ -7,7 +7,7 @@ import '../../features/auth/auth_providers.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/material_receive/material_receive_screen.dart';
-import '../../features/production/production_screen.dart';
+import '../../features/production/production_page.dart';
 import '../../features/machine_downtime/machine_downtime_screen.dart';
 import '../../features/bp_inspection/bp_inspection_screen.dart';
 import '../../features/dispatch_faco/dispatch_faco_screen.dart';
@@ -48,6 +48,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Logged in → skip login screen
       if (isLoggedIn && isLoginRoute) return '/dashboard';
 
+      if (isLoggedIn) {
+        final role = userAsync.value!.role;
+        final module = _moduleForLocation(state.matchedLocation);
+        if (module != null && !role.canAccessModule(module)) {
+          return '/dashboard';
+        }
+        if (_isOwnerOnlyLocation(state.matchedLocation) && !role.canManageMasters) {
+          return '/dashboard';
+        }
+      }
+
       return null;
     },
     routes: [
@@ -85,6 +96,25 @@ final routerProvider = Provider<GoRouter>((ref) {
 // ---------------------------------------------------------------------------
 // Listens to currentUserProvider — notifies router on every auth change
 // ---------------------------------------------------------------------------
+
+String? _moduleForLocation(String location) {
+  const modules = {
+    '/material-receive': 'material_receive',
+    '/production': 'production',
+    '/machine-downtime': 'machine_downtime',
+    '/bp-inspection': 'bp_inspection',
+    '/dispatch-faco': 'dispatch_faco',
+    '/receive-faco': 'receive_faco',
+    '/ap-inspection': 'ap_inspection',
+    '/rtv': 'rtv',
+    '/final-dispatch': 'final_dispatch',
+  };
+  return modules[location];
+}
+
+bool _isOwnerOnlyLocation(String location) {
+  return location == '/settings' || location == '/corrections';
+}
 
 class _AuthChangeNotifier extends ChangeNotifier {
   _AuthChangeNotifier(Ref ref) {

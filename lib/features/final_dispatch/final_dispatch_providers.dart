@@ -70,8 +70,6 @@ class FinalDispatchRepository {
       'sync_status': 'pending',
     };
 
-    await _db.insertRecord('dispatch_sessions', sessionRecord);
-
     // Save each item + deduct from AP OK stock
     for (final item in items) {
       final itemId = _uuid.v4();
@@ -83,8 +81,6 @@ class FinalDispatchRepository {
         'dispatch_qty': item.qty,
         'sync_status': 'pending',
       };
-      await _db.insertRecord('dispatch_items', itemRecord);
-
       final ledgerResult = await _ledger.finalDispatch(
         partId: item.partId,
         qty: item.qty,
@@ -94,9 +90,12 @@ class FinalDispatchRepository {
         return FinalDispatchResult(success: false, error: ledgerResult.error);
       }
 
+      await _db.insertRecord('dispatch_items', itemRecord);
+
       await _sync.queueInsert(tableName: 'dispatch_items', recordId: itemId, payload: itemRecord);
     }
 
+    await _db.insertRecord('dispatch_sessions', sessionRecord);
     await _sync.queueInsert(tableName: 'dispatch_sessions', recordId: sessionId, payload: sessionRecord);
 
     return FinalDispatchResult(success: true, recordId: sessionId, challanNumber: challan);

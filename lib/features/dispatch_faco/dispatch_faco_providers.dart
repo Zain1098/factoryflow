@@ -77,8 +77,6 @@ class DispatchFacoRepository {
       'sync_status': 'pending',
     };
 
-    await _db.insertRecord('dispatch_to_facos', record);
-
     // Stock: BP Stock OUT → At Faco IN (PRD 7.1)
     final ledgerResult = await _ledger.dispatchToFaco(
       partId: partId,
@@ -88,6 +86,8 @@ class DispatchFacoRepository {
     if (!ledgerResult.success) {
       return DispatchFacoResult(success: false, error: ledgerResult.error);
     }
+
+    await _db.insertRecord('dispatch_to_facos', record);
 
     await _sync.queueInsert(tableName: 'dispatch_to_facos', recordId: id, payload: record);
 

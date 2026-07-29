@@ -661,7 +661,31 @@ class DatabaseService {
     required String refTable,
     required String refId,
   }) async {
-    final currentBalance = await getCurrentBalance(partId, stage.value);
+    return writeStockLedgerEntryForStage(
+      id: id,
+      factoryId: factoryId,
+      partId: partId,
+      stage: stage.value,
+      stageLabel: stage.label,
+      direction: direction,
+      qty: qty,
+      refTable: refTable,
+      refId: refId,
+    );
+  }
+
+  Future<StockLedgerResult> writeStockLedgerEntryForStage({
+    required String id,
+    required String factoryId,
+    required String partId,
+    required String stage,
+    required String stageLabel,
+    required LedgerDirection direction,
+    required double qty,
+    required String refTable,
+    required String refId,
+  }) async {
+    final currentBalance = await getCurrentBalance(partId, stage);
     final newBalance = direction == LedgerDirection.in_
         ? currentBalance + qty
         : currentBalance - qty;
@@ -669,7 +693,7 @@ class DatabaseService {
     if (newBalance < 0) {
       return StockLedgerResult(
         success: false,
-        error: 'Insufficient stock. Available: $currentBalance ${stage.label}',
+        error: 'Insufficient stock. Available: $currentBalance $stageLabel',
         availableQty: currentBalance,
       );
     }
@@ -682,7 +706,7 @@ class DatabaseService {
       'time':
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
       'part_id': partId,
-      'stage': stage.value,
+      'stage': stage,
       'direction': direction.value,
       'qty': qty,
       'ref_table': refTable,

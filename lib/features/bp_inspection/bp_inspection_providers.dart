@@ -63,11 +63,11 @@ class BpInspectionRepository {
       'sync_status': 'pending',
     };
 
-    await _db.insertRecord('bp_inspections', record);
-
-    // Write stock ledger: reject qty OUT of BP stock (PRD 7.1)
+    // Write the stock movement before recording the inspection. If a second
+    // device consumes the same BP stock first, we do not leave an inspection
+    // history row behind without its matching ledger movement.
     if (bpRejectQty > 0) {
-      final ledgerResult = await _ledger.bpRejectOut(
+      final ledgerResult = await _ledger.bpRejectToRejected(
         partId: partId,
         qty: bpRejectQty,
         refId: id,
@@ -76,6 +76,8 @@ class BpInspectionRepository {
         return BpInspectionResult(success: false, error: ledgerResult.error);
       }
     }
+
+    await _db.insertRecord('bp_inspections', record);
 
     await _sync.queueInsert(tableName: 'bp_inspections', recordId: id, payload: record);
 

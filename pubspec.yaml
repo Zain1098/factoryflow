@@ -26,6 +26,12 @@ dependencies:
   google_sign_in: ^7.2.0
   local_auth: ^2.3.0
   flutter_secure_storage: ^9.2.4
+  excel: ^4.0.6
+  pdf: ^3.11.3
+  printing: ^5.14.3
+  # 12.x no longer applies the legacy Kotlin Gradle Plugin used by 11.x.
+  # It stays compatible with this app's AGP 9 / Java 17 Android setup.
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:

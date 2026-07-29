@@ -29,7 +29,8 @@ class DashboardScreen extends ConsumerWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('FactoryFlow', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text('FactoryFlow',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             if (user != null)
               Text(
                 '${user.name} · ${user.role.value}',
@@ -138,7 +139,8 @@ class DashboardScreen extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.rocket_launch_outlined, color: Colors.blue, size: 28),
+          const Icon(Icons.rocket_launch_outlined,
+              color: Colors.blue, size: 28),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -146,7 +148,8 @@ class DashboardScreen extends ConsumerWidget {
               children: [
                 const Text(
                   'Welcome to FactoryFlow!',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.blue),
                 ),
                 const SizedBox(height: 2),
                 const Text(
@@ -178,10 +181,10 @@ class DashboardScreen extends ConsumerWidget {
       child: Text(
         title.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
       ),
     );
   }
@@ -220,7 +223,8 @@ class DashboardScreen extends ConsumerWidget {
                     Text(
                       'Today\'s Production Efficiency',
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                        color: theme.colorScheme.onPrimaryContainer
+                            .withValues(alpha: 0.8),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -254,7 +258,8 @@ class DashboardScreen extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: (displayEff / 100).clamp(0.0, 1.0),
                 minHeight: 10,
-                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                backgroundColor:
+                    theme.colorScheme.primary.withValues(alpha: 0.1),
                 color: theme.colorScheme.primary,
               ),
             ),
@@ -266,13 +271,17 @@ class DashboardScreen extends ConsumerWidget {
                   '${displayEff.toStringAsFixed(1)}% of Today\'s Target',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                    color: theme.colorScheme.onPrimaryContainer
+                        .withValues(alpha: 0.8),
                   ),
                 ),
                 Text(
-                  data.totalRejectPct > 5.0 ? 'High Rejection Alert' : 'Healthy Quality',
+                  data.totalRejectPct > 5.0
+                      ? 'High Rejection Alert'
+                      : 'Healthy Quality',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: data.totalRejectPct > 5.0 ? Colors.red : Colors.green,
+                    color:
+                        data.totalRejectPct > 5.0 ? Colors.red : Colors.green,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -302,12 +311,14 @@ class DashboardScreen extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Machines Running status',
-                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 Text(
                   '${data.machinesRunning} / ${data.totalMachines} Running',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -323,7 +334,8 @@ class DashboardScreen extends ConsumerWidget {
                           : Colors.amber;
                   return Container(
                     margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
@@ -341,11 +353,13 @@ class DashboardScreen extends ConsumerWidget {
                           children: [
                             Text(
                               m.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                             Text(
                               '${m.status} · ${_fmt(m.todayQty)} pcs',
-                              style: const TextStyle(fontSize: 10, color: Colors.grey),
+                              style: const TextStyle(
+                                  fontSize: 10, color: Colors.grey),
                             ),
                           ],
                         ),
@@ -365,7 +379,8 @@ class DashboardScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     if (data.weeklyData.isEmpty) return const SizedBox.shrink();
 
-    final maxVal = data.weeklyData.map((d) => d.qty).reduce((a, b) => a > b ? a : b);
+    final maxVal =
+        data.weeklyData.map((d) => d.qty).reduce((a, b) => a > b ? a : b);
     final limit = maxVal == 0 ? 100.0 : maxVal;
 
     return Card(
@@ -378,24 +393,27 @@ class DashboardScreen extends ConsumerWidget {
           children: [
             Text(
               'Weekly Output Trend',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             SizedBox(
-              height: 120,
+              height: 124,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: data.weeklyData.map((d) {
                   final ratio = (d.qty / limit).clamp(0.0, 1.0);
-                  final barHeight = ratio * 80 + 4; // minimum height to show something
+                  final barHeight =
+                      ratio * 80 + 4; // minimum height to show something
 
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Text(
                         _fmt(d.qty),
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 9, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Container(
@@ -416,7 +434,8 @@ class DashboardScreen extends ConsumerWidget {
                       const SizedBox(height: 6),
                       Text(
                         d.dayLabel,
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.grey),
                       ),
                     ],
                   );
@@ -431,13 +450,27 @@ class DashboardScreen extends ConsumerWidget {
 
   Widget _buildStockGrid(BuildContext context, DashboardData data) {
     final stocks = [
-      _StockEntry('Raw Material', data.rawMaterial, Icons.inventory_2_outlined, Colors.brown),
-      _StockEntry('BP Stock', data.bpStock, Icons.check_circle_outline, Colors.blue),
-      _StockEntry('At Faco', data.atFaco, Icons.local_shipping_outlined, Colors.orange),
-      _StockEntry('Pending AP', data.pendingAp, Icons.hourglass_empty, Colors.purple),
-      _StockEntry('Approved AP', data.approvedAp, Icons.verified_outlined, Colors.green),
-      _StockEntry('AP Rejected', data.apRejected, Icons.warning_amber_outlined, Colors.deepOrange),
-      _StockEntry('RTV Stock', data.rtvStock, Icons.undo, Colors.red),
+      _StockEntry('Raw Material', data.rawMaterial, Icons.inventory_2_outlined,
+          Colors.brown),
+      _StockEntry('Bending WIP', data.bendingWip, Icons.rotate_right,
+          Colors.amber.shade800),
+      _StockEntry('Notching WIP', data.notchingWip, Icons.content_cut,
+          Colors.orange.shade800),
+      _StockEntry('End Forming WIP', data.endFormingWip,
+          Icons.change_circle_outlined, Colors.deepOrange.shade800),
+      _StockEntry('Production Rejected', data.productionRejected,
+          Icons.cancel_outlined, Colors.red.shade700),
+      _StockEntry(
+          'BP Stock', data.bpStock, Icons.check_circle_outline, Colors.blue),
+      _StockEntry('BP Rejected', data.bpRejected, Icons.cancel_outlined,
+          Colors.red.shade700),
+      _StockEntry(
+          'AP Approved', data.approvedAp, Icons.verified_outlined, Colors.teal),
+      _StockEntry('AP Rejected', data.apRejected, Icons.warning_amber_outlined,
+          Colors.deepOrange),
+      _StockEntry('RTV', data.rtvStock, Icons.undo, Colors.red),
+      _StockEntry('Finished Goods', data.approvedAp, Icons.inventory,
+          Colors.green.shade800),
     ];
 
     return GridView.builder(
@@ -472,7 +505,10 @@ class DashboardScreen extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         s.label,
-                        style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -481,7 +517,8 @@ class DashboardScreen extends ConsumerWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${_fmt(s.qty)} PCS',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -493,10 +530,14 @@ class DashboardScreen extends ConsumerWidget {
 
   Widget _buildTodayGrid(BuildContext context, DashboardData data) {
     final items = [
-      _StockEntry("Production", data.todayProduction, Icons.precision_manufacturing, Colors.teal),
-      _StockEntry("BP Reject", data.todayBpReject, Icons.cancel_outlined, Colors.red),
-      _StockEntry("AP Reject", data.todayApReject, Icons.remove_circle_outline, Colors.deepOrange),
-      _StockEntry("Dispatched", data.todayDispatch, Icons.send_outlined, Colors.indigo),
+      _StockEntry("Production", data.todayProduction,
+          Icons.precision_manufacturing, Colors.teal),
+      _StockEntry(
+          "BP Reject", data.todayBpReject, Icons.cancel_outlined, Colors.red),
+      _StockEntry("AP Reject", data.todayApReject, Icons.remove_circle_outline,
+          Colors.deepOrange),
+      _StockEntry(
+          "Dispatched", data.todayDispatch, Icons.send_outlined, Colors.indigo),
     ];
 
     return GridView.builder(
@@ -531,7 +572,10 @@ class DashboardScreen extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         s.label,
-                        style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -540,7 +584,8 @@ class DashboardScreen extends ConsumerWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${_fmt(s.qty)} PCS',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -579,10 +624,14 @@ class DashboardScreen extends ConsumerWidget {
 
   Widget _buildQuickActions(BuildContext context) {
     final actions = [
-      const _QuickAction('Production', Icons.precision_manufacturing, '/production', Colors.teal),
-      const _QuickAction('Material\nReceive', Icons.inventory_2, '/material-receive', Colors.brown),
-      const _QuickAction('BP\nInspection', Icons.fact_check, '/bp-inspection', Colors.blue),
-      const _QuickAction('Dispatch\nFaco', Icons.local_shipping, '/dispatch-faco', Colors.orange),
+      const _QuickAction('Production', Icons.precision_manufacturing,
+          '/production', Colors.teal),
+      const _QuickAction('Material\nReceive', Icons.inventory_2,
+          '/material-receive', Colors.brown),
+      const _QuickAction(
+          'BP\nInspection', Icons.fact_check, '/bp-inspection', Colors.blue),
+      const _QuickAction('Dispatch\nFaco', Icons.local_shipping,
+          '/dispatch-faco', Colors.orange),
     ];
 
     return SizedBox(
@@ -627,7 +676,8 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  String _fmt(double v) => v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
+  String _fmt(double v) =>
+      v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
 }
 
 class _StockEntry {

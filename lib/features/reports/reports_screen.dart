@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'report_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
+import '../../core/services/export_service.dart';
 
 // ─── Reports Hub ──────────────────────────────────────────────────────────────
 
@@ -225,6 +226,7 @@ class _ReportPage extends ConsumerWidget {
     required this.tableHeader,
     required this.rows,
     required this.emptyMessage,
+    this.onExport,
   });
 
   final String title;
@@ -233,6 +235,9 @@ class _ReportPage extends ConsumerWidget {
   final List<String> tableHeader;
   final List<List<String>> rows;
   final String emptyMessage;
+
+  /// Optional export callback. When provided, shows a FAB for export.
+  final VoidCallback? onExport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -253,6 +258,15 @@ class _ReportPage extends ConsumerWidget {
           ),
         ],
       ),
+      floatingActionButton: onExport != null
+          ? FloatingActionButton.extended(
+              onPressed: onExport,
+              icon: const Icon(Icons.ios_share_rounded),
+              label: const Text('Export'),
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+            )
+          : null,
       body: rows.isEmpty
           ? Center(
               child: Column(
@@ -383,6 +397,7 @@ class _DailyProductionReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(dailyProductionReportProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       return _ReportPage(
@@ -406,6 +421,25 @@ class _DailyProductionReport extends ConsumerWidget {
               _pct(r.rejectPct),
             ],).toList(),
         emptyMessage: 'No production data for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportProductionReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportProductionReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -489,6 +523,7 @@ class _DowntimeReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(downtimeReportProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalMins = data.fold(0, (s, r) => s + r.durationMinutes);
@@ -509,6 +544,25 @@ class _DowntimeReport extends ConsumerWidget {
               r.reason.length > 20 ? '${r.reason.substring(0, 20)}…' : r.reason,
             ],).toList(),
         emptyMessage: 'No downtime events for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportDowntimeReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportDowntimeReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -522,6 +576,7 @@ class _RejectReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(rejectAnalysisProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalBp = data.fold(0.0, (s, r) => s + r.bpReject);
@@ -548,6 +603,25 @@ class _RejectReport extends ConsumerWidget {
               _pct(r.rejectPct),
             ],).toList(),
         emptyMessage: 'No reject data for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportQualityReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportQualityReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -683,6 +757,21 @@ class _LiveStockReport extends ConsumerWidget {
               _n(r.totalStock),
             ],).toList(),
         emptyMessage: 'No stock data available',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportStockReport(
+                    context: context,
+                    rows: data,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportStockReport(
+                    context: context,
+                    rows: data,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }

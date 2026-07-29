@@ -49,14 +49,25 @@ class StockLedgerService {
     );
   }
 
-  Future<StockLedgerResult> bpRejectOut({
+  /// Moves a pre-plating QC rejection out of BP stock into its own tracked
+  /// reject location. Reject material must never disappear from the ledger.
+  Future<StockLedgerResult> bpRejectToRejected({
     required String partId,
     required double qty,
     required String refId,
-  }) {
-    return _writeOut(
+  }) async {
+    final outResult = await _writeOut(
       partId: partId,
       stage: StockStage.bpStock,
+      qty: qty,
+      refTable: 'bp_inspections',
+      refId: refId,
+    );
+    if (!outResult.success) return outResult;
+
+    return _writeIn(
+      partId: partId,
+      stage: StockStage.bpRejected,
       qty: qty,
       refTable: 'bp_inspections',
       refId: refId,
@@ -245,6 +256,70 @@ class StockLedgerService {
     return _db.getCurrentBalance(partId, stage.value);
   }
 
+  Future<double> getAvailableStockAtStage(String partId, String stage) {
+    return _db.getCurrentBalance(partId, stage);
+  }
+
+  /// Moves material through one production machine. Every stage has its own
+  /// WIP location, so stock remains traceable even when a batch is completed
+  /// over multiple days or devices.
+  Future<StockLedgerResult> moveThroughProductionStage({
+    required String partId,
+    required String inputStage,
+    required String inputStageLabel,
+    required String outputStage,
+    required String outputStageLabel,
+    required double inputQty,
+    required double goodQty,
+    required double rejectQty,
+    required String refId,
+  }) async {
+    final available = await getAvailableStockAtStage(partId, inputStage);
+    if (inputQty > available) {
+      return StockLedgerResult(
+        success: false,
+        error: 'Insufficient $inputStageLabel stock. Available: ${available.toInt()} PCS.',
+        availableQty: available,
+      );
+    }
+
+    final outResult = await _writeCustomStage(
+      partId: partId,
+      stage: inputStage,
+      stageLabel: inputStageLabel,
+      direction: LedgerDirection.out,
+      qty: inputQty,
+      refId: refId,
+    );
+    if (!outResult.success) return outResult;
+
+    if (goodQty > 0) {
+      final goodResult = await _writeCustomStage(
+        partId: partId,
+        stage: outputStage,
+        stageLabel: outputStageLabel,
+        direction: LedgerDirection.in_,
+        qty: goodQty,
+        refId: refId,
+      );
+      if (!goodResult.success) return goodResult;
+    }
+
+    if (rejectQty > 0) {
+      final rejectResult = await _writeCustomStage(
+        partId: partId,
+        stage: kProductionRejectedStage,
+        stageLabel: 'Production Rejected',
+        direction: LedgerDirection.in_,
+        qty: rejectQty,
+        refId: refId,
+      );
+      if (!rejectResult.success) return rejectResult;
+    }
+
+    return const StockLedgerResult(success: true);
+  }
+
   Future<double> getTotalStageBalance(StockStage stage) {
     return _db.getTotalBalanceByStage(stage.value);
   }
@@ -299,6 +374,48 @@ class StockLedgerService {
       refTable: refTable,
       refId: refId,
     );
+  }
+
+  Future<StockLedgerResult> _writeCustomStage({
+    required String partId,
+    required String stage,
+    required String stageLabel,
+    required LedgerDirection direction,
+    required double qty,
+    required String refId,
+  }) async {
+    final factoryId = _db.activeWorkspaceId;
+    final ledgerId = _uuid.v4();
+    final result = await _db.writeStockLedgerEntryForStage(
+      id: ledgerId,
+      factoryId: factoryId,
+      partId: partId,
+      stage: stage,
+      stageLabel: stageLabel,
+      direction: direction,
+      qty: qty,
+      refTable: 'productions',
+      refId: refId,
+    );
+
+    if (result.success) {
+      await _sync.queueInsert(
+        tableName: 'stock_ledger',
+        recordId: ledgerId,
+        payload: {
+          'id': ledgerId,
+          'factory_id': factoryId,
+          'part_id': partId,
+          'stage': stage,
+          'direction': direction.value,
+          'qty': qty,
+          'ref_table': 'productions',
+          'ref_id': refId,
+        },
+      );
+    }
+
+    return result;
   }
 
   Future<StockLedgerResult> _write({

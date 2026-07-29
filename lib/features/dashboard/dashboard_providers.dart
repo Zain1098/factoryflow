@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
+import '../../core/providers/production_flow_provider.dart';
 
 class DashboardMachineStatus {
   const DashboardMachineStatus({
@@ -26,12 +27,17 @@ class DashboardWeeklyData {
 class DashboardData {
   const DashboardData({
     required this.rawMaterial,
+    required this.bendingWip,
+    required this.notchingWip,
+    required this.endFormingWip,
     required this.bpStock,
+    required this.bpRejected,
     required this.atFaco,
     required this.pendingAp,
     required this.approvedAp,
     required this.apRejected,
     required this.rtvStock,
+    required this.productionRejected,
     required this.todayProduction,
     required this.todayBpReject,
     required this.todayApReject,
@@ -46,12 +52,17 @@ class DashboardData {
   });
 
   final double rawMaterial;
+  final double bendingWip;
+  final double notchingWip;
+  final double endFormingWip;
   final double bpStock;
+  final double bpRejected;
   final double atFaco;
   final double pendingAp;
   final double approvedAp;
   final double apRejected;
   final double rtvStock;
+  final double productionRejected;
   final double todayProduction;
   final double todayBpReject;
   final double todayApReject;
@@ -65,8 +76,8 @@ class DashboardData {
   final List<DashboardWeeklyData> weeklyData;
 
   static const empty = DashboardData(
-    rawMaterial: 0, bpStock: 0, atFaco: 0, pendingAp: 0,
-    approvedAp: 0, apRejected: 0, rtvStock: 0, todayProduction: 0, todayBpReject: 0,
+    rawMaterial: 0, bendingWip: 0, notchingWip: 0, endFormingWip: 0, bpStock: 0, bpRejected: 0, atFaco: 0, pendingAp: 0,
+    approvedAp: 0, apRejected: 0, rtvStock: 0, productionRejected: 0, todayProduction: 0, todayBpReject: 0,
     todayApReject: 0, todayDispatch: 0, pendingSyncCount: 0,
     todayTarget: 0, machinesRunning: 3, totalMachines: 3, pendingApprovals: 0,
     machineStatuses: [], weeklyData: [],
@@ -97,11 +108,28 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final stageTotals = await db.getAllStageTotals();
   final rawMaterial = stageTotals[StockStage.rawMaterial.value] ?? 0.0;
   final bpStock = stageTotals[StockStage.bpStock.value] ?? 0.0;
+  final bpRejected = stageTotals[StockStage.bpRejected.value] ?? 0.0;
   final atFaco = stageTotals[StockStage.atFaco.value] ?? 0.0;
   final pendingAp = stageTotals[StockStage.pendingAp.value] ?? 0.0;
   final approvedAp = stageTotals[StockStage.approvedAp.value] ?? 0.0;
   final apRejected = stageTotals[StockStage.apRejected.value] ?? 0.0;
   final rtvStock = stageTotals[StockStage.rtvStock.value] ?? 0.0;
+  final productionRejected = stageTotals[kProductionRejectedStage] ?? 0.0;
+
+  // Read WIP from the stock ledger, rather than inferring it from production
+  // history. This preserves correct quantities when a stage has rejects or a
+  // batch is processed across multiple days.
+  final flow = ref.watch(productionFlowProvider);
+  final sequence = flow.requiredMachineIds;
+  final bendingWip = sequence.isNotEmpty
+      ? await db.getTotalBalanceByStage(productionWipStage(sequence[0]))
+      : 0.0;
+  final notchingWip = sequence.length > 1
+      ? await db.getTotalBalanceByStage(productionWipStage(sequence[1]))
+      : 0.0;
+  final endFormingWip = sequence.length > 2
+      ? await db.getTotalBalanceByStage(productionWipStage(sequence[2]))
+      : 0.0;
 
   // Today's production totals
   final prodRows = db.db.select(
@@ -198,12 +226,17 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
 
   return DashboardData(
     rawMaterial: rawMaterial,
+    bendingWip: bendingWip,
+    notchingWip: notchingWip,
+    endFormingWip: endFormingWip,
     bpStock: bpStock,
+    bpRejected: bpRejected,
     atFaco: atFaco,
     pendingAp: pendingAp,
     approvedAp: approvedAp,
     apRejected: apRejected,
     rtvStock: rtvStock,
+    productionRejected: productionRejected,
     todayProduction: todayProd,
     todayBpReject: todayBp,
     todayApReject: todayAp,

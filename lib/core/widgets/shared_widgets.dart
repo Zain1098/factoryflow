@@ -128,7 +128,8 @@ class AppDropdown<T> extends StatelessWidget {
       initialValue: value,
       items: items,
       onChanged: onChanged,
-      validator: validator ?? (isRequired ? (v) => v == null ? 'Required' : null : null),
+      validator: validator ??
+          (isRequired ? (v) => v == null ? 'Required' : null : null),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint ?? 'Select $label',
@@ -263,8 +264,9 @@ class KpiTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final effectiveColor =
-        isAlert ? theme.colorScheme.error : (color ?? theme.colorScheme.secondary);
+    final effectiveColor = isAlert
+        ? theme.colorScheme.error
+        : (color ?? theme.colorScheme.secondary);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -316,7 +318,8 @@ class SyncBadge extends StatelessWidget {
       ),
       child: Text(
         '$count pending sync',
-        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -343,7 +346,8 @@ class SaveButton extends StatelessWidget {
           ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white),
             )
           : const Icon(Icons.save_outlined),
       label: Text(label),
@@ -368,7 +372,8 @@ class ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer, size: 18),
+          Icon(Icons.error_outline,
+              color: theme.colorScheme.onErrorContainer, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -406,7 +411,8 @@ class SuccessBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                  color: Colors.green, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -466,10 +472,13 @@ Future<bool> showConfirmDialog(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel')),
         FilledButton(
           style: isDestructive
-              ? FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error)
+              ? FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error)
               : null,
           onPressed: () => Navigator.pop(ctx, true),
           child: Text(confirmLabel),
@@ -548,38 +557,62 @@ class RecordDateTimePicker extends StatelessWidget {
             ? Border.all(color: Colors.orange.withValues(alpha: 0.6))
             : null,
       ),
-      child: Row(
-        children: [
-          Icon(showTime ? Icons.access_time : Icons.calendar_today, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          if (isCustom)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.12),
+      // This control appears inside scroll views and bottom sheets. A Row with
+      // an Expanded label fails if an ancestor is measuring at intrinsic width,
+      // producing "BoxConstraints forces an infinite width" and a blank page.
+      // Wrap has no flex child, so it stays safe on every screen size.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final labelMaxWidth = constraints.hasBoundedWidth
+              ? (constraints.maxWidth - 120).clamp(120.0, 260.0).toDouble()
+              : 240.0;
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(showTime ? Icons.access_time : Icons.calendar_today,
+                      size: 18),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: labelMaxWidth),
+                    child: Text(label, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+              if (isCustom)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Custom',
+                    style: TextStyle(color: Colors.orange, fontSize: 11),
+                  ),
+                )
+              else
+                const Text(
+                  'Auto',
+                  style: TextStyle(color: Colors.green, fontSize: 12),
+                ),
+              InkWell(
+                onTap: () => _pick(context),
                 borderRadius: BorderRadius.circular(4),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.edit_calendar_outlined, size: 18),
+                ),
               ),
-              child: const Text(
-                'Custom',
-                style: TextStyle(color: Colors.orange, fontSize: 11),
-              ),
-            )
-          else
-            const Text(
-              'Auto',
-              style: TextStyle(color: Colors.green, fontSize: 12),
-            ),
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: () => _pick(context),
-            borderRadius: BorderRadius.circular(4),
-            child: const Padding(
-              padding: EdgeInsets.all(4),
-              child: Icon(Icons.edit_calendar_outlined, size: 18),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

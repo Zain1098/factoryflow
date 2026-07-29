@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/providers/production_flow_provider.dart';
@@ -21,6 +22,7 @@ class MachineEntry {
     required this.isFinal,
     required this.operatorId,
     required this.operatorName,
+    required this.shiftId,
     required this.productionQty,
     required this.rejectQty,
     this.status = 'Running',
@@ -34,6 +36,7 @@ class MachineEntry {
   final bool isFinal;
   final String operatorId;
   final String operatorName;
+  final String shiftId;
   double productionQty;
   double rejectQty;
   String status;
@@ -44,6 +47,7 @@ class MachineEntry {
   MachineEntry copyWith({
     String? operatorId,
     String? operatorName,
+    String? shiftId,
     double? productionQty,
     double? rejectQty,
     String? status,
@@ -57,6 +61,7 @@ class MachineEntry {
         isFinal: isFinal,
         operatorId: operatorId ?? this.operatorId,
         operatorName: operatorName ?? this.operatorName,
+        shiftId: shiftId ?? this.shiftId,
         productionQty: productionQty ?? this.productionQty,
         rejectQty: rejectQty ?? this.rejectQty,
         status: status ?? this.status,
@@ -129,6 +134,16 @@ class ProductionRepository {
       }
     }
 
+    for (final entry in entries) {
+      if (entry.rejectQty > entry.productionQty) {
+        return (
+          batchNumber: '',
+          isWip: false,
+          error: '${entry.machineName}: reject quantity cannot exceed input quantity.',
+        );
+      }
+    }
+
     // Validate WIP batch belongs to same part & validate against last completed stage
     if (existingBatchNumber != null) {
       final check = _db.db.select(
@@ -152,6 +167,67 @@ class ProductionRepository {
               'First machine (${entries.first.machineName}) qty (${entries.first.productionQty.toInt()}) '
               'exceeds previous completed stage good qty (${lastGood.toInt()}).',
         );
+      }
+    }
+
+    // ─── Duplicate Stage Validation (Before local SQLite insert) ─────────────
+    final submittedMachineIds = <String>{};
+    for (final entry in entries) {
+      if (submittedMachineIds.contains(entry.machineId)) {
+        final auditId = _uuid.v4();
+        await _db.writeAuditLog(
+          id: auditId,
+          tableName: 'productions',
+          recordId: entry.machineId,
+          action: 'DUPLICATE_STAGE_BLOCKED',
+          changedBy: createdBy,
+          newValue: {
+            'batch_number': existingBatchNumber ?? 'NEW_BATCH',
+            'machine_id': entry.machineId,
+            'machine_name': entry.machineName,
+            'user_id': createdBy,
+            'device_id': 'mobile',
+            'reason': 'Duplicate machine ID within same submission.',
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+        return (
+          batchNumber: existingBatchNumber ?? '',
+          isWip: false,
+          error: 'This production stage has already been completed by another user or device.',
+        );
+      }
+      submittedMachineIds.add(entry.machineId);
+    }
+
+    if (existingBatchNumber != null) {
+      final existingDoneMachineIds = getCompletedMachineIds(existingBatchNumber);
+      for (final entry in entries) {
+        if (existingDoneMachineIds.contains(entry.machineId)) {
+          final auditId = _uuid.v4();
+          await _db.writeAuditLog(
+            id: auditId,
+            tableName: 'productions',
+            recordId: entry.machineId,
+            action: 'DUPLICATE_STAGE_BLOCKED',
+            changedBy: createdBy,
+            newValue: {
+              'batch_number': existingBatchNumber,
+              'machine_id': entry.machineId,
+              'machine_name': entry.machineName,
+              'user_id': createdBy,
+              'device_id': 'mobile',
+              'reason': 'Machine ${entry.machineName} already completed for batch $existingBatchNumber.',
+              'timestamp': DateTime.now().toIso8601String(),
+            },
+          );
+
+          return (
+            batchNumber: existingBatchNumber,
+            isWip: false,
+            error: 'This production stage has already been completed by another user or device.',
+          );
+        }
       }
     }
 
@@ -181,8 +257,57 @@ class ProductionRepository {
         allRequired.every((id) => savedMachineIds.contains(id));
     final isWip = !isComplete;
 
+    // Validate the complete batch before recording anything. The in-memory
+    // balances include earlier entries in this same submission, so Bending →
+    // Notching → End Forming can be saved together without falsely reporting
+    // an insufficient WIP balance.
+    final projectedBalances = <String, double>{};
+    for (final entry in entries) {
+      final route = _stockRouteFor(entry);
+      final available = projectedBalances[route.inputStage] ??
+          await _ledger.getAvailableStockAtStage(partId, route.inputStage);
+      if (entry.productionQty > available) {
+        return (
+          batchNumber: batchNumber,
+          isWip: isWip,
+          error:
+              'Insufficient ${route.inputStageLabel} stock for ${entry.machineName}. '
+              'Available: ${available.toInt()} PCS.',
+        );
+      }
+      projectedBalances[route.inputStage] = available - entry.productionQty;
+      projectedBalances[route.outputStage] =
+          (projectedBalances[route.outputStage] ??
+                  await _ledger.getAvailableStockAtStage(partId, route.outputStage)) +
+              entry.goodQty;
+    }
+
     for (final entry in entries) {
       final id = _uuid.v4();
+      final route = _stockRouteFor(entry);
+
+      // Stock moves first. If a different device has consumed the same stock
+      // after the pre-check, no production history is written for a failed
+      // movement, keeping the ledger and production records consistent.
+      final ledgerResult = await _ledger.moveThroughProductionStage(
+        partId: partId,
+        inputStage: route.inputStage,
+        inputStageLabel: route.inputStageLabel,
+        outputStage: route.outputStage,
+        outputStageLabel: route.outputStageLabel,
+        inputQty: entry.productionQty,
+        goodQty: entry.goodQty,
+        rejectQty: entry.rejectQty,
+        refId: id,
+      );
+      if (!ledgerResult.success) {
+        return (
+          batchNumber: batchNumber,
+          isWip: isWip,
+          error: ledgerResult.error ?? 'Unable to update production stock.',
+        );
+      }
+
       final record = {
         'id': id,
         'factory_id': _db.activeWorkspaceId,
@@ -192,6 +317,7 @@ class ProductionRepository {
         'part_id': partId,
         'machine_id': entry.machineId,
         'operator_id': entry.operatorId,
+        'shift_id': entry.shiftId,
         'machine_status_id': entry.status,
         'production_qty': entry.productionQty,
         'bp_reject_qty': entry.rejectQty,
@@ -211,29 +337,32 @@ class ProductionRepository {
       );
     }
 
-    if (!isWip) {
-      final finalEntry = entries.lastWhere(
-        (e) => e.isFinal,
-        orElse: () => entries.last,
+    return (batchNumber: batchNumber, isWip: isWip, error: '');
+  }
+
+  _ProductionStockRoute _stockRouteFor(MachineEntry entry) {
+    if (!_flow.isMultiStage) {
+      return const _ProductionStockRoute(
+        inputStage: 'raw_material',
+        inputStageLabel: 'Raw Material',
+        outputStage: 'bp_stock',
+        outputStageLabel: 'Finished Production',
       );
-      if (finalEntry.goodQty > 0) {
-        final ledgerId = _uuid.v4();
-        final ledgerResult = await _ledger.productionToBpStock(
-          partId: partId,
-          goodQty: finalEntry.goodQty,
-          refId: ledgerId,
-        );
-        if (!ledgerResult.success) {
-          return (
-            batchNumber: batchNumber,
-            isWip: false,
-            error: ledgerResult.error ?? 'Stock ledger write failed.',
-          );
-        }
-      }
     }
 
-    return (batchNumber: batchNumber, isWip: isWip, error: '');
+    final sequenceIndex = _flow.requiredMachineIds.indexOf(entry.machineId);
+    final inputStage = sequenceIndex <= 0
+        ? 'raw_material'
+        : productionWipStage(_flow.requiredMachineIds[sequenceIndex - 1]);
+    final inputLabel = sequenceIndex <= 0 ? 'Raw Material' : 'Previous Machine WIP';
+    final outputStage = entry.isFinal ? 'bp_stock' : productionWipStage(entry.machineId);
+
+    return _ProductionStockRoute(
+      inputStage: inputStage,
+      inputStageLabel: inputLabel,
+      outputStage: outputStage,
+      outputStageLabel: entry.isFinal ? 'Finished Production' : '${entry.machineName} WIP',
+    );
   }
 
   List<String> getCompletedMachineIds(String batchNumber) {
@@ -350,6 +479,20 @@ class ProductionRepository {
   }
 }
 
+class _ProductionStockRoute {
+  const _ProductionStockRoute({
+    required this.inputStage,
+    required this.inputStageLabel,
+    required this.outputStage,
+    required this.outputStageLabel,
+  });
+
+  final String inputStage;
+  final String inputStageLabel;
+  final String outputStage;
+  final String outputStageLabel;
+}
+
 final productionRepositoryProvider = Provider<ProductionRepository>((ref) {
   return ProductionRepository(
     ref.watch(databaseServiceProvider),
@@ -369,4 +512,13 @@ final wipBatchesProvider =
   final flow = ref.watch(productionFlowProvider);
   if (!flow.enabled || flow.requiredMachineIds.isEmpty) return [];
   return ref.watch(productionRepositoryProvider).getWipBatches();
+});
+
+/// Fast, read-only stock check used by the production header. Showing this
+/// before entry saves operators from completing a form that cannot be posted.
+final productionRawMaterialProvider = FutureProvider.family<double, String>((ref, partId) {
+  return ref.watch(stockLedgerServiceProvider).getAvailableStock(
+        partId,
+        StockStage.rawMaterial,
+      );
 });

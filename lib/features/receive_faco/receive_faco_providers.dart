@@ -57,8 +57,6 @@ class ReceiveFacoRepository {
       'sync_status': 'pending',
     };
 
-    await _db.insertRecord('receive_from_facos', record);
-
     // Stock: At Faco OUT → Pending AP IN (PRD 7.1)
     final ledgerResult = await _ledger.receiveFromFaco(
       partId: partId,
@@ -68,6 +66,8 @@ class ReceiveFacoRepository {
     if (!ledgerResult.success) {
       return ReceiveFacoResult(success: false, error: ledgerResult.error);
     }
+
+    await _db.insertRecord('receive_from_facos', record);
 
     await _sync.queueInsert(tableName: 'receive_from_facos', recordId: id, payload: record);
 

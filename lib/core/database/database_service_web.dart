@@ -183,6 +183,20 @@ class DatabaseService {
     return const StockLedgerResult(success: true, newBalance: 0);
   }
 
+  Future<StockLedgerResult> writeStockLedgerEntryForStage({
+    required String id,
+    required String factoryId,
+    required String partId,
+    required String stage,
+    required String stageLabel,
+    required LedgerDirection direction,
+    required double qty,
+    required String refTable,
+    required String refId,
+  }) async {
+    return const StockLedgerResult(success: true, newBalance: 0);
+  }
+
   Future<List<Map<String, dynamic>>> searchRecords({
     String? batchNumber,
     String? partId,

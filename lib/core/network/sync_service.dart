@@ -117,6 +117,51 @@ class SyncService {
             ..removeWhere((k, _) => _generatedColumns.contains(k))
             ..remove('sync_status');
 
+          if (tableName == 'productions' && operation == 'insert') {
+            final batchNum = payload['batch_number'] as String?;
+            final machineId = payload['machine_id'] as String?;
+            if (batchNum != null && machineId != null) {
+              final cloudExisting = await client
+                  .from('productions')
+                  .select('id')
+                  .eq('batch_number', batchNum)
+                  .eq('machine_id', machineId)
+                  .limit(1)
+                  .maybeSingle()
+                  .timeout(const Duration(seconds: 10));
+
+              if (cloudExisting != null && cloudExisting['id'] != recordId) {
+                // Duplicate completed stage detected in cloud from another device!
+                await _db.markRecordConflict(tableName, recordId);
+                await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+                await _db.writeAuditLog(
+                  id: const Uuid().v4(),
+                  tableName: 'productions',
+                  recordId: recordId,
+                  action: 'DUPLICATE_STAGE_BLOCKED',
+                  changedBy: payload['created_by'] as String? ?? 'unknown',
+                  newValue: {
+                    'batch_number': batchNum,
+                    'machine_id': machineId,
+                    'user_id': payload['created_by'],
+                    'device_id': 'mobile',
+                    'reason': 'Duplicate stage detected in cloud from another device.',
+                    'timestamp': DateTime.now().toIso8601String(),
+                  },
+                );
+                await _logSyncHistory(
+                  tableName: tableName,
+                  recordId: recordId,
+                  operation: operation,
+                  status: 'conflict',
+                  errorMessage: 'Duplicate stage for batch $batchNum and machine $machineId blocked.',
+                );
+                conflicts++;
+                continue;
+              }
+            }
+          }
+
           if (operation == 'insert' || operation == 'update') {
             await client
                 .from(tableName)
