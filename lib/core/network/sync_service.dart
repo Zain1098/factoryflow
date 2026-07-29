@@ -81,7 +81,8 @@ class SyncService {
     try {
       final client = Supabase.instance.client;
       // Also check if auth session exists or client is active
-      return client.auth.currentSession != null || client.auth.currentUser != null;
+      return client.auth.currentSession != null ||
+          client.auth.currentUser != null;
     } catch (_) {
       return false;
     }
@@ -145,7 +146,8 @@ class SyncService {
                     'machine_id': machineId,
                     'user_id': payload['created_by'],
                     'device_id': 'mobile',
-                    'reason': 'Duplicate stage detected in cloud from another device.',
+                    'reason':
+                        'Duplicate stage detected in cloud from another device.',
                     'timestamp': DateTime.now().toIso8601String(),
                   },
                 );
@@ -154,7 +156,8 @@ class SyncService {
                   recordId: recordId,
                   operation: operation,
                   status: 'conflict',
-                  errorMessage: 'Duplicate stage for batch $batchNum and machine $machineId blocked.',
+                  errorMessage:
+                      'Duplicate stage for batch $batchNum and machine $machineId blocked.',
                 );
                 conflicts++;
                 continue;
@@ -299,6 +302,7 @@ class SyncService {
     required String tableName,
     required String recordId,
     required Map<String, dynamic> payload,
+    bool triggerSync = true,
   }) async {
     // Guard: don't queue if workspace not set (would fail RLS on Supabase)
     final factoryId = payload['factory_id']?.toString() ?? '';
@@ -309,8 +313,33 @@ class SyncService {
       operation: 'insert',
       payload: payload,
     );
-    if (await isOnline()) {
-      unawaited(syncPending());
+    if (triggerSync) await schedulePendingSync();
+  }
+
+  /// Queues a ledger mutation for the server-side atomic stock RPC.
+  Future<void> queueLedger({
+    required String recordId,
+    required Map<String, dynamic> payload,
+    bool triggerSync = true,
+  }) async {
+    final factoryId = payload['factory_id']?.toString() ?? '';
+    if (factoryId.isEmpty) return;
+    await _db.enqueueSync(
+      tableName: 'stock_ledger',
+      recordId: recordId,
+      operation: 'ledger',
+      payload: payload,
+    );
+    if (triggerSync) await schedulePendingSync();
+  }
+
+  /// Starts a best-effort sync after the caller's local transaction commits.
+  Future<void> schedulePendingSync() async {
+    try {
+      if (await isOnline()) unawaited(syncPending());
+    } catch (_) {
+      // Local posting is already durable. Connectivity failures remain pending
+      // and the periodic/reconnect worker will retry them later.
     }
   }
 

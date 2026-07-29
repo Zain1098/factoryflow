@@ -29,6 +29,7 @@ class DatabaseService {
 
   Database? _db;
   bool _initialized = false;
+  bool _transactionInProgress = false;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -44,6 +45,32 @@ class DatabaseService {
   Database get db {
     if (_db == null) throw StateError('DatabaseService not initialized');
     return _db!;
+  }
+
+  /// Runs local-only writes as one atomic SQLite transaction.
+  ///
+  /// [action] must not perform network or platform I/O. All production event,
+  /// ledger, and sync-queue writes use the same database connection and either
+  /// commit together or roll back together.
+  Future<T> runInTransaction<T>(Future<T> Function() action) async {
+    if (_transactionInProgress) {
+      throw StateError('Nested database transactions are not supported.');
+    }
+
+    _transactionInProgress = true;
+    var transactionStarted = false;
+    try {
+      db.execute('BEGIN IMMEDIATE');
+      transactionStarted = true;
+      final result = await action();
+      db.execute('COMMIT');
+      return result;
+    } catch (_) {
+      if (transactionStarted) db.execute('ROLLBACK');
+      rethrow;
+    } finally {
+      _transactionInProgress = false;
+    }
   }
 
   void _createTables() {

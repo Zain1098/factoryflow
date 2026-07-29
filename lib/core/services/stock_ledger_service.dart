@@ -273,12 +273,14 @@ class StockLedgerService {
     required double goodQty,
     required double rejectQty,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final available = await getAvailableStockAtStage(partId, inputStage);
     if (inputQty > available) {
       return StockLedgerResult(
         success: false,
-        error: 'Insufficient $inputStageLabel stock. Available: ${available.toInt()} PCS.',
+        error:
+            'Insufficient $inputStageLabel stock. Available: ${available.toInt()} PCS.',
         availableQty: available,
       );
     }
@@ -290,6 +292,7 @@ class StockLedgerService {
       direction: LedgerDirection.out,
       qty: inputQty,
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
 
@@ -301,6 +304,7 @@ class StockLedgerService {
         direction: LedgerDirection.in_,
         qty: goodQty,
         refId: refId,
+        triggerSync: triggerSync,
       );
       if (!goodResult.success) return goodResult;
     }
@@ -313,6 +317,7 @@ class StockLedgerService {
         direction: LedgerDirection.in_,
         qty: rejectQty,
         refId: refId,
+        triggerSync: triggerSync,
       );
       if (!rejectResult.success) return rejectResult;
     }
@@ -383,6 +388,7 @@ class StockLedgerService {
     required LedgerDirection direction,
     required double qty,
     required String refId,
+    required bool triggerSync,
   }) async {
     final factoryId = _db.activeWorkspaceId;
     final ledgerId = _uuid.v4();
@@ -399,8 +405,7 @@ class StockLedgerService {
     );
 
     if (result.success) {
-      await _sync.queueInsert(
-        tableName: 'stock_ledger',
+      await _sync.queueLedger(
         recordId: ledgerId,
         payload: {
           'id': ledgerId,
@@ -412,6 +417,7 @@ class StockLedgerService {
           'ref_table': 'productions',
           'ref_id': refId,
         },
+        triggerSync: triggerSync,
       );
     }
 
@@ -440,8 +446,7 @@ class StockLedgerService {
     );
 
     if (result.success) {
-      await _sync.queueInsert(
-        tableName: 'stock_ledger',
+      await _sync.queueLedger(
         recordId: ledgerId,
         payload: {
           'id': ledgerId,

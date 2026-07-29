@@ -307,65 +307,83 @@ class ProductionRepository {
       projectedBalances[route.outputStage] =
           (projectedBalances[route.outputStage] ??
                   await _ledger.getAvailableStockAtStage(
-                      partId, route.outputStage)) +
+                    partId,
+                    route.outputStage,
+                  )) +
               entry.goodQty;
     }
 
-    for (final entry in entries) {
-      final id = _uuid.v4();
-      final route = _stockRouteFor(entry);
+    try {
+      await _db.runInTransaction(() async {
+        for (final entry in entries) {
+          final id = _uuid.v4();
+          final route = _stockRouteFor(entry);
 
-      // Stock moves first. If a different device has consumed the same stock
-      // after the pre-check, no production history is written for a failed
-      // movement, keeping the ledger and production records consistent.
-      final ledgerResult = await _ledger.moveThroughProductionStage(
-        partId: partId,
-        inputStage: route.inputStage,
-        inputStageLabel: route.inputStageLabel,
-        outputStage: route.outputStage,
-        outputStageLabel: route.outputStageLabel,
-        inputQty: entry.productionQty,
-        goodQty: entry.goodQty,
-        rejectQty: entry.rejectQty,
-        refId: id,
+          final ledgerResult = await _ledger.moveThroughProductionStage(
+            partId: partId,
+            inputStage: route.inputStage,
+            inputStageLabel: route.inputStageLabel,
+            outputStage: route.outputStage,
+            outputStageLabel: route.outputStageLabel,
+            inputQty: entry.productionQty,
+            goodQty: entry.goodQty,
+            rejectQty: entry.rejectQty,
+            refId: id,
+            triggerSync: false,
+          );
+          if (!ledgerResult.success) {
+            throw _ProductionPostingFailure(
+              ledgerResult.error ?? 'Unable to update production stock.',
+            );
+          }
+
+          final record = {
+            'id': id,
+            'factory_id': factoryId,
+            'batch_number': batchNumber,
+            'date': dateStr,
+            'time': timeStr,
+            'part_id': partId,
+            'machine_id': entry.machineId,
+            'operator_id': entry.operatorId,
+            'shift_id': entry.shiftId,
+            'machine_status_id': entry.status,
+            'production_qty': entry.productionQty,
+            'bp_reject_qty': entry.rejectQty,
+            'good_qty': entry.goodQty,
+            'remarks': entry.remarks.isEmpty ? null : entry.remarks,
+            'created_by': createdBy,
+            'created_at': now.toIso8601String(),
+            'sync_status': 'pending',
+          };
+          await _db.insertRecord('productions', record);
+
+          final syncPayload = Map<String, dynamic>.from(record)
+            ..remove('good_qty');
+          await _sync.queueInsert(
+            tableName: 'productions',
+            recordId: id,
+            payload: syncPayload,
+            triggerSync: false,
+          );
+        }
+      });
+    } on _ProductionPostingFailure catch (error) {
+      return (
+        batchNumber: batchNumber,
+        isWip: isWip,
+        error: '${error.message} No stock was changed.',
       );
-      if (!ledgerResult.success) {
-        return (
-          batchNumber: batchNumber,
-          isWip: isWip,
-          error: ledgerResult.error ?? 'Unable to update production stock.',
-        );
-      }
-
-      final record = {
-        'id': id,
-        'factory_id': factoryId,
-        'batch_number': batchNumber,
-        'date': dateStr,
-        'time': timeStr,
-        'part_id': partId,
-        'machine_id': entry.machineId,
-        'operator_id': entry.operatorId,
-        'shift_id': entry.shiftId,
-        'machine_status_id': entry.status,
-        'production_qty': entry.productionQty,
-        'bp_reject_qty': entry.rejectQty,
-        'good_qty': entry.goodQty,
-        'remarks': entry.remarks.isEmpty ? null : entry.remarks,
-        'created_by': createdBy,
-        'created_at': now.toIso8601String(),
-        'sync_status': 'pending',
-      };
-      await _db.insertRecord('productions', record);
-
-      final syncPayload = Map<String, dynamic>.from(record)..remove('good_qty');
-      await _sync.queueInsert(
-        tableName: 'productions',
-        recordId: id,
-        payload: syncPayload,
+    } catch (_) {
+      return (
+        batchNumber: batchNumber,
+        isWip: isWip,
+        error:
+            'Production could not be saved. No stock was changed. Please retry.',
       );
     }
 
+    await _sync.schedulePendingSync();
     return (batchNumber: batchNumber, isWip: isWip, error: '');
   }
 
@@ -541,6 +559,12 @@ class _ProductionStockRoute {
   final String inputStageLabel;
   final String outputStage;
   final String outputStageLabel;
+}
+
+class _ProductionPostingFailure implements Exception {
+  const _ProductionPostingFailure(this.message);
+
+  final String message;
 }
 
 final productionRepositoryProvider = Provider<ProductionRepository>((ref) {

@@ -12,6 +12,10 @@
 - Scoped production batch helpers, WIP validation, batch trails, and related
   joins by active factory, with in-memory SQLite isolation tests.
 - Blocked production posting when no active factory workspace is selected.
+- Made local production event, stock-ledger, and sync-queue posting atomic; a
+  forced production-insert failure now rolls back all stock and queue writes.
+- Routed queued stock-ledger mutations through the server ledger RPC operation
+  and added regression coverage for the queue contract.
 
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.

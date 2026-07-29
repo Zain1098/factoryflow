@@ -19,6 +19,10 @@ Deliverable: signed gap report and safe migration plan.
   and visible parts-loading failure.
 - Production batch, WIP, history, and recent-entry queries hardened to remain
   inside the active factory; missing workspace now blocks production posting.
+- Production event, ledger movements, and sync-queue writes now commit or roll
+  back in one local SQLite transaction.
+- Ledger queue items now use the existing server stock RPC operation instead of
+  a direct table upsert.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
   migration fixture, and CI baseline.

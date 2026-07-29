@@ -9,6 +9,7 @@ import 'package:sqlite3/sqlite3.dart';
 void main() {
   late Database sqliteDatabase;
   late DatabaseService databaseService;
+  late StockLedgerService ledgerService;
   late ProductionRepository repository;
 
   setUp(() async {
@@ -17,10 +18,11 @@ void main() {
     await databaseService.setActiveWorkspaceId('factory-a');
 
     final syncService = SyncService(databaseService);
+    ledgerService = StockLedgerService(databaseService, syncService);
     repository = ProductionRepository(
       databaseService,
       syncService,
-      StockLedgerService(databaseService, syncService),
+      ledgerService,
       const ProductionFlowConfig(
         enabled: true,
         requiredMachineIds: ['machine-a1', 'machine-a2'],
@@ -53,6 +55,19 @@ void main() {
       'machine_id': 'machine-b1',
       'good_qty': 999,
       'created_at': '2026-07-29T10:00:00.000Z',
+    });
+    await databaseService.insertRecord('stock_ledger', {
+      'id': 'raw-stock-a',
+      'factory_id': 'factory-a',
+      'part_id': 'part-a',
+      'stage': 'raw_material',
+      'direction': 'IN',
+      'qty': 100,
+      'running_balance': 100,
+      'ref_table': 'material_receives',
+      'ref_id': 'receive-a',
+      'created_at': '2026-07-29T07:00:00.000Z',
+      'sync_status': 'synced',
     });
   });
 
@@ -112,7 +127,106 @@ void main() {
       sqliteDatabase
           .select('SELECT COUNT(*) AS count FROM stock_ledger')
           .first['count'],
-      0,
+      1,
+    );
+  });
+
+  test('production insert failure rolls back ledger and sync queue', () async {
+    final productionCountBefore = sqliteDatabase
+        .select('SELECT COUNT(*) AS count FROM productions')
+        .first['count'];
+    final ledgerCountBefore = sqliteDatabase
+        .select('SELECT COUNT(*) AS count FROM stock_ledger')
+        .first['count'];
+    final queueCountBefore = sqliteDatabase
+        .select('SELECT COUNT(*) AS count FROM sync_queue')
+        .first['count'];
+
+    sqliteDatabase.execute('''
+      CREATE TRIGGER fail_production_insert
+      BEFORE INSERT ON productions
+      BEGIN
+        SELECT RAISE(ABORT, 'forced production insert failure');
+      END
+    ''');
+
+    final result = await repository.saveJob(
+      partId: 'part-a',
+      partCode: 'PART-A',
+      entries: [
+        MachineEntry(
+          machineId: 'machine-a1',
+          machineName: 'Bending',
+          machineCode: 'B',
+          sequenceIndex: 1,
+          isFinal: false,
+          operatorId: 'operator-a',
+          operatorName: 'Operator A',
+          shiftId: 'A',
+          productionQty: 10,
+          rejectQty: 1,
+        ),
+      ],
+      createdBy: 'user-a',
+      recordedAt: DateTime.utc(2026, 7, 29, 11),
+    );
+
+    expect(result.error, contains('No stock was changed'));
+    expect(
+      sqliteDatabase
+          .select('SELECT COUNT(*) AS count FROM productions')
+          .first['count'],
+      productionCountBefore,
+    );
+    expect(
+      sqliteDatabase
+          .select('SELECT COUNT(*) AS count FROM stock_ledger')
+          .first['count'],
+      ledgerCountBefore,
+    );
+    expect(
+      sqliteDatabase
+          .select('SELECT COUNT(*) AS count FROM sync_queue')
+          .first['count'],
+      queueCountBefore,
+    );
+    expect(
+      sqliteDatabase
+          .select(
+            "SELECT running_balance FROM stock_ledger "
+            "WHERE factory_id = 'factory-a' AND part_id = 'part-a' "
+            "AND stage = 'raw_material' ORDER BY created_at DESC LIMIT 1",
+          )
+          .first['running_balance'],
+      100,
+    );
+  });
+
+  test('production ledger movements queue the server RPC operation', () async {
+    final result = await ledgerService.moveThroughProductionStage(
+      partId: 'part-a',
+      inputStage: 'raw_material',
+      inputStageLabel: 'Raw Material',
+      outputStage: 'production_wip_machine-a1',
+      outputStageLabel: 'Bending WIP',
+      inputQty: 10,
+      goodQty: 9,
+      rejectQty: 1,
+      refId: 'production-new',
+      triggerSync: false,
+    );
+
+    expect(result.success, isTrue);
+    final queued = sqliteDatabase.select(
+      'SELECT table_name, operation FROM sync_queue ORDER BY id',
+    );
+    expect(queued, hasLength(3));
+    expect(
+      queued.every(
+        (row) =>
+            row['table_name'] == 'stock_ledger' && row['operation'] == 'ledger',
+      ),
+      isTrue,
     );
   });
 }
