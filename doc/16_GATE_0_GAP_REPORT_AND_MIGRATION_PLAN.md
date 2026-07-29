@@ -172,6 +172,11 @@ Verified:
   denied.
 
 The live Supabase preflight contained 3 production rows, 0 stock-ledger rows,
-and no duplicate factory/batch/machine groups. The live migration remains
-unapplied pending explicit Product Owner authorization. Until deployment and
-post-deployment tests pass, `ATOMIC_PRODUCTION_SYNC_ENABLED` remains false.
+and no duplicate factory/batch/machine groups. Product Owner authorization was
+received and the migration was applied as `20260729174535
+atomic_production_posting`. Post-deployment checks confirmed unchanged row
+counts, the expanded stage constraint, both composite indexes, the new RPC, and
+authenticated-only execution for both stock-writing RPCs.
+
+`ATOMIC_PRODUCTION_SYNC_ENABLED` now defaults to true. Legacy queue handlers
+remain in place for already-pending pre-deployment mutations.

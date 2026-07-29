@@ -24,15 +24,16 @@
   production ledger stages, and workspace-membership-aware authorization.
 - Added a persistent local device UUID to production mutation envelopes and
   regression coverage proving one command is queued with all ledger rows.
-- The new Supabase migration has not been applied to the live project; staging
-  compilation, RLS tests, and migration deployment remain a controlled next
-  step. The new client path therefore remains off by default behind
-  `ATOMIC_PRODUCTION_SYNC_ENABLED`.
+- Applied the atomic production migration to the live Supabase project as
+  migration `20260729174535`. Existing data counts remained 3 production rows
+  and 0 ledger rows; the RPC, stage constraint, indexes, and intended
+  authenticated-only privileges were verified.
+- Enabled `ATOMIC_PRODUCTION_SYNC_ENABLED` by default after post-deployment
+  verification. Older pending queue operations remain backward compatible.
 - Verified the migration in an isolated PostgreSQL-compatible runtime: schema
   compilation, one event plus three ledger inserts, idempotent retry, duplicate
   conflict, insufficient-stock no-write behavior, anonymous privilege denial,
-  and non-member denial all passed. Live deployment was blocked pending
-  explicit Product Owner approval, so no live schema or data changed.
+  and non-member denial all passed before the controlled live deployment.
 
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.

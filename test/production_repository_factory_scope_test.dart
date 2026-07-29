@@ -29,7 +29,6 @@ void main() {
         enabled: true,
         requiredMachineIds: ['machine-a1', 'machine-a2'],
       ),
-      true,
     );
 
     await databaseService.insertRecord('productions', {

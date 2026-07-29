@@ -26,22 +26,21 @@ Deliverable: signed gap report and safe migration plan.
 - New production saves now queue one versioned mutation envelope containing the
   production event and all related ledger rows. A forward Supabase migration
   defines the atomic/idempotent `post_production_stage` RPC and
-  membership-aware authorization; live deployment remains pending controlled
-  migration verification. The client path is guarded by
-  `ATOMIC_PRODUCTION_SYNC_ENABLED=false` until that deployment is verified, so
-  current production sync remains backward compatible.
+  membership-aware authorization. The migration was applied live as
+  `20260729174535 atomic_production_posting`; post-deployment schema,
+  privilege, data-count, and advisor checks passed.
 - The atomic production migration compiled and passed isolated PostgreSQL
   behavior checks for first posting, idempotent retry, duplicate-stage
   conflict, insufficient-stock rollback, RPC privileges, and non-member
   authorization. Live preflight still shows 3 production rows, 0 ledger rows,
   and 0 duplicate stage groups.
-- Pending explicit Product Owner approval: apply the exact committed
-  `atomic_production_posting` migration to the live Supabase project. The
-  rollout flag must remain disabled until post-deployment checks pass.
+- `ATOMIC_PRODUCTION_SYNC_ENABLED` now defaults to true. New production saves
+  use the atomic server RPC, while legacy `insert` and `ledger` queue handlers
+  remain available for already-pending records.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
-  live migration/post-deployment verification, live SECURITY DEFINER privilege
-  cleanup from the advisor baseline, migration fixture, and CI baseline.
+  remaining live SECURITY DEFINER privilege cleanup from the advisor baseline,
+  migration fixture, and CI baseline.
 
 ## Phase 1 - Foundation
 - App shell, routing, themes

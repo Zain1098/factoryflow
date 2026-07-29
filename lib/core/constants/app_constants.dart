@@ -6,7 +6,7 @@ class AppConstants {
   static const int syncEnvelopeSchemaVersion = 1;
   static const bool atomicProductionSyncEnabled = bool.fromEnvironment(
     'ATOMIC_PRODUCTION_SYNC_ENABLED',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   /// Must match the factory UUID in supabase_schema.sql seed data
