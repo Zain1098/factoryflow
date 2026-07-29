@@ -9,6 +9,9 @@
   0 exit criteria.
 - Added production-page widget regression coverage for narrow mobile rendering
   and actionable parts-loading errors instead of a blank page.
+- Scoped production batch helpers, WIP validation, batch trails, and related
+  joins by active factory, with in-memory SQLite isolation tests.
+- Blocked production posting when no active factory workspace is selected.
 
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.

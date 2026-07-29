@@ -17,6 +17,8 @@ Deliverable: signed gap report and safe migration plan.
   `16_GATE_0_GAP_REPORT_AND_MIGRATION_PLAN.md`.
 - Production blank-screen characterization tests added for narrow mobile layout
   and visible parts-loading failure.
+- Production batch, WIP, history, and recent-entry queries hardened to remain
+  inside the active factory; missing workspace now blocks production posting.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
   migration fixture, and CI baseline.

@@ -79,17 +79,24 @@ class ProductionRepository {
   final StockLedgerService _ledger;
   final ProductionFlowConfig _flow;
 
+  String? get _activeFactoryId {
+    final factoryId = _db.activeWorkspaceId.trim();
+    return factoryId.isEmpty ? null : factoryId;
+  }
+
   Future<String> _generateBatchNumber({
     required String partCode,
     required DateTime date,
     required String machineCode,
+    required String factoryId,
   }) async {
     final dateStr =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
     final prefix = '$partCode-$dateStr-$machineCode';
     final existing = _db.db.select(
-      'SELECT COUNT(*) as cnt FROM productions WHERE batch_number LIKE ?',
-      ['$prefix%'],
+      'SELECT COUNT(*) as cnt FROM productions '
+      'WHERE factory_id = ? AND batch_number LIKE ?',
+      [factoryId, '$prefix%'],
     );
     final seq = (existing.first['cnt'] as int) + 1;
     return '$prefix-${seq.toString().padLeft(3, '0')}';
@@ -97,9 +104,13 @@ class ProductionRepository {
 
   /// Get good qty of the last completed machine for a batch.
   double? getLastCompletedGoodQty(String batchNumber) {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) return null;
     final rows = _db.db.select(
-      'SELECT good_qty FROM productions WHERE batch_number = ? ORDER BY created_at DESC LIMIT 1',
-      [batchNumber],
+      'SELECT good_qty FROM productions '
+      'WHERE factory_id = ? AND batch_number = ? '
+      'ORDER BY created_at DESC LIMIT 1',
+      [factoryId, batchNumber],
     );
     if (rows.isNotEmpty) {
       return (rows.first['good_qty'] as num?)?.toDouble();
@@ -118,6 +129,16 @@ class ProductionRepository {
   }) async {
     if (entries.isEmpty) {
       return (batchNumber: '', isWip: false, error: 'No entries to save.');
+    }
+
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) {
+      return (
+        batchNumber: '',
+        isWip: false,
+        error:
+            'No active factory workspace is selected. Open Settings and select a workspace.',
+      );
     }
 
     // Validate: each stage qty <= previous stage good qty
@@ -139,7 +160,8 @@ class ProductionRepository {
         return (
           batchNumber: '',
           isWip: false,
-          error: '${entry.machineName}: reject quantity cannot exceed input quantity.',
+          error:
+              '${entry.machineName}: reject quantity cannot exceed input quantity.',
         );
       }
     }
@@ -147,8 +169,9 @@ class ProductionRepository {
     // Validate WIP batch belongs to same part & validate against last completed stage
     if (existingBatchNumber != null) {
       final check = _db.db.select(
-        'SELECT part_id FROM productions WHERE batch_number = ? LIMIT 1',
-        [existingBatchNumber],
+        'SELECT part_id FROM productions '
+        'WHERE factory_id = ? AND batch_number = ? LIMIT 1',
+        [factoryId, existingBatchNumber],
       );
       if (check.isNotEmpty && check.first['part_id'] != partId) {
         return (
@@ -194,14 +217,16 @@ class ProductionRepository {
         return (
           batchNumber: existingBatchNumber ?? '',
           isWip: false,
-          error: 'This production stage has already been completed by another user or device.',
+          error:
+              'This production stage has already been completed by another user or device.',
         );
       }
       submittedMachineIds.add(entry.machineId);
     }
 
     if (existingBatchNumber != null) {
-      final existingDoneMachineIds = getCompletedMachineIds(existingBatchNumber);
+      final existingDoneMachineIds =
+          getCompletedMachineIds(existingBatchNumber);
       for (final entry in entries) {
         if (existingDoneMachineIds.contains(entry.machineId)) {
           final auditId = _uuid.v4();
@@ -217,7 +242,8 @@ class ProductionRepository {
               'machine_name': entry.machineName,
               'user_id': createdBy,
               'device_id': 'mobile',
-              'reason': 'Machine ${entry.machineName} already completed for batch $existingBatchNumber.',
+              'reason':
+                  'Machine ${entry.machineName} already completed for batch $existingBatchNumber.',
               'timestamp': DateTime.now().toIso8601String(),
             },
           );
@@ -225,7 +251,8 @@ class ProductionRepository {
           return (
             batchNumber: existingBatchNumber,
             isWip: false,
-            error: 'This production stage has already been completed by another user or device.',
+            error:
+                'This production stage has already been completed by another user or device.',
           );
         }
       }
@@ -242,6 +269,7 @@ class ProductionRepository {
           partCode: partCode,
           date: now,
           machineCode: entries.first.machineCode,
+          factoryId: factoryId,
         );
 
     final savedMachineIds = existingBatchNumber != null
@@ -278,7 +306,8 @@ class ProductionRepository {
       projectedBalances[route.inputStage] = available - entry.productionQty;
       projectedBalances[route.outputStage] =
           (projectedBalances[route.outputStage] ??
-                  await _ledger.getAvailableStockAtStage(partId, route.outputStage)) +
+                  await _ledger.getAvailableStockAtStage(
+                      partId, route.outputStage)) +
               entry.goodQty;
     }
 
@@ -310,7 +339,7 @@ class ProductionRepository {
 
       final record = {
         'id': id,
-        'factory_id': _db.activeWorkspaceId,
+        'factory_id': factoryId,
         'batch_number': batchNumber,
         'date': dateStr,
         'time': timeStr,
@@ -354,21 +383,27 @@ class ProductionRepository {
     final inputStage = sequenceIndex <= 0
         ? 'raw_material'
         : productionWipStage(_flow.requiredMachineIds[sequenceIndex - 1]);
-    final inputLabel = sequenceIndex <= 0 ? 'Raw Material' : 'Previous Machine WIP';
-    final outputStage = entry.isFinal ? 'bp_stock' : productionWipStage(entry.machineId);
+    final inputLabel =
+        sequenceIndex <= 0 ? 'Raw Material' : 'Previous Machine WIP';
+    final outputStage =
+        entry.isFinal ? 'bp_stock' : productionWipStage(entry.machineId);
 
     return _ProductionStockRoute(
       inputStage: inputStage,
       inputStageLabel: inputLabel,
       outputStage: outputStage,
-      outputStageLabel: entry.isFinal ? 'Finished Production' : '${entry.machineName} WIP',
+      outputStageLabel:
+          entry.isFinal ? 'Finished Production' : '${entry.machineName} WIP',
     );
   }
 
   List<String> getCompletedMachineIds(String batchNumber) {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) return [];
     final rows = _db.db.select(
-      'SELECT machine_id FROM productions WHERE batch_number = ?',
-      [batchNumber],
+      'SELECT machine_id FROM productions '
+      'WHERE factory_id = ? AND batch_number = ?',
+      [factoryId, batchNumber],
     );
     return rows.map((r) => r['machine_id'] as String).toList();
   }
@@ -380,8 +415,11 @@ class ProductionRepository {
 
   /// Returns the first open WIP batch for a given part, or null if none.
   Map<String, dynamic>? getWipBatchForPart(
-      String partId, List<String> requiredMachineIds,) {
-    if (requiredMachineIds.isEmpty) return null;
+    String partId,
+    List<String> requiredMachineIds,
+  ) {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null || requiredMachineIds.isEmpty) return null;
     final rows = _db.db.select(
       'SELECT batch_number, part_id, date, '
       'GROUP_CONCAT(machine_id) as done_machines '
@@ -389,7 +427,7 @@ class ProductionRepository {
       'WHERE factory_id = ? AND part_id = ? '
       'GROUP BY batch_number '
       'ORDER BY date DESC, batch_number DESC LIMIT 20',
-      [_db.activeWorkspaceId, partId],
+      [factoryId, partId],
     );
     for (final row in rows) {
       final done = (row['done_machines'] as String? ?? '')
@@ -417,7 +455,8 @@ class ProductionRepository {
 
   Future<List<Map<String, dynamic>>> getWipBatches() async {
     final required = _flow.requiredMachineIds;
-    if (required.isEmpty) return [];
+    final factoryId = _activeFactoryId;
+    if (factoryId == null || required.isEmpty) return [];
 
     final rows = _db.db.select(
       'SELECT pr.batch_number, pr.part_id, pr.date, '
@@ -425,10 +464,11 @@ class ProductionRepository {
       'GROUP_CONCAT(pr.machine_id) as done_machines '
       'FROM productions pr '
       'LEFT JOIN parts p ON p.id = pr.part_id '
+      'AND p.factory_id = pr.factory_id '
       'WHERE pr.factory_id = ? '
       'GROUP BY pr.batch_number, pr.part_id '
       'ORDER BY pr.date DESC, pr.batch_number DESC LIMIT 200',
-      [_db.activeWorkspaceId],
+      [factoryId],
     );
 
     final wip = <Map<String, dynamic>>[];
@@ -443,7 +483,8 @@ class ProductionRepository {
         map['done_machine_ids'] = done.toList();
         map['missing_machine_ids'] = missing;
         map['next_machine_id'] = missing.first;
-        map['last_good_qty'] = getLastCompletedGoodQty(row['batch_number'] as String) ?? 0.0;
+        map['last_good_qty'] =
+            getLastCompletedGoodQty(row['batch_number'] as String) ?? 0.0;
         wip.add(map);
       }
     }
@@ -451,29 +492,38 @@ class ProductionRepository {
   }
 
   List<Map<String, dynamic>> getBatchRecords(String batchNumber) {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) return [];
     final rows = _db.db.select(
       'SELECT pr.*, m.name as machine_name, m.machine_code, o.name as operator_name '
       'FROM productions pr '
       'LEFT JOIN machines m ON m.id = pr.machine_id '
+      'AND m.factory_id = pr.factory_id '
       'LEFT JOIN operators o ON o.id = pr.operator_id '
-      'WHERE pr.batch_number = ? '
+      'AND o.factory_id = pr.factory_id '
+      'WHERE pr.factory_id = ? AND pr.batch_number = ? '
       'ORDER BY pr.created_at ASC',
-      [batchNumber],
+      [factoryId, batchNumber],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 50}) async {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) return [];
     final rows = _db.db.select(
       'SELECT pr.*, p.name as part_name, p.code as part_code, '
       'm.name as machine_name, m.sequence_order, o.name as operator_name '
       'FROM productions pr '
       'LEFT JOIN parts p ON p.id = pr.part_id '
+      'AND p.factory_id = pr.factory_id '
       'LEFT JOIN machines m ON m.id = pr.machine_id '
+      'AND m.factory_id = pr.factory_id '
       'LEFT JOIN operators o ON o.id = pr.operator_id '
+      'AND o.factory_id = pr.factory_id '
       'WHERE pr.factory_id = ? '
       'ORDER BY pr.created_at DESC LIMIT ?',
-      [_db.activeWorkspaceId, limit],
+      [factoryId, limit],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
@@ -516,7 +566,8 @@ final wipBatchesProvider =
 
 /// Fast, read-only stock check used by the production header. Showing this
 /// before entry saves operators from completing a form that cannot be posted.
-final productionRawMaterialProvider = FutureProvider.family<double, String>((ref, partId) {
+final productionRawMaterialProvider =
+    FutureProvider.family<double, String>((ref, partId) {
   return ref.watch(stockLedgerServiceProvider).getAvailableStock(
         partId,
         StockStage.rawMaterial,

@@ -14,6 +14,17 @@ final databaseServiceProvider = Provider<DatabaseService>((ref) {
 
 class DatabaseService {
   DatabaseService._();
+
+  /// Creates an isolated database service for repository and migration tests.
+  ///
+  /// Production code must continue using [instance].
+  DatabaseService.forTesting(Database database) {
+    _db = database;
+    _db!.execute('PRAGMA foreign_keys=ON');
+    _createTables();
+    _initialized = true;
+  }
+
   static final DatabaseService instance = DatabaseService._();
 
   Database? _db;
@@ -257,7 +268,8 @@ class DatabaseService {
       db.execute('ALTER TABLE material_receives ADD COLUMN ordered_qty REAL');
     }
     if (!mrNames.contains('shortfall')) {
-      db.execute('ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0');
+      db.execute(
+          'ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0');
     }
 
     // productions: add good_qty if missing (older DBs)
@@ -266,13 +278,15 @@ class DatabaseService {
     if (!prodNames.contains('good_qty')) {
       db.execute('ALTER TABLE productions ADD COLUMN good_qty REAL');
       // backfill
-      db.execute('UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL');
+      db.execute(
+          'UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL');
     }
 
     final apCols = db.select('PRAGMA table_info(ap_inspections)');
     final apNames = apCols.map((r) => r['name'] as String).toSet();
     if (!apNames.contains('rtv_qty')) {
-      db.execute('ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0');
+      db.execute(
+          'ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0');
     }
   }
 
@@ -458,7 +472,14 @@ class DatabaseService {
     db.execute(
       'INSERT OR REPLACE INTO target_master (id, factory_id, part_id, day_of_week, target_qty, effective_from) '
       'VALUES (?, ?, ?, ?, ?, ?)',
-      [id, activeWorkspaceId, partId, dayOfWeek, targetQty, DateTime.now().toIso8601String().substring(0, 10)],
+      [
+        id,
+        activeWorkspaceId,
+        partId,
+        dayOfWeek,
+        targetQty,
+        DateTime.now().toIso8601String().substring(0, 10)
+      ],
     );
   }
 
@@ -576,7 +597,8 @@ class DatabaseService {
 
   Future<int> countPendingSync() async {
     final result = db.select(
-        "SELECT COUNT(*) as cnt FROM sync_queue WHERE status = 'pending'",);
+      "SELECT COUNT(*) as cnt FROM sync_queue WHERE status = 'pending'",
+    );
     return result.first['cnt'] as int;
   }
 
@@ -793,7 +815,8 @@ class DatabaseService {
 
   // ── Purchase Orders ───────────────────────────────────────────────────────
 
-  Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(String partId) async {
+  Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
+      String partId) async {
     final result = db.select(
       "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
       "FROM purchase_orders po "
@@ -806,7 +829,8 @@ class DatabaseService {
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
-  Future<List<Map<String, dynamic>>> getAllPurchaseOrders({int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
+      {int limit = 50}) async {
     final result = db.select(
       "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
       "FROM purchase_orders po "
@@ -819,7 +843,8 @@ class DatabaseService {
   }
 
   Future<void> updatePurchaseOrderStatus(String id, String status) async {
-    db.execute('UPDATE purchase_orders SET status = ? WHERE id = ?', [status, id]);
+    db.execute(
+        'UPDATE purchase_orders SET status = ? WHERE id = ?', [status, id]);
   }
 
   // ── Backup & Erase ────────────────────────────────────────────────────
@@ -840,10 +865,15 @@ class DatabaseService {
         '(id, factory_id, user_id, source_table, source_record_id, data_json, backup_reason, backed_up_at, sync_status) '
         'VALUES (?,?,?,?,?,?,?,?,?)',
         [
-          id, factoryId, userId, table,
+          id,
+          factoryId,
+          userId,
+          table,
           row['id']?.toString() ?? id,
           jsonEncode(Map<String, dynamic>.from(row)),
-          reason, now, 'pending',
+          reason,
+          now,
+          'pending',
         ],
       );
     }
@@ -897,9 +927,15 @@ class DatabaseService {
       '(id, factory_id, user_id, source_table, source_record_id, data_json, backup_reason, backed_up_at, sync_status) '
       'VALUES (?,?,?,?,?,?,?,?,?)',
       [
-        backupId, factoryId, userId, table, recordId,
+        backupId,
+        factoryId,
+        userId,
+        table,
+        recordId,
         jsonEncode(Map<String, dynamic>.from(rows.first)),
-        reason, now, 'pending',
+        reason,
+        now,
+        'pending',
       ],
     );
     db.execute('DELETE FROM $table WHERE id = ?', [recordId]);
