@@ -18,8 +18,8 @@ No runtime behavior or database schema is changed by this report.
 - Local persistence uses native `sqlite3` and the existing
   `factoryflow.sqlite` file.
 - Supabase remains the remote Auth/Postgres/Storage platform.
-- Six forward Supabase migration files are present; the newest atomic
-  production-posting migration is local-only pending controlled staging.
+- Six forward Supabase migration files are present; the atomic
+  production-posting migration is deployed live as `20260729174535`.
 - Operational modules exist for material receive, production, downtime, BP/AP
   inspection, Faco dispatch/receive, RTV, final dispatch, reports, search,
   corrections, notifications, settings, and dashboard.
@@ -28,9 +28,11 @@ No runtime behavior or database schema is changed by this report.
   stock-changing flows still require the same audit and characterization.
 - Local schema is created with `CREATE TABLE IF NOT EXISTS` plus compatibility
   `ALTER TABLE` checks. There is no formal local schema version.
-- Automated coverage currently consists of configuration/offline-startup tests;
-  critical ledger, repository, sync, database migration, and production widget
-  tests are missing.
+- Automated coverage now includes configuration/offline startup, production
+  narrow-screen/error behavior, production machine-form readiness, active
+  factory isolation, local atomic rollback, queue/RPC contracts, and legacy
+  rollout compatibility. Broader ledger, sync, migration, and end-to-end flow
+  coverage is still missing.
 
 ## 3. Source-of-truth conflicts and gaps
 

@@ -317,6 +317,14 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
   /// rendering tree incomplete and made the whole page appear blank.
   Widget _buildSafeEntryPage() {
     final partsAsync = ref.watch(partsProvider);
+    // Keep the modal's dependent master data alive and loading while the user
+    // selects a part. Reading an unwatched FutureProvider from the button tap
+    // otherwise restarts it in a loading state on every attempt.
+    final machinesAsync = ref.watch(machinesProvider);
+    final operatorsAsync = ref.watch(operatorsProvider);
+    final isMasterDataLoading =
+        machinesAsync.isLoading || operatorsAsync.isLoading;
+    final masterDataError = machinesAsync.hasError || operatorsAsync.hasError;
     final theme = Theme.of(context);
 
     return ListView(
@@ -407,10 +415,26 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           ),
         const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: _partId == null ? null : _showAddEntryModal,
-          icon: const Icon(Icons.add),
-          label: const Text('Add machine entry'),
+          onPressed: _partId == null || isMasterDataLoading || masterDataError
+              ? null
+              : _showAddEntryModal,
+          icon: isMasterDataLoading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.add),
+          label: Text(isMasterDataLoading
+              ? 'Loading machines and operators…'
+              : 'Add machine entry'),
         ),
+        if (masterDataError) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Machines or operators could not load. Check Settings, then retry.',
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+        ],
         const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: _isSaving || _sessionEntries.isEmpty ? null : _saveAll,
@@ -1511,11 +1535,14 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                 color: Colors.teal.withValues(alpha: 0.3)),
                           ),
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Good Output (automatic):',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w600)),
+                              const Expanded(
+                                child: Text(
+                                  'Good Output (automatic):',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
                               Text(
                                 '${goodVal.toInt()} PCS',
                                 style: const TextStyle(

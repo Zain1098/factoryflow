@@ -39,6 +39,9 @@ If two files conflict, the earlier item wins unless a newer approved decision is
 - `13_MASTER_AI_PROMPT.md`: copy-paste startup prompt for an IDE AI.
 - `14_DATA_DICTIONARY.md`: canonical terms and status values.
 - `15_RELEASE_CHECKLIST.md`: release gate.
+- `16_GATE_0_GAP_REPORT_AND_MIGRATION_PLAN.md`: Gate 0 recovery baseline.
+- `17_FULL_SYSTEM_FLOW_AUDIT_20260729.md`: current end-to-end flow, device,
+  database, sync, security, and UX audit.
 
 ## Product boundary
 FactoryFlow is an offline-first Android application for one manufacturing factory in Phase 1. It is designed so a second factory, web dashboard, barcode scanning, and advanced analytics can be added later without rewriting the core.

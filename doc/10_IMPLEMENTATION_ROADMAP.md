@@ -43,6 +43,15 @@ Deliverable: signed gap report and safe migration plan.
   server-ledger baseline reconciliation and atomic rollout activation,
   remaining live SECURITY DEFINER privilege cleanup from the advisor baseline,
   migration fixture, and CI baseline.
+- Full system flow audit is recorded in
+  `17_FULL_SYSTEM_FLOW_AUDIT_20260729.md`. Central local stock/dashboard reads
+  are now active-factory scoped, Daily Production opens the real machine form
+  on the connected TECNO device without render assertions, and the debug build
+  no longer emits the plugin-applied Kotlin warning.
+- Remaining flow blockers confirmed by the audit include non-atomic
+  stock-changing modules outside Production, the Final Dispatch local/server
+  table mismatch, unscoped report/search paths, incomplete RTV reinspection,
+  and missing sync dependency/conflict-review models.
 
 ## Phase 1 - Foundation
 - App shell, routing, themes

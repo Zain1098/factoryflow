@@ -100,6 +100,70 @@ void main() {
     );
   });
 
+  test('stock balances and dashboard totals stay inside active factory',
+      () async {
+    await databaseService.insertRecord('parts', {
+      'id': 'shared-part',
+      'factory_id': 'factory-a',
+      'code': 'PART-A',
+      'name': 'Factory A Part',
+      'uom': 'PCS',
+      'active': 1,
+    });
+    await databaseService.insertRecord('stock_ledger', {
+      'id': 'shared-stock-a',
+      'factory_id': 'factory-a',
+      'part_id': 'shared-part',
+      'stage': 'raw_material',
+      'direction': 'IN',
+      'qty': 25,
+      'running_balance': 25,
+      'created_at': '2026-07-29T08:00:00.000Z',
+    });
+    await databaseService.insertRecord('stock_ledger', {
+      'id': 'shared-stock-b',
+      'factory_id': 'factory-b',
+      'part_id': 'shared-part',
+      'stage': 'raw_material',
+      'direction': 'IN',
+      'qty': 900,
+      'running_balance': 900,
+      'created_at': '2026-07-29T09:00:00.000Z',
+    });
+    await databaseService.insertRecord('stock_ledger', {
+      'id': 'shared-stock-a-latest',
+      'factory_id': 'factory-a',
+      'part_id': 'shared-part',
+      'stage': 'raw_material',
+      'direction': 'IN',
+      'qty': 5,
+      'running_balance': 30,
+      // Equal timestamps must still resolve deterministically to the last row.
+      'created_at': '2026-07-29T08:00:00.000Z',
+    });
+
+    expect(
+      await databaseService.getCurrentBalance('shared-part', 'raw_material'),
+      30,
+    );
+    expect(await databaseService.getTotalBalanceByStage('raw_material'), 130);
+    expect(
+      (await databaseService.getAllStageTotals())['raw_material'],
+      130,
+    );
+
+    final balances = await databaseService.getBalancesByStage('raw_material');
+    expect(balances, hasLength(1));
+    expect(balances.single['balance'], 30);
+
+    await databaseService.setActiveWorkspaceId('factory-b');
+    expect(
+      await databaseService.getCurrentBalance('shared-part', 'raw_material'),
+      900,
+    );
+    expect(await databaseService.getTotalBalanceByStage('raw_material'), 900);
+  });
+
   test('production save is blocked when no factory is selected', () async {
     await databaseService.setActiveWorkspaceId('');
 

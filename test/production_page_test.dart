@@ -27,6 +27,26 @@ void main() {
       ProviderScope(
         overrides: [
           partsProvider.overrideWith((ref) => loadParts()),
+          machinesProvider.overrideWith(
+            (ref) async => [
+              {
+                'id': 'machine-bending',
+                'name': 'Bending',
+                'machine_code': 'B',
+                'sequence_order': 1,
+                'active': 1,
+              },
+            ],
+          ),
+          operatorsProvider.overrideWith(
+            (ref) async => [
+              {
+                'id': 'operator-a',
+                'name': 'Operator A',
+                'active': 1,
+              },
+            ],
+          ),
           productionFlowProvider.overrideWith(_TestProductionFlowNotifier.new),
         ],
         child: const MaterialApp(home: ProductionScreen()),
@@ -57,6 +77,37 @@ void main() {
     expect(find.text('Machine entries'), findsOneWidget);
     expect(find.text('Add machine entry'), findsOneWidget);
     expect(find.text('Save production job'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('machine form opens after selecting a part', (tester) async {
+    await pumpProductionPage(
+      tester,
+      loadParts: () async => [
+        {
+          'id': 'part-v21',
+          'code': 'V21',
+          'name': 'Valve Part',
+          'uom': 'PCS',
+          'active': 1,
+        },
+      ],
+    );
+
+    await tester.tap(find.text('Select finished part'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('V21'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add machine entry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Machine Entry'), findsOneWidget);
+    expect(find.text('Bending'), findsWidgets);
+    expect(find.text('Operator A'), findsWidgets);
+    expect(
+      find.text('Master data is still loading. Please try again.'),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

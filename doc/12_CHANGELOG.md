@@ -36,6 +36,20 @@
   compilation, one event plus three ledger inserts, idempotent retry, duplicate
   conflict, insufficient-stock no-write behavior, anonymous privilege denial,
   and non-member denial all passed before the controlled live deployment.
+- Added a full client/server/business-flow audit with a connected-device UX
+  smoke test and an ordered P0 remediation path.
+- Fixed Daily Production master-data lifecycle so selecting a part can open Add
+  Machine Entry instead of repeatedly reporting that masters are loading.
+- Made shared dropdowns and the automatic good-output row responsive on narrow
+  mobile layouts; added a widget flow test that opens the machine-entry form.
+- Scoped central local ledger balances, stock totals, target reads, and
+  Dashboard operational calculations to the active factory, with a two-factory
+  characterization test.
+- Updated Dashboard dispatch totals to read the current local
+  dispatch-session/item model.
+- Upgraded `share_plus` to 13.3.0 and `flutter_secure_storage` to 10.3.1. The
+  final AGP 9 debug build completed without the prior plugin-applied Kotlin
+  warning.
 
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.

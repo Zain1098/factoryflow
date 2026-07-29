@@ -387,10 +387,13 @@ class DatabaseService {
   // ── Stock Ledger ──────────────────────────────────────────────────────────
 
   Future<double> getCurrentBalance(String partId, String stage) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return 0;
     final result = db.select(
       'SELECT running_balance FROM stock_ledger '
-      'WHERE part_id = ? AND stage = ? ORDER BY created_at DESC LIMIT 1',
-      [partId, stage],
+      'WHERE factory_id = ? AND part_id = ? AND stage = ? '
+      'ORDER BY created_at DESC, rowid DESC LIMIT 1',
+      [factoryId, partId, stage],
     );
     if (result.isEmpty) return 0;
     return (result.first['running_balance'] as num).toDouble();
@@ -398,36 +401,48 @@ class DatabaseService {
 
   /// FIXED: Single aggregated query instead of N+1 per-part queries.
   Future<double> getTotalBalanceByStage(String stage) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return 0;
     final result = db.select(
       '''SELECT COALESCE(SUM(sl.running_balance), 0) AS total
          FROM stock_ledger sl
-         INNER JOIN (
-           SELECT part_id, MAX(created_at) AS max_at
-           FROM stock_ledger
-           WHERE stage = ?
-           GROUP BY part_id
-         ) latest ON sl.part_id = latest.part_id
-                  AND sl.created_at = latest.max_at
-                  AND sl.stage = ?''',
-      [stage, stage],
+         WHERE sl.factory_id = ? AND sl.stage = ?
+           AND sl.rowid = (
+             SELECT candidate.rowid
+             FROM stock_ledger candidate
+             WHERE candidate.factory_id = sl.factory_id
+               AND candidate.part_id = sl.part_id
+               AND candidate.stage = sl.stage
+             ORDER BY candidate.created_at DESC, candidate.rowid DESC
+             LIMIT 1
+           )''',
+      [factoryId, stage],
     );
     return (result.first['total'] as num?)?.toDouble() ?? 0;
   }
 
   /// Returns per-part balances for a stage in a single query.
   Future<List<Map<String, dynamic>>> getBalancesByStage(String stage) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
     final result = db.select(
       '''SELECT p.id, p.code, p.name, p.uom,
                 COALESCE(sl.running_balance, 0) AS balance
          FROM parts p
-         LEFT JOIN stock_ledger sl ON sl.part_id = p.id AND sl.stage = ?
-           AND sl.created_at = (
-             SELECT MAX(created_at) FROM stock_ledger
-             WHERE part_id = p.id AND stage = ?
+         LEFT JOIN stock_ledger sl ON sl.factory_id = p.factory_id
+           AND sl.part_id = p.id AND sl.stage = ?
+           AND sl.rowid = (
+             SELECT candidate.rowid
+             FROM stock_ledger candidate
+             WHERE candidate.factory_id = p.factory_id
+               AND candidate.part_id = p.id
+               AND candidate.stage = ?
+             ORDER BY candidate.created_at DESC, candidate.rowid DESC
+             LIMIT 1
            )
-         WHERE p.active = 1
+         WHERE p.factory_id = ? AND p.active = 1
          ORDER BY p.name''',
-      [stage, stage],
+      [stage, stage, factoryId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
@@ -436,17 +451,23 @@ class DatabaseService {
 
   /// Returns all 6 stage totals in a single SQL query.
   Future<Map<String, double>> getAllStageTotals() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return {};
     final result = db.select(
       '''SELECT sl.stage, COALESCE(SUM(sl.running_balance), 0) AS total
          FROM stock_ledger sl
-         INNER JOIN (
-           SELECT part_id, stage, MAX(created_at) AS max_at
-           FROM stock_ledger
-           GROUP BY part_id, stage
-         ) latest ON sl.part_id = latest.part_id
-                  AND sl.stage = latest.stage
-                  AND sl.created_at = latest.max_at
+         WHERE sl.factory_id = ?
+           AND sl.rowid = (
+             SELECT candidate.rowid
+             FROM stock_ledger candidate
+             WHERE candidate.factory_id = sl.factory_id
+               AND candidate.part_id = sl.part_id
+               AND candidate.stage = sl.stage
+             ORDER BY candidate.created_at DESC, candidate.rowid DESC
+             LIMIT 1
+           )
          GROUP BY sl.stage''',
+      [factoryId],
     );
     final map = <String, double>{};
     for (final row in result) {
@@ -457,19 +478,33 @@ class DatabaseService {
 
   /// Today's production summary in a single query.
   Future<Map<String, double>> getTodayProductionSummary(String todayStr) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) {
+      return {
+        'production': 0,
+        'bp_reject': 0,
+        'ap_reject': 0,
+        'dispatched': 0,
+      };
+    }
     final prod = db.select(
       'SELECT COALESCE(SUM(production_qty),0) AS prod, '
       'COALESCE(SUM(bp_reject_qty),0) AS bp_rej '
-      'FROM productions WHERE date = ?',
-      [todayStr],
+      'FROM productions WHERE factory_id = ? AND date = ?',
+      [factoryId, todayStr],
     );
     final ap = db.select(
-      'SELECT COALESCE(SUM(rejected_qty),0) AS ap_rej FROM ap_inspections WHERE date = ?',
-      [todayStr],
+      'SELECT COALESCE(SUM(rejected_qty),0) AS ap_rej '
+      'FROM ap_inspections WHERE factory_id = ? AND date = ?',
+      [factoryId, todayStr],
     );
     final disp = db.select(
-      'SELECT COALESCE(SUM(dispatch_qty),0) AS dispatched FROM final_dispatches WHERE date = ?',
-      [todayStr],
+      'SELECT COALESCE(SUM(di.dispatch_qty),0) AS dispatched '
+      'FROM dispatch_items di '
+      'INNER JOIN dispatch_sessions ds ON ds.id = di.session_id '
+      'AND ds.factory_id = di.factory_id '
+      'WHERE ds.factory_id = ? AND ds.date = ?',
+      [factoryId, todayStr],
     );
     return {
       'production': (prod.first['prod'] as num).toDouble(),
@@ -482,14 +517,20 @@ class DatabaseService {
   /// Today's target — sum of all part targets for the given day-of-week.
   /// Falls back to 500 only if NO targets are configured at all.
   Future<double> getTodayTarget(int dayOfWeek) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return 0;
     final result = db.select(
-      'SELECT COALESCE(SUM(target_qty), 0) AS total FROM target_master WHERE day_of_week = ?',
-      [dayOfWeek],
+      'SELECT COALESCE(SUM(target_qty), 0) AS total FROM target_master '
+      'WHERE factory_id = ? AND day_of_week = ?',
+      [factoryId, dayOfWeek],
     );
     final total = (result.first['total'] as num?)?.toDouble() ?? 0;
     if (total > 0) return total;
     // No targets configured — check if any targets exist at all
-    final anyRow = db.select('SELECT COUNT(*) as cnt FROM target_master');
+    final anyRow = db.select(
+      'SELECT COUNT(*) as cnt FROM target_master WHERE factory_id = ?',
+      [factoryId],
+    );
     final hasAny = (anyRow.first['cnt'] as int) > 0;
     return hasAny ? 0 : 500; // 500 only as first-run default
   }
@@ -497,11 +538,16 @@ class DatabaseService {
   // ── Target Master CRUD ────────────────────────────────────────────────────
 
   List<Map<String, dynamic>> getTargets() {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
     final result = db.select(
       'SELECT tm.*, p.name as part_name, p.code as part_code '
       'FROM target_master tm '
       'LEFT JOIN parts p ON p.id = tm.part_id '
+      'AND p.factory_id = tm.factory_id '
+      'WHERE tm.factory_id = ? '
       'ORDER BY p.name, tm.day_of_week',
+      [factoryId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
