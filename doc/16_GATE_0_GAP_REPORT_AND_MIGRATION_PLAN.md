@@ -154,3 +154,24 @@ migration, or cross-factory access is a release blocker.
 - CI runs formatter, analyzer, and tests.
 - P0 gaps have owners and ordered implementation slices.
 - Product Owner accepts this report and migration direction.
+
+## 11. Atomic production migration verification
+
+The committed `20260729143549_atomic_production_posting.sql` migration was
+executed against an isolated PostgreSQL-compatible runtime on 2026-07-29.
+
+Verified:
+
+- Migration SQL compiled successfully.
+- One production event inserted exactly three related ledger movements.
+- Retrying the same command UUID returned idempotent success without duplicates.
+- A second UUID for the same batch/machine returned a conflict.
+- Insufficient raw-material stock returned a conflict and inserted no rows.
+- Anonymous execution was revoked while authenticated execution remained.
+- A user without active membership or the transitional factory fallback was
+  denied.
+
+The live Supabase preflight contained 3 production rows, 0 stock-ledger rows,
+and no duplicate factory/batch/machine groups. The live migration remains
+unapplied pending explicit Product Owner authorization. Until deployment and
+post-deployment tests pass, `ATOMIC_PRODUCTION_SYNC_ENABLED` remains false.

@@ -30,9 +30,17 @@ Deliverable: signed gap report and safe migration plan.
   migration verification. The client path is guarded by
   `ATOMIC_PRODUCTION_SYNC_ENABLED=false` until that deployment is verified, so
   current production sync remains backward compatible.
+- The atomic production migration compiled and passed isolated PostgreSQL
+  behavior checks for first posting, idempotent retry, duplicate-stage
+  conflict, insufficient-stock rollback, RPC privileges, and non-member
+  authorization. Live preflight still shows 3 production rows, 0 ledger rows,
+  and 0 duplicate stage groups.
+- Pending explicit Product Owner approval: apply the exact committed
+  `atomic_production_posting` migration to the live Supabase project. The
+  rollout flag must remain disabled until post-deployment checks pass.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
-  Supabase migration staging/RLS verification, live SECURITY DEFINER privilege
+  live migration/post-deployment verification, live SECURITY DEFINER privilege
   cleanup from the advisor baseline, migration fixture, and CI baseline.
 
 ## Phase 1 - Foundation

@@ -28,6 +28,11 @@
   compilation, RLS tests, and migration deployment remain a controlled next
   step. The new client path therefore remains off by default behind
   `ATOMIC_PRODUCTION_SYNC_ENABLED`.
+- Verified the migration in an isolated PostgreSQL-compatible runtime: schema
+  compilation, one event plus three ledger inserts, idempotent retry, duplicate
+  conflict, insufficient-stock no-write behavior, anonymous privilege denial,
+  and non-member denial all passed. Live deployment was blocked pending
+  explicit Product Owner approval, so no live schema or data changed.
 
 ## v3.0 - 2026-07-29
 - Re-established a single source-of-truth hierarchy.
