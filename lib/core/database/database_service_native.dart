@@ -1019,7 +1019,15 @@ class DatabaseService {
     required String factoryId,
     required String reason,
   }) async {
-    final rows = db.select('SELECT * FROM $table');
+    final columns = db.select('PRAGMA table_info($table)');
+    final isFactoryScoped =
+        columns.any((column) => column['name'] == 'factory_id');
+    final rows = isFactoryScoped
+        ? db.select(
+            'SELECT * FROM $table WHERE factory_id = ?',
+            [factoryId],
+          )
+        : db.select('SELECT * FROM $table');
     final now = DateTime.now().toIso8601String();
     for (final row in rows) {
       final id = const Uuid().v4();
@@ -1071,6 +1079,36 @@ class DatabaseService {
   /// Erases all rows from [table]. Call backupTable first.
   void eraseTable(String table) {
     db.execute('DELETE FROM $table');
+  }
+
+  /// Erases only records owned by [factoryId]. Tables without a factory_id
+  /// column are deliberately left untouched.
+  void eraseTableForFactory(String table, String factoryId) {
+    final columns = db.select('PRAGMA table_info($table)');
+    if (!columns.any((column) => column['name'] == 'factory_id')) return;
+    db.execute('DELETE FROM $table WHERE factory_id = ?', [factoryId]);
+  }
+
+  /// Removes queued mutations for the selected company and tables so locally
+  /// erased records cannot be uploaded by a later background sync.
+  void eraseQueuedChangesForFactory(
+    String factoryId,
+    Iterable<String> tables,
+  ) {
+    final allowedTables = tables.toSet();
+    final rows = db.select('SELECT id, table_name, payload FROM sync_queue');
+    for (final row in rows) {
+      if (!allowedTables.contains(row['table_name'])) continue;
+      try {
+        final payload =
+            jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+        if (payload['factory_id']?.toString() == factoryId) {
+          db.execute('DELETE FROM sync_queue WHERE id = ?', [row['id']]);
+        }
+      } catch (_) {
+        // Keep malformed or legacy queue rows for manual review.
+      }
+    }
   }
 
   /// Backs up then erases a single record by id.
@@ -1130,6 +1168,19 @@ class DatabaseService {
   Future<int> countTableRows(String table) async {
     final r = db.select('SELECT COUNT(*) as cnt FROM $table');
     return r.first['cnt'] as int;
+  }
+
+  Future<int> countTableRowsForFactory(
+    String table,
+    String factoryId,
+  ) async {
+    final columns = db.select('PRAGMA table_info($table)');
+    if (!columns.any((column) => column['name'] == 'factory_id')) return 0;
+    final result = db.select(
+      'SELECT COUNT(*) as cnt FROM $table WHERE factory_id = ?',
+      [factoryId],
+    );
+    return result.first['cnt'] as int;
   }
 
   void dispose() {

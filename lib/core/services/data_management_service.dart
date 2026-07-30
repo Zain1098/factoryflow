@@ -54,8 +54,6 @@ class DataManagementService {
     'rtv_reinspections',
     'purchase_orders',
     'correction_requests',
-    'sync_queue',
-    'sync_history_logs',
   ];
 
   /// Silently backs up [table] to backup_records, then erases it.
@@ -71,9 +69,10 @@ class DataManagementService {
       factoryId: factoryId,
       reason: 'user_erase_section',
     );
-    _db.eraseTable(section.table);
-    // Push backup records to Supabase silently
-    _pushBackupsToSupabase();
+    _db.eraseTableForFactory(section.table, factoryId);
+    _db.eraseQueuedChangesForFactory(factoryId, [section.table]);
+    // Push backup records to Supabase silently.
+    await _pushBackupsToSupabase();
   }
 
   /// Backs up ALL transaction tables then erases them.
@@ -89,9 +88,10 @@ class DataManagementService {
         factoryId: factoryId,
         reason: 'user_erase_all',
       );
-      _db.eraseTable(table);
+      _db.eraseTableForFactory(table, factoryId);
     }
-    _pushBackupsToSupabase();
+    _db.eraseQueuedChangesForFactory(factoryId, _allTransactionTables);
+    await _pushBackupsToSupabase();
   }
 
   /// Backs up master data + all transaction data, then clears everything.
@@ -101,12 +101,29 @@ class DataManagementService {
     String factoryId = AppConstants.defaultFactoryId,
   }) async {
     const allTables = [
-      'productions', 'material_receives', 'final_dispatches', 'stock_ledger',
-      'machine_downtimes', 'bp_inspections', 'ap_inspections', 'rtvs',
-      'dispatch_to_facos', 'receive_from_facos', 'rtv_reinspections',
-      'purchase_orders', 'correction_requests', 'parts', 'machines',
-      'suppliers', 'vendors', 'customers', 'operators', 'vehicles',
-      'drivers', 'target_master', 'audit_log',
+      'productions',
+      'material_receives',
+      'final_dispatches',
+      'stock_ledger',
+      'machine_downtimes',
+      'bp_inspections',
+      'ap_inspections',
+      'rtvs',
+      'dispatch_to_facos',
+      'receive_from_facos',
+      'rtv_reinspections',
+      'purchase_orders',
+      'correction_requests',
+      'parts',
+      'machines',
+      'suppliers',
+      'vendors',
+      'customers',
+      'operators',
+      'vehicles',
+      'drivers',
+      'target_master',
+      'audit_log',
     ];
     for (final table in allTables) {
       await _db.backupTable(
@@ -115,10 +132,9 @@ class DataManagementService {
         factoryId: factoryId,
         reason: 'account_deletion',
       );
-      _db.eraseTable(table);
+      _db.eraseTableForFactory(table, factoryId);
     }
-    _db.eraseTable('sync_queue');
-    _db.eraseTable('sync_history_logs');
+    _db.eraseQueuedChangesForFactory(factoryId, allTables);
     await _pushBackupsToSupabase();
   }
 
@@ -139,10 +155,10 @@ class DataManagementService {
   }
 
   /// Row counts for each erasable section — shown in UI.
-  Future<Map<EraseSection, int>> getSectionCounts() async {
+  Future<Map<EraseSection, int>> getSectionCounts(String factoryId) async {
     final map = <EraseSection, int>{};
     for (final s in EraseSection.values) {
-      map[s] = await _db.countTableRows(s.table);
+      map[s] = await _db.countTableRowsForFactory(s.table, factoryId);
     }
     return map;
   }
@@ -166,8 +182,8 @@ class DataManagementService {
         return m;
       }).toList();
       await client.from('backup_records').upsert(rows).timeout(
-        const Duration(seconds: 20),
-      );
+            const Duration(seconds: 20),
+          );
       for (final row in pending) {
         _db.db.execute(
           "UPDATE backup_records SET sync_status = 'synced' WHERE id = ?",

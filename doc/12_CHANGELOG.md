@@ -1,6 +1,27 @@
 # Documentation Changelog
 
 ## v3.0-dev - 2026-07-30
+- Audited the installed Settings flow on the connected TECNO device and traced
+  every visible option through its provider, local database, sync queue, and
+  role behavior.
+- Restricted factory setup, master data, correction review, stock management,
+  and erase controls to Admin/Owner while keeping personal device/account
+  settings available to all signed-in roles.
+- Added Customers and Stock Management to Settings; fixed Vendor and Vehicle
+  editing so Save updates the selected record instead of creating a duplicate.
+- Made master edits, sequence changes, and deactivation use factory-scoped
+  cloud update mutations; new master inserts now send real booleans to
+  Supabase while SQLite retains its integer representation.
+- Connected notification switches to notification delivery, sound, vibration,
+  sync, production/stock/RTV, and downtime preference checks.
+- Required a successful device authentication before enabling biometric lock
+  and added an unsynced-record warning before sign-out.
+- Scoped local backup, count, erase, and queued-mutation cancellation to the
+  active factory, with two-company regression coverage.
+- Applied live migration `20260730182909_admin_only_master_writes`. Parts,
+  Machines, Operators, Suppliers, Vendors, Customers, Vehicles, and Drivers now
+  require Admin/Owner authorization for server writes; company-scoped reads
+  remain available and anonymous writes are revoked.
 - Restored the Android/Gradle files after confirming the latest run failure was
   a laptop/tooling issue; no build-troubleshooting override remains in the app.
 - Repaired invalid legacy Production Flow configuration on load and blocked

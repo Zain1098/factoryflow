@@ -266,7 +266,9 @@ class DatabaseService {
     required String factoryId,
     required String reason,
   }) async {
-    final rows = List<Map<String, dynamic>>.from(_tables[table] ?? const []);
+    final rows = List<Map<String, dynamic>>.from(_tables[table] ?? const [])
+        .where((row) => row['factory_id'] == factoryId)
+        .toList(growable: false);
     for (final row in rows) {
       await createBackupRecord(
         sourceTable: table,
@@ -306,6 +308,33 @@ class DatabaseService {
     _tables[table] = [];
   }
 
+  void eraseTableForFactory(String table, String factoryId) {
+    final rows = _tables[table];
+    if (rows == null) return;
+    rows.removeWhere((row) => row['factory_id'] == factoryId);
+  }
+
+  void eraseQueuedChangesForFactory(
+    String factoryId,
+    Iterable<String> tables,
+  ) {
+    final allowedTables = tables.toSet();
+    final rows = _tables['sync_queue'];
+    if (rows == null) return;
+    rows.removeWhere((row) {
+      if (!allowedTables.contains(row['table_name'])) return false;
+      final rawPayload = row['payload'];
+      try {
+        final payload = rawPayload is String
+            ? jsonDecode(rawPayload) as Map<String, dynamic>
+            : Map<String, dynamic>.from(rawPayload as Map);
+        return payload['factory_id']?.toString() == factoryId;
+      } catch (_) {
+        return false;
+      }
+    });
+  }
+
   Future<void> backupAndDeleteRecord({
     required String table,
     required String recordId,
@@ -328,6 +357,14 @@ class DatabaseService {
   }
 
   Future<int> countTableRows(String table) async => _tables[table]?.length ?? 0;
+
+  Future<int> countTableRowsForFactory(
+    String table,
+    String factoryId,
+  ) async =>
+      (_tables[table] ?? const [])
+          .where((row) => row['factory_id'] == factoryId)
+          .length;
 
   Future<List<Map<String, dynamic>>> getStockAdjustments({
     String? partId,

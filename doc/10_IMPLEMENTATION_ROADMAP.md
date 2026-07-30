@@ -62,6 +62,23 @@ Deliverable: signed gap report and safe migration plan.
   SECURITY DEFINER notices are intentional RPC surfaces with internal identity,
   factory, role, and input checks; leaked-password protection remains a
   dashboard configuration action.
+- Settings hardening now keeps factory configuration, master data, corrections,
+  stock adjustments, and local erase controls Admin/Owner-only. Personal
+  account, appearance, biometric, notification, sync, and sign-out controls
+  remain available to the signed-in user.
+- Customers and Stock Management are reachable from Settings. Vendor and
+  Vehicle edits now update instead of duplicating records; master updates,
+  reordering, and deactivation queue factory-scoped cloud updates.
+- Local erase/backup/count operations are scoped to the active factory and
+  cancel only that factory's matching queued mutations. This prevents one
+  workspace reset from erasing or later uploading another workspace's data.
+- Remaining Settings work: shared-company member/role management, configurable
+  shifts and reject reasons, full workspace export/import, dynamic app version,
+  and end-to-end alert producers for low stock, RTV, targets, and downtime.
+- Live migration `20260730182909_admin_only_master_writes` now matches the
+  mobile role boundary at the server: all eight master tables remain readable
+  inside the user's company, while INSERT/UPDATE/DELETE requires the
+  Admin/Owner authorization ceiling. Anonymous master writes are revoked.
 
 ## Phase 1 - Foundation
 - App shell, routing, themes

@@ -42,6 +42,8 @@ If two files conflict, the earlier item wins unless a newer approved decision is
 - `16_GATE_0_GAP_REPORT_AND_MIGRATION_PLAN.md`: Gate 0 recovery baseline.
 - `17_FULL_SYSTEM_FLOW_AUDIT_20260729.md`: current end-to-end flow, device,
   database, sync, security, and UX audit.
+- `19_SETTINGS_AUDIT_AND_HARDENING_20260730.md`: Settings role, master-data,
+  notification, biometric, erase-safety, and connected-device audit.
 
 ## Product boundary
 FactoryFlow is an offline-first Android application for one manufacturing factory in Phase 1. It is designed so a second factory, web dashboard, barcode scanning, and advanced analytics can be added later without rewriting the core.

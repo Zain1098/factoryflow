@@ -17,6 +17,7 @@ import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
 import '../corrections/corrections_screen.dart';
+import 'stock_management_screen.dart';
 
 // ── Biometric toggle provider ─────────────────────────────────────────────────────
 
@@ -168,6 +169,8 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider).value;
     final showBatchNumber = ref.watch(batchConfigProvider);
     final theme = Theme.of(context);
+    final canManageFactory = user?.role.canManageMasters ?? false;
+    final canApproveCorrections = user?.role.canApproveCorrections ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -242,50 +245,54 @@ class SettingsScreen extends ConsumerWidget {
             ),
 
           // ── PRODUCTION ────────────────────────────────────────────────────
-          const _SectionLabel('Production'),
-          ListTile(
-            leading: const Icon(Icons.track_changes_outlined),
-            title: const Text('Daily Production Targets'),
-            subtitle: const Text('Part-wise & day-wise targets'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const _ProductionTargetsPage())),
-          ),
-          ListTile(
-            leading: const Icon(Icons.account_tree_outlined),
-            title: const Text('Multi-Machine Flow'),
-            subtitle: const Text('Machine sequence, WIP & dispatch rules'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const _ProductionFlowPage())),
-          ),
-          const Divider(),
+          if (canManageFactory) ...[
+            const _SectionLabel('Factory Setup'),
+            ListTile(
+              leading: const Icon(Icons.track_changes_outlined),
+              title: const Text('Daily Production Targets'),
+              subtitle: const Text('Part-wise and day-wise targets'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const _ProductionTargetsPage())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: const Text('Production Flow'),
+              subtitle: const Text('Machine sequence, WIP and dispatch rules'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const _ProductionFlowPage())),
+            ),
+            const Divider(),
 
-          // ── MASTER DATA ──────────────────────────────────────────────────
-          const _SectionLabel('Master Data'),
-          _masterTile(context, Icons.category_outlined, 'Parts',
-              'Add, edit or remove parts', const _PartsPage()),
-          _masterTile(
-              context,
-              Icons.precision_manufacturing_outlined,
-              'Machines',
-              'Add, reorder & set machine sequence',
-              const _MachinesPage()),
-          _masterTile(context, Icons.people_outline, 'Operators',
-              'Add or remove operators', const _OperatorsPage()),
-          _masterTile(context, Icons.local_shipping_outlined, 'Suppliers',
-              'Material suppliers', const _SuppliersPage()),
-          _masterTile(context, Icons.store_outlined, 'Vendors (Faco)',
-              'Plating vendors', const _VendorsPage()),
-          _masterTile(context, Icons.person_outlined, 'Drivers',
-              'Add or remove drivers', const _DriversPage()),
-          _masterTile(context, Icons.directions_car_outlined, 'Vehicles',
-              'Number plates', const _VehiclesPage()),
-          const Divider(),
+            // ── MASTER DATA ──────────────────────────────────────────────────
+            const _SectionLabel('Master Data'),
+            _masterTile(context, Icons.category_outlined, 'Parts',
+                'Add, edit or remove parts', const _PartsPage()),
+            _masterTile(
+                context,
+                Icons.precision_manufacturing_outlined,
+                'Machines',
+                'Add, reorder & set machine sequence',
+                const _MachinesPage()),
+            _masterTile(context, Icons.people_outline, 'Operators',
+                'Add or remove operators', const _OperatorsPage()),
+            _masterTile(context, Icons.local_shipping_outlined, 'Suppliers',
+                'Material suppliers', const _SuppliersPage()),
+            _masterTile(context, Icons.store_outlined, 'Vendors (FACO)',
+                'Plating vendors', const _VendorsPage()),
+            _masterTile(context, Icons.business_outlined, 'Customers',
+                'Final dispatch customers', const _CustomersPage()),
+            _masterTile(context, Icons.person_outlined, 'Drivers',
+                'Add or remove drivers', const _DriversPage()),
+            _masterTile(context, Icons.directions_car_outlined, 'Vehicles',
+                'Number plates', const _VehiclesPage()),
+            const Divider(),
+          ],
 
           // ── APP SETTINGS ─────────────────────────────────────────────────
           const _SectionLabel('App Settings'),
@@ -339,6 +346,18 @@ class SettingsScreen extends ConsumerWidget {
                     value: biometricAsync.value ?? false,
                     onChanged: available
                         ? (val) async {
+                            if (val && !await svc.authenticate()) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Biometric lock was not enabled because authentication was cancelled.',
+                                    ),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
                             await svc.setEnabled(val);
                             ref.invalidate(_biometricEnabledProvider);
                           }
@@ -362,16 +381,30 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── SYSTEM ───────────────────────────────────────────────────────
           const _SectionLabel('System'),
-          ListTile(
-            leading: const Icon(Icons.gavel_outlined),
-            title: const Text('Correction Requests'),
-            subtitle: const Text('Review, approve or reject edit requests'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
+          if (canApproveCorrections)
+            ListTile(
+              leading: const Icon(Icons.gavel_outlined),
+              title: const Text('Correction Requests'),
+              subtitle: const Text('Review, approve or reject edit requests'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const CorrectionsScreen())),
+            ),
+          if (canManageFactory)
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('Stock Management'),
+              subtitle: const Text('Review balances and post adjustments'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                    builder: (_) => const CorrectionsScreen())),
-          ),
+                  builder: (_) => const StockManagementScreen(),
+                ),
+              ),
+            ),
           ListTile(
             leading: const Icon(Icons.cloud_sync_outlined),
             title: const Text('Cloud Sync Status'),
@@ -382,17 +415,18 @@ class SettingsScreen extends ConsumerWidget {
                 MaterialPageRoute<void>(
                     builder: (_) => const _DatabaseSyncStatusPage())),
           ),
-          ListTile(
-            leading:
-                const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
-            title: const Text('Erase Data'),
-            subtitle: const Text('Clear transaction records'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const _EraseDataPage())),
-          ),
+          if (canManageFactory)
+            ListTile(
+              leading:
+                  const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
+              title: const Text('Erase Local Data'),
+              subtitle: const Text('Admin-only recovery and reset controls'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const _EraseDataPage())),
+            ),
           if (user != null)
             ListTile(
               leading:
@@ -414,10 +448,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              await ref.read(currentUserProvider.notifier).signOut();
-              if (context.mounted) context.go('/login');
-            },
+            onTap: () => _signOut(context, ref),
           ),
           const SizedBox(height: 24),
         ],
@@ -427,6 +458,25 @@ class SettingsScreen extends ConsumerWidget {
 }
 
 // ─── Notifications Page ───────────────────────────────────────────────────────
+
+Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+  final pending = await ref.read(databaseServiceProvider).countPendingSync();
+  if (!context.mounted) return;
+  if (pending > 0) {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Unsynced Work on This Device',
+      message:
+          '$pending record(s) are still waiting to sync. Signing out now may '
+          'make this work unavailable until you sign in on this device again.',
+      confirmLabel: 'Sign Out Anyway',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+  }
+  await ref.read(currentUserProvider.notifier).signOut();
+  if (context.mounted) context.go('/login');
+}
 
 class _NotificationsPage extends ConsumerWidget {
   const _NotificationsPage();
@@ -1139,7 +1189,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
   Widget build(BuildContext context) {
     final vendors = ref.watch(vendorsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Vendors (Faco / Plating)')),
+      appBar: AppBar(title: const Text('Vendors (FACO / Plating)')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showEditDialog(null, null),
         child: const Icon(Icons.add),
@@ -1169,9 +1219,20 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
                   child: const Icon(Icons.store_outlined, size: 20),
                 ),
                 title: Text(name),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _confirmDelete(v['id'] as String, name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit vendor',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(v['id'] as String, name),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate vendor',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(v['id'] as String, name),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1228,9 +1289,12 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
     );
     if (resultName == null || resultName!.isEmpty) return;
     // Insert using masterDataRepository — vendors table already exists in DB
-    final db = ref.read(masterDataRepositoryProvider);
-    // We insert directly as vendor (name field)
-    await db.insertVendorByName(resultName!);
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await repository.insertVendorByName(resultName!);
+    } else {
+      await repository.updateVendor(id, resultName!);
+    }
   }
 
   Future<void> _confirmDelete(String id, String name) async {
@@ -1247,6 +1311,134 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
 }
 
 // ─── Drivers Page ─────────────────────────────────────────────────────────────
+
+class _CustomersPage extends ConsumerStatefulWidget {
+  const _CustomersPage();
+
+  @override
+  ConsumerState<_CustomersPage> createState() => _CustomersPageState();
+}
+
+class _CustomersPageState extends ConsumerState<_CustomersPage> {
+  @override
+  Widget build(BuildContext context) {
+    final customers = ref.watch(customersProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Customers')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(),
+        child: const Icon(Icons.add),
+      ),
+      body: customers.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => EmptyState(
+          message: 'Customers could not load: $error',
+          icon: Icons.error_outline,
+        ),
+        data: (items) {
+          if (items.isEmpty) {
+            return const EmptyState(
+              message: 'No customers yet.\nTap + to add one.',
+              icon: Icons.business_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final name = item['name'] as String? ?? 'Unnamed customer';
+              return ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.business_outlined, size: 18),
+                ),
+                title: Text(name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit customer',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(
+                        id: item['id'] as String,
+                        currentName: name,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate customer',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(
+                        item['id'] as String,
+                        name,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog({
+    String? id,
+    String? currentName,
+  }) async {
+    final controller = TextEditingController(text: currentName ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(id == null ? 'Add Customer' : 'Edit Customer'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Customer Name'),
+          onSubmitted: (value) {
+            final name = value.trim();
+            if (name.isNotEmpty) Navigator.pop(context, name);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) Navigator.pop(context, name);
+            },
+            child: Text(id == null ? 'Add' : 'Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await repository.insertCustomer(result);
+    } else {
+      await repository.updateCustomer(id, result);
+    }
+  }
+
+  Future<void> _confirmDelete(String id, String name) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Deactivate Customer',
+      message:
+          'Deactivate "$name"? Existing dispatch history will be preserved.',
+      confirmLabel: 'Deactivate',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(masterDataRepositoryProvider).deactivateCustomer(id);
+  }
+}
 
 class _DriversPage extends ConsumerStatefulWidget {
   const _DriversPage();
@@ -1408,9 +1600,21 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
                 leading: const CircleAvatar(
                     child: Icon(Icons.directions_car_outlined, size: 18)),
                 title: Text(plate),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _confirmDelete(v['id'] as String, plate),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit vehicle',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () =>
+                          _showEditDialog(v['id'] as String, plate),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate vehicle',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(v['id'] as String, plate),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1429,7 +1633,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             return AlertDialog(
-              title: const Text('Add Vehicle'),
+              title: Text(id == null ? 'Add Vehicle' : 'Edit Vehicle'),
               content: SingleChildScrollView(
                 child: TextField(
                   controller: ctrl,
@@ -1457,7 +1661,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
                     resultPlate = ctrl.text.trim();
                     Navigator.pop(ctx);
                   },
-                  child: const Text('Add'),
+                  child: Text(id == null ? 'Add' : 'Save'),
                 ),
               ],
             );
@@ -1466,7 +1670,12 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       },
     );
     if (resultPlate == null || resultPlate!.isEmpty) return;
-    await ref.read(masterDataRepositoryProvider).insertVehicle(resultPlate!);
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await repository.insertVehicle(resultPlate!);
+    } else {
+      await repository.updateVehicle(id, resultPlate!);
+    }
   }
 
   Future<void> _confirmDelete(String id, String plate) async {
@@ -2005,8 +2214,13 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
   }
 
   Future<void> _loadCounts() async {
-    final counts =
-        await ref.read(dataManagementServiceProvider).getSectionCounts();
+    final factoryId =
+        ref.read(databaseServiceProvider).activeWorkspaceId.trim();
+    final counts = factoryId.isEmpty
+        ? <EraseSection, int>{}
+        : await ref
+            .read(dataManagementServiceProvider)
+            .getSectionCounts(factoryId);
     if (mounted) {
       setState(() {
         _counts = counts;

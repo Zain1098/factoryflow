@@ -1,0 +1,88 @@
+# Settings Audit and Hardening - 2026-07-30
+
+## Scope
+
+Combined functional, UX, permission, offline, and data-safety review of the
+FactoryFlow Settings flow. The installed app was inspected on the connected
+TECNO device, and each option was traced through Flutter providers, SQLite,
+the sync queue, and the hosted security model.
+
+The captured device screens show the previously installed build. They confirm
+the real mobile hierarchy and touch layout, but the new labels and controls
+require a new app build/install before visual confirmation.
+
+## Device flow health
+
+1. Settings entry and profile: healthy. The destination is discoverable from
+   bottom navigation and the profile card clearly exposes account settings.
+2. Factory setup and master data: usable but overexposed in the installed
+   build. Non-Admin roles could see controls they were not allowed to use.
+3. App settings: visually clear. Theme and batch display settings persist.
+   Biometric enable previously did not prove authentication first.
+4. System controls: functionally mixed. Sync status was useful, but Stock
+   Management was unreachable and destructive controls needed stronger
+   factory isolation.
+5. Account exit: account deletion was explicit, but normal sign-out did not
+   warn about unsynced device work.
+
+## Completed hardening
+
+- Factory Setup, Master Data, Correction Requests, Stock Management, and Erase
+  Local Data are visible only to Admin/Owner.
+- Customers and Stock Management are now reachable from Settings.
+- Vendor and Vehicle edit actions update the selected item.
+- Master update, reorder, and deactivate actions queue scoped cloud updates.
+- New master inserts use boolean values for the Supabase `active` field.
+- Live migration `20260730182909_admin_only_master_writes` restricts writes on
+  all eight master tables to Admin/Owner and revokes anonymous master writes.
+- Biometric lock requires successful authentication before it is enabled.
+- Notification delivery reads the master, sound, vibration, sync, production,
+  and downtime preferences saved by Settings.
+- Sign-out warns when pending sync mutations exist.
+- Backup, record counts, local erase, and sync-queue cancellation operate only
+  on the active factory.
+- Regression tests cover two-factory erase and queued-mutation isolation.
+
+## Remaining product gaps
+
+These are real missing capabilities, not buttons that should be added without
+their backend:
+
+1. Company profile and shared-company member/role management.
+2. Configurable shifts and BP/AP/RTV reject-reason masters; some flows still
+   use code constants.
+3. Workspace export/import and encrypted recovery policy.
+4. Dynamic installed-version/build information instead of hardcoded `v1.0.0`.
+5. Alert producers for target miss, low stock, pending RTV, and downtime.
+   Preference enforcement exists, but most business events do not yet trigger
+   these notifications.
+6. Remote account hard deletion/admin cleanup. Current mobile flow deactivates
+   the app profile and clears local access; it cannot securely delete the
+   Supabase Auth identity by itself.
+7. Split the large Settings implementation into bounded feature files after
+   behavior is stable. This is maintainability work, not a reason to rewrite
+   its working state management.
+
+## Verification
+
+- Direct Dart formatting completed for all changed Dart files.
+- Targeted Dart analysis found no errors in the new Settings, master-data,
+  notification, or erase-safety code.
+- The master-write migration passed rollback-only checks: the Owner updated
+  three own-factory test rows, while an unaffiliated identity updated zero.
+  Post-deployment policies are authenticated-only, include the Admin guard,
+  and all existing master row counts are unchanged.
+- The new test file compiles and starts loading, but this laptop's existing
+  Dart/Flutter build-hook runner stalled before executing the tests.
+- Device screenshots were inspected and accepted for the installed build.
+
+## Exact next safe task
+
+Build and install the changed app when the laptop Flutter launcher is healthy,
+then repeat the role matrix on-device:
+
+- Owner/Admin sees and can use factory controls.
+- Production, Store, Quality, and Management roles see only personal/system
+  controls allowed to them.
+- Create, edit, reorder, and deactivate one test master online and offline.
+- Verify the queue syncs without duplicate or cross-factory effects.
