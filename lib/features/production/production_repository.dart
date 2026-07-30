@@ -140,6 +140,15 @@ class ProductionRepository {
       return (batchNumber: '', isWip: false, error: 'No entries to save.');
     }
 
+    final flowError = _flow.validationError;
+    if (flowError != null) {
+      return (
+        batchNumber: '',
+        isWip: false,
+        error: '$flowError Open Settings > Production Flow and review it.',
+      );
+    }
+
     final factoryId = _activeFactoryId;
     if (factoryId == null) {
       return (

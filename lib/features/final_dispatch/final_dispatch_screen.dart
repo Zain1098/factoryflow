@@ -11,17 +11,20 @@ class FinalDispatchScreen extends ConsumerStatefulWidget {
   const FinalDispatchScreen({super.key});
 
   @override
-  ConsumerState<FinalDispatchScreen> createState() => _FinalDispatchScreenState();
+  ConsumerState<FinalDispatchScreen> createState() =>
+      _FinalDispatchScreenState();
 }
 
 class _DispatchItem {
   _DispatchItem({
+    required this.batchNumber,
     required this.partId,
     required this.partCode,
     required this.partName,
     required this.availableQty,
   });
 
+  final String batchNumber;
   final String partId;
   final String partCode;
   final String partName;
@@ -59,7 +62,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
   }
 
   Future<void> _loadDefaultCustomer() async {
-    final id = await ref.read(finalDispatchRepositoryProvider).getDefaultCustomerId();
+    final id =
+        await ref.read(finalDispatchRepositoryProvider).getDefaultCustomerId();
     if (mounted && id != null) setState(() => _customerId = id);
   }
 
@@ -76,13 +80,23 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
 
   void _addPart(Map<String, dynamic> stockItem) {
     final id = stockItem['id'] as String;
-    if (_items.any((i) => i.partId == id)) return;
-    setState(() => _items.add(_DispatchItem(
+    final batchNumber = stockItem['batch_number'] as String;
+    if (_items.any(
+      (item) => item.partId == id && item.batchNumber == batchNumber,
+    )) {
+      return;
+    }
+    setState(
+      () => _items.add(
+        _DispatchItem(
+          batchNumber: batchNumber,
           partId: id,
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
           availableQty: (stockItem['balance'] as num).toDouble(),
-        ),),);
+        ),
+      ),
+    );
   }
 
   void _removeItem(int idx) {
@@ -105,13 +119,19 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
         return;
       }
       if (item.exceedsAvailable) {
-        setState(() => _error =
-            '${item.partCode}: Qty (${item.qty.toInt()}) exceeds available AP OK stock (${item.availableQty.toInt()})',);
+        setState(
+          () => _error =
+              '${item.partCode}: Qty (${item.qty.toInt()}) exceeds available AP OK stock (${item.availableQty.toInt()})',
+        );
         return;
       }
     }
 
-    setState(() { _isSaving = true; _error = null; _success = null; });
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _success = null;
+    });
 
     try {
       final user = ref.read(currentUserProvider).value;
@@ -121,24 +141,33 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
         customerId: _customerId!,
         vehicleId: _vehicleId,
         driverId: _driverId,
-        challanNumber: _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
-        remarks: _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
+        challanNumber:
+            _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
+        remarks:
+            _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
         createdBy: user?.id ?? 'unknown',
         recordedAt: _recordedAt,
-        items: _items.map((i) => DispatchItemInput(
-          partId: i.partId,
-          partCode: i.partCode,
-          qty: i.qty,
-        ),).toList(),
+        items: _items
+            .map(
+              (i) => DispatchItemInput(
+                batchNumber: i.batchNumber,
+                partId: i.partId,
+                partCode: i.partCode,
+                qty: i.qty,
+              ),
+            )
+            .toList(),
       );
 
       if (result.success) {
         final totalQty = _items.fold(0.0, (s, i) => s + i.qty).toInt();
         setState(() {
-          _success = '✅ Dispatch saved! ${_items.length} part(s), $totalQty PCS total.';
+          _success =
+              '✅ Dispatch saved! ${_items.length} part(s), $totalQty PCS total.';
           _savedChallan = result.challanNumber;
         });
         ref.invalidate(finalDispatchListProvider);
+        ref.invalidate(approvedDispatchBatchesProvider);
         ref.invalidate(apOkStockProvider);
         _reset();
         _loadDefaultCustomer();
@@ -178,7 +207,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -187,7 +217,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      final id = await ref.read(masterDataRepositoryProvider).insertVehicle(result);
+      final id =
+          await ref.read(masterDataRepositoryProvider).insertVehicle(result);
       ref.invalidate(vehiclesProvider);
       setState(() => _vehicleId = id);
     }
@@ -205,7 +236,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -214,7 +246,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      final id = await ref.read(masterDataRepositoryProvider).insertDriver(result);
+      final id =
+          await ref.read(masterDataRepositoryProvider).insertDriver(result);
       ref.invalidate(driversProvider);
       setState(() => _driverId = id);
     }
@@ -242,7 +275,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
 
   Widget _buildForm() {
     final theme = Theme.of(context);
-    final apOkAsync = ref.watch(apOkStockProvider);
+    final apOkAsync = ref.watch(approvedDispatchBatchesProvider);
     final customers = ref.watch(customersProvider);
     final vehicles = ref.watch(vehiclesProvider);
     final drivers = ref.watch(driversProvider);
@@ -262,9 +295,13 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           // AP OK Stock — select parts
           Row(
             children: [
-              Text('AP OK STOCK — SELECT PARTS', style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.primary, fontWeight: FontWeight.bold,
-              ),),
+              Text(
+                'AP OK STOCK — SELECT PARTS',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -272,7 +309,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
             loading: () => const LinearProgressIndicator(),
             error: (e, _) => ErrorBanner('Could not load AP OK stock: $e'),
             data: (items) {
-              final available = items.where((i) => (i['balance'] as num) > 0).toList();
+              final available =
+                  items.where((i) => (i['balance'] as num) > 0).toList();
               if (available.isEmpty) {
                 return Container(
                   padding: const EdgeInsets.all(16),
@@ -290,10 +328,17 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                 spacing: 8,
                 runSpacing: 6,
                 children: available.map((item) {
-                  final alreadyAdded = _items.any((i) => i.partId == item['id']);
+                  final alreadyAdded = _items.any(
+                    (dispatchItem) =>
+                        dispatchItem.partId == item['id'] &&
+                        dispatchItem.batchNumber == item['batch_number'],
+                  );
                   final balance = (item['balance'] as num).toInt();
                   return FilterChip(
-                    label: Text('${item['code']} ($balance PCS)'),
+                    label: Text(
+                      '${item['code']} • ${item['batch_number']} '
+                      '($balance PCS)',
+                    ),
                     selected: alreadyAdded,
                     onSelected: alreadyAdded ? null : (_) => _addPart(item),
                     avatar: alreadyAdded
@@ -333,18 +378,27 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                color:
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+                border: Border.all(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Total Dispatch',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),),
+                  Text(
+                    'Total Dispatch',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary),
+                  ),
                   Text(
                     '${_items.fold(0.0, (s, i) => s + i.qty).toInt()} PCS (${_items.length} parts)',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: theme.colorScheme.primary),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: theme.colorScheme.primary),
                   ),
                 ],
               ),
@@ -362,10 +416,14 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
               isRequired: true,
               prefixIcon: const Icon(Icons.person_pin_outlined),
               value: _customerId,
-              items: list.map((c) => DropdownMenuItem(
-                value: c['id'] as String,
-                child: Text(c['name'] as String),
-              ),).toList(),
+              items: list
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c['id'] as String,
+                      child: Text(c['name'] as String),
+                    ),
+                  )
+                  .toList(),
               onChanged: (v) => setState(() => _customerId = v),
             ),
           ),
@@ -382,15 +440,20 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     label: 'Vehicle (optional)',
                     prefixIcon: const Icon(Icons.local_shipping_outlined),
                     value: _vehicleId,
-                    items: list.map((v) => DropdownMenuItem(
-                      value: v['id'] as String,
-                      child: Text(v['number_plate'] as String),
-                    ),).toList(),
+                    items: list
+                        .map(
+                          (v) => DropdownMenuItem(
+                            value: v['id'] as String,
+                            child: Text(v['number_plate'] as String),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (v) => setState(() => _vehicleId = v),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.outlined(onPressed: _addNewVehicle, icon: const Icon(Icons.add)),
+                IconButton.outlined(
+                    onPressed: _addNewVehicle, icon: const Icon(Icons.add)),
               ],
             ),
           ),
@@ -407,15 +470,20 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     label: 'Driver (optional)',
                     prefixIcon: const Icon(Icons.person_outlined),
                     value: _driverId,
-                    items: list.map((d) => DropdownMenuItem(
-                      value: d['id'] as String,
-                      child: Text(d['name'] as String),
-                    ),).toList(),
+                    items: list
+                        .map(
+                          (d) => DropdownMenuItem(
+                            value: d['id'] as String,
+                            child: Text(d['name'] as String),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (v) => setState(() => _driverId = v),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.outlined(onPressed: _addNewDriver, icon: const Icon(Icons.add)),
+                IconButton.outlined(
+                    onPressed: _addNewDriver, icon: const Icon(Icons.add)),
               ],
             ),
           ),
@@ -449,8 +517,12 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     children: [
                       const Icon(Icons.receipt_long_outlined),
                       const SizedBox(width: 8),
-                      Text('Challan: $_savedChallan',
-                          style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold),),
+                      Text(
+                        'Challan: $_savedChallan',
+                        style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.bold),
+                      ),
                     ],
                   ),
                 ),
@@ -469,7 +541,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
     final list = ref.watch(finalDispatchListProvider);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+      error: (e, _) =>
+          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
       data: (sessions) {
         if (sessions.isEmpty) {
           return const EmptyState(
@@ -483,8 +556,12 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final session = sessions[i];
-            final items = (session['items'] as List).cast<Map<String, dynamic>>();
-            final totalQty = items.fold(0, (s, item) => s + ((item['dispatch_qty'] as num?)?.toInt() ?? 0));
+            final items =
+                (session['items'] as List).cast<Map<String, dynamic>>();
+            final totalQty = items.fold(
+                0,
+                (s, item) =>
+                    s + ((item['dispatch_qty'] as num?)?.toInt() ?? 0));
             final isSynced = session['sync_status'] == 'synced';
 
             return Card(
@@ -500,7 +577,8 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: Colors.indigo.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
@@ -508,7 +586,10 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                           child: Text(
                             session['date'] as String? ?? '—',
                             style: const TextStyle(
-                                color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 12,),
+                              color: Colors.indigo,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -521,11 +602,16 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                         Text(
                           '$totalQty PCS',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo,),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.indigo,
+                          ),
                         ),
                         const SizedBox(width: 6),
                         Icon(
-                          isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                          isSynced
+                              ? Icons.cloud_done
+                              : Icons.cloud_upload_outlined,
                           size: 14,
                           color: isSynced ? Colors.green : Colors.orange,
                         ),
@@ -533,42 +619,57 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     ),
                     if (session['challan_number'] != null) ...[
                       const SizedBox(height: 4),
-                      Text('Challan: ${session['challan_number']}',
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),),
+                      Text(
+                        'Challan: ${session['challan_number']}',
+                        style: const TextStyle(
+                            fontFamily: 'monospace', fontSize: 12),
+                      ),
                     ],
-                    if (session['vehicle_plate'] != null || session['driver_name'] != null) ...[
+                    if (session['vehicle_plate'] != null ||
+                        session['driver_name'] != null) ...[
                       const SizedBox(height: 4),
                       Text(
                         [
-                          if (session['vehicle_plate'] != null) '🚛 ${session['vehicle_plate']}',
-                          if (session['driver_name'] != null) '👤 ${session['driver_name']}',
+                          if (session['vehicle_plate'] != null)
+                            '🚛 ${session['vehicle_plate']}',
+                          if (session['driver_name'] != null)
+                            '👤 ${session['driver_name']}',
                         ].join('  '),
-                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                     const SizedBox(height: 8),
                     const Divider(height: 1),
                     const SizedBox(height: 8),
                     // Parts list
-                    ...items.map((item) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.circle, size: 6, color: Colors.indigo),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
+                    ...items.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.circle,
+                                size: 6, color: Colors.indigo),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${item['part_code'] ?? ''} - '
+                                '${item['part_name'] ?? ''}'
+                                '${item['batch_number'] == null ? '' : ' • ${item['batch_number']}'}',
+                                style: const TextStyle(fontSize: 13),
                               ),
-                              Text(
-                                '${(item['dispatch_qty'] as num?)?.toInt() ?? 0} PCS',
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ),),
+                            ),
+                            Text(
+                              '${(item['dispatch_qty'] as num?)?.toInt() ?? 0} PCS',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -629,12 +730,29 @@ class _DispatchItemCardState extends State<_DispatchItemCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.partCode,
-                      style: const TextStyle(fontWeight: FontWeight.bold),),
-                  Text(item.partName,
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),),
-                  Text('Available: ${item.availableQty.toInt()} PCS',
-                      style: TextStyle(fontSize: 11, color: theme.colorScheme.primary),),
+                  Text(
+                    item.partCode,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    item.partName,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  Text(
+                    'Batch ${item.batchNumber}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  Text(
+                    'Available: ${item.availableQty.toInt()} PCS',
+                    style: TextStyle(
+                        fontSize: 11, color: theme.colorScheme.primary),
+                  ),
                 ],
               ),
             ),

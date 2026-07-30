@@ -43,9 +43,13 @@ const _generatedColumns = {'good_qty'};
 
 /// Offline-first sync engine with exponential backoff and notification alerts.
 class SyncService {
-  SyncService(this._db);
+  SyncService(
+    this._db, {
+    Future<bool> Function()? onlineCheck,
+  }) : _onlineCheck = onlineCheck;
 
   final DatabaseService _db;
+  final Future<bool> Function()? _onlineCheck;
   Timer? _syncTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
@@ -73,8 +77,18 @@ class SyncService {
   }
 
   Future<bool> isOnline() async {
-    final result = await Connectivity().checkConnectivity();
-    return !result.contains(ConnectivityResult.none);
+    final onlineCheck = _onlineCheck;
+    if (onlineCheck != null) return onlineCheck();
+    try {
+      final result = await Connectivity()
+          .checkConnectivity()
+          .timeout(const Duration(seconds: 3));
+      return !result.contains(ConnectivityResult.none);
+    } catch (_) {
+      // A missing/hung platform channel must never block a local transaction.
+      // The reconnect listener or next periodic attempt will retry later.
+      return false;
+    }
   }
 
   Future<bool> isSupabaseReady() async {
@@ -165,10 +179,21 @@ class SyncService {
             }
           }
 
-          if (operation == 'insert' || operation == 'update') {
+          if (operation == 'insert') {
             await client
                 .from(tableName)
                 .upsert(payload)
+                .timeout(const Duration(seconds: 12));
+          } else if (operation == 'update') {
+            final factoryId = payload['factory_id']?.toString() ?? '';
+            final updatePayload = Map<String, dynamic>.from(payload)
+              ..remove('id')
+              ..remove('factory_id');
+            await client
+                .from(tableName)
+                .update(updatePayload)
+                .eq('id', recordId)
+                .eq('factory_id', factoryId)
                 .timeout(const Duration(seconds: 12));
           } else if (operation == 'delete') {
             await client
@@ -334,6 +359,23 @@ class SyncService {
       tableName: tableName,
       recordId: recordId,
       operation: 'insert',
+      payload: payload,
+    );
+    if (triggerSync) await schedulePendingSync();
+  }
+
+  Future<void> queueUpdate({
+    required String tableName,
+    required String recordId,
+    required Map<String, dynamic> payload,
+    bool triggerSync = true,
+  }) async {
+    final factoryId = payload['factory_id']?.toString() ?? '';
+    if (factoryId.isEmpty) return;
+    await _db.enqueueSync(
+      tableName: tableName,
+      recordId: recordId,
+      operation: 'update',
       payload: payload,
     );
     if (triggerSync) await schedulePendingSync();

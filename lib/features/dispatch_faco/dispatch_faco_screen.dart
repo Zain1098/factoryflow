@@ -33,7 +33,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   DateTime _recordedAt = DateTime.now();
 
   // Material source and linked inspected batch
-  String _materialSource = 'fresh'; // 'fresh' or 'inspected'
+  final String _materialSource = 'inspected';
   String? _selectedBpBatchNumber;
 
   @override
@@ -54,27 +54,19 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isSaving = true; _error = null; _success = null; });
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _success = null;
+    });
 
     try {
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(dispatchFacoRepositoryProvider);
-      final showBatchNumber = ref.read(batchConfigProvider);
-
-      String batchVal = '';
-      if (showBatchNumber) {
-        if (_materialSource == 'inspected') {
-          batchVal = _selectedBpBatchNumber ?? '';
-        } else {
-          batchVal = _batchCtrl.text.trim();
-        }
-      }
-      
+      final batchVal = _selectedBpBatchNumber ?? '';
       if (batchVal.isEmpty) {
-        // Auto-generate batch number if tracking is off or not selected
-        final now = DateTime.now();
-        final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-        batchVal = 'AUTO-DISP-$timestamp';
+        setState(() => _error = 'Select a BP-inspected Production batch.');
+        return;
       }
 
       final result = await repo.save(
@@ -84,8 +76,10 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
         vendorId: _vendorId!,
         vehicleId: _vehicleId,
         driverId: _driverId,
-        challannumber: _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
-        remarks: _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
+        challannumber:
+            _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
+        remarks:
+            _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
         createdBy: user?.id ?? 'unknown',
         recordedAt: _recordedAt,
       );
@@ -111,10 +105,11 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     _challanCtrl.clear();
     _remarksCtrl.clear();
     setState(() {
-      _partId = null; _vendorId = null;
-      _vehicleId = null; _driverId = null;
+      _partId = null;
+      _vendorId = null;
+      _vehicleId = null;
+      _driverId = null;
       _recordedAt = DateTime.now();
-      _materialSource = 'fresh';
       _selectedBpBatchNumber = null;
     });
   }
@@ -131,7 +126,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -140,7 +136,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      final id = await ref.read(masterDataRepositoryProvider).insertVehicle(result);
+      final id =
+          await ref.read(masterDataRepositoryProvider).insertVehicle(result);
       ref.invalidate(vehiclesProvider);
       setState(() => _vehicleId = id);
     }
@@ -158,7 +155,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -167,7 +165,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
       ),
     );
     if (result != null && result.isNotEmpty) {
-      final id = await ref.read(masterDataRepositoryProvider).insertDriver(result);
+      final id =
+          await ref.read(masterDataRepositoryProvider).insertDriver(result);
       ref.invalidate(driversProvider);
       setState(() => _driverId = id);
     }
@@ -213,28 +212,13 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             const SizedBox(height: 16),
 
             const SectionHeader('Material Source'),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'fresh',
-                  label: Text('Fresh Production'),
-                  icon: Icon(Icons.fiber_new_outlined),
-                ),
-                ButtonSegment(
-                  value: 'inspected',
-                  label: Text('BP QC Inspected'),
-                  icon: Icon(Icons.verified_outlined),
-                ),
-              ],
-              selected: {_materialSource},
-              onSelectionChanged: (val) {
-                setState(() {
-                  _materialSource = val.first;
-                  _partId = null;
-                  _selectedBpBatchNumber = null;
-                  _batchCtrl.clear();
-                });
-              },
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.verified_outlined),
+              title: Text('BP QC Inspected Stock'),
+              subtitle: Text(
+                'Only inspected Production batches can be sent to Faco.',
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -242,36 +226,51 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
 
             if (_materialSource == 'inspected') ...[
               ref.watch(bpReinspectedBatchesProvider).when(
-                loading: () => const LinearProgressIndicator(),
-                error: (e, _) => ErrorBanner('Could not load inspected batches: $e'),
-                data: (list) {
-                  if (list.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text('No recently inspected BP batches found. Please select Fresh Production.'),
-                    );
-                  }
-                  return AppDropdown<String>(
-                    label: 'BP Inspected Batch',
-                    isRequired: true,
-                    prefixIcon: const Icon(Icons.qr_code_2),
-                    value: _selectedBpBatchNumber,
-                    items: list.map((b) => DropdownMenuItem(
-                      value: b['batch_number'] as String,
-                      child: Text('${b['batch_number']} (${b['part_code']})'),
-                    ),).toList(),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      final match = list.firstWhere((b) => b['batch_number'] == v);
-                      setState(() {
-                        _selectedBpBatchNumber = v;
-                        _partId = match['part_id'] as String;
-                      });
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) =>
+                        ErrorBanner('Could not load inspected batches: $e'),
+                    data: (list) {
+                      if (list.isEmpty) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                              'No recently inspected BP batches found. Please select Fresh Production.'),
+                        );
+                      }
+                      return AppDropdown<String>(
+                        label: 'BP Inspected Batch',
+                        isRequired: true,
+                        prefixIcon: const Icon(Icons.qr_code_2),
+                        value: _selectedBpBatchNumber,
+                        items: list
+                            .map(
+                              (b) => DropdownMenuItem(
+                                value: b['batch_number'] as String,
+                                child: Text(
+                                  '${b['batch_number']} (${b['part_code']}, '
+                                  '${(b['available_qty'] as num).toInt()} PCS)',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          final match =
+                              list.firstWhere((b) => b['batch_number'] == v);
+                          setState(() {
+                            _selectedBpBatchNumber = v;
+                            _partId = match['part_id'] as String;
+                            _qtyCtrl.text = (match['available_qty'] as num)
+                                .toInt()
+                                .toString();
+                          });
+                        },
+                        validator: (v) => v == null
+                            ? 'Please select an inspected batch'
+                            : null,
+                      );
                     },
-                    validator: (v) => v == null ? 'Please select an inspected batch' : null,
-                  );
-                },
-              ),
+                  ),
               const SizedBox(height: 12),
             ] else ...[
               if (ref.watch(batchConfigProvider)) ...[
@@ -279,7 +278,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                   label: 'Batch Number',
                   controller: _batchCtrl,
                   prefixIcon: const Icon(Icons.qr_code_2),
-                  validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Batch number required'
+                      : null,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -293,15 +294,18 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 data: (list) {
                   final part = _partId == null
                       ? null
-                      : list.firstWhere((p) => p['id'] == _partId, orElse: () => <String, dynamic>{});
+                      : list.firstWhere((p) => p['id'] == _partId,
+                          orElse: () => <String, dynamic>{});
                   return InputDecorator(
                     decoration: const InputDecoration(
                       labelText: 'Part (Auto-filled from Batch)',
                       prefixIcon: Icon(Icons.category_outlined),
                     ),
-                    child: Text(part != null && part.isNotEmpty
-                        ? '${part['code']} – ${part['name']}'
-                        : 'Select inspected batch first',),
+                    child: Text(
+                      part != null && part.isNotEmpty
+                          ? '${part['code']} – ${part['name']}'
+                          : 'Select inspected batch first',
+                    ),
                   );
                 },
               )
@@ -314,10 +318,14 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                   isRequired: true,
                   prefixIcon: const Icon(Icons.category_outlined),
                   value: _partId,
-                  items: list.map((p) => DropdownMenuItem(
-                    value: p['id'] as String,
-                    child: Text('${p['code']} – ${p['name']}'),
-                  ),).toList(),
+                  items: list
+                      .map(
+                        (p) => DropdownMenuItem(
+                          value: p['id'] as String,
+                          child: Text('${p['code']} – ${p['name']}'),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (v) => setState(() => _partId = v),
                   validator: (v) => v == null ? 'Part is required' : null,
                 ),
@@ -347,10 +355,14 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 isRequired: true,
                 prefixIcon: const Icon(Icons.business_outlined),
                 value: _vendorId,
-                items: list.map((v) => DropdownMenuItem(
-                  value: v['id'] as String,
-                  child: Text(v['name'] as String),
-                ),).toList(),
+                items: list
+                    .map(
+                      (v) => DropdownMenuItem(
+                        value: v['id'] as String,
+                        child: Text(v['name'] as String),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (v) => setState(() => _vendorId = v),
                 validator: (v) => v == null ? 'Vendor is required' : null,
               ),
@@ -369,10 +381,14 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       label: 'Vehicle (optional)',
                       prefixIcon: const Icon(Icons.local_shipping_outlined),
                       value: _vehicleId,
-                      items: list.map((v) => DropdownMenuItem(
-                        value: v['id'] as String,
-                        child: Text(v['number_plate'] as String),
-                      ),).toList(),
+                      items: list
+                          .map(
+                            (v) => DropdownMenuItem(
+                              value: v['id'] as String,
+                              child: Text(v['number_plate'] as String),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) => setState(() => _vehicleId = v),
                     ),
                   ),
@@ -398,10 +414,14 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       label: 'Driver (optional)',
                       prefixIcon: const Icon(Icons.person_outlined),
                       value: _driverId,
-                      items: list.map((d) => DropdownMenuItem(
-                        value: d['id'] as String,
-                        child: Text(d['name'] as String),
-                      ),).toList(),
+                      items: list
+                          .map(
+                            (d) => DropdownMenuItem(
+                              value: d['id'] as String,
+                              child: Text(d['name'] as String),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (v) => setState(() => _driverId = v),
                     ),
                   ),
@@ -445,7 +465,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     final list = ref.watch(dispatchFacoListProvider);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+      error: (e, _) =>
+          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
       data: (records) {
         if (records.isEmpty) {
           return const EmptyState(
@@ -463,17 +484,23 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.orange.withValues(alpha: 0.12),
-                child: const Icon(Icons.local_shipping, color: Colors.orange, size: 20),
+                child: const Icon(Icons.local_shipping,
+                    color: Colors.orange, size: 20),
               ),
-              title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
+              title: Text(
+                r['batch_number'] ?? '—',
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+              ),
               subtitle: Text('${r['vendor_name'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${r['qty']} PCS',
-                      style: const TextStyle(fontWeight: FontWeight.bold),),
+                  Text(
+                    '${r['qty']} PCS',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Icon(
                     isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
                     size: 14,

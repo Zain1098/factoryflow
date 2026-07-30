@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ProductionMode {
-  multiStageSequential('multi_stage', 'Multi-Stage Machine Sequence (WIP -> Final)'),
+  multiStageSequential(
+      'multi_stage', 'Multi-Stage Machine Sequence (WIP -> Final)'),
   directSingleStage('direct_single', 'Direct Single-Stage Production');
 
   const ProductionMode(this.code, this.label);
@@ -30,7 +33,19 @@ class ProductionFlowConfig {
   final bool requireFinalMachineForDispatch;
   final List<String> requiredMachineIds;
 
-  bool get isMultiStage => enabled && productionMode == ProductionMode.multiStageSequential && requiredMachineIds.isNotEmpty;
+  bool get isMultiStage =>
+      enabled &&
+      productionMode == ProductionMode.multiStageSequential &&
+      requiredMachineIds.isNotEmpty;
+
+  String? get validationError {
+    if (enabled &&
+        productionMode == ProductionMode.multiStageSequential &&
+        requiredMachineIds.isEmpty) {
+      return 'Multi-stage production is enabled, but no machine sequence is configured.';
+    }
+    return null;
+  }
 
   /// Checks if a given machine ID is the final machine in the sequence
   bool isFinalMachine(String machineId) {
@@ -63,7 +78,8 @@ class ProductionFlowConfig {
     return ProductionFlowConfig(
       enabled: enabled ?? this.enabled,
       productionMode: productionMode ?? this.productionMode,
-      requireFinalMachineForDispatch: requireFinalMachineForDispatch ?? this.requireFinalMachineForDispatch,
+      requireFinalMachineForDispatch:
+          requireFinalMachineForDispatch ?? this.requireFinalMachineForDispatch,
       requiredMachineIds: requiredMachineIds ?? this.requiredMachineIds,
     );
   }
@@ -79,7 +95,8 @@ class ProductionFlowConfig {
     return ProductionFlowConfig(
       enabled: j['enabled'] as bool? ?? false,
       productionMode: ProductionMode.fromCode(j['productionMode'] as String?),
-      requireFinalMachineForDispatch: j['requireFinalMachineForDispatch'] as bool? ?? true,
+      requireFinalMachineForDispatch:
+          j['requireFinalMachineForDispatch'] as bool? ?? true,
       requiredMachineIds: (j['requiredMachineIds'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
@@ -90,22 +107,71 @@ class ProductionFlowConfig {
 
 // ─── Notifier ─────────────────────────────────────────────────────────────────
 
+ProductionFlowConfig repairProductionFlowConfig(
+  ProductionFlowConfig config,
+  List<Map<String, dynamic>> machines,
+) {
+  if (!config.enabled ||
+      config.productionMode != ProductionMode.multiStageSequential) {
+    return config;
+  }
+
+  final activeMachines =
+      machines.where((machine) => machine['active'] != 0).toList()
+        ..sort(
+          (a, b) => ((a['sequence_order'] as num?)?.toInt() ?? 0)
+              .compareTo((b['sequence_order'] as num?)?.toInt() ?? 0),
+        );
+  final activeIds =
+      activeMachines.map((machine) => machine['id'] as String).toSet();
+  var repairedIds = config.requiredMachineIds
+      .where(activeIds.contains)
+      .toList(growable: false);
+
+  // Older versions could persist enabled=true without the sequence.
+  if (repairedIds.isEmpty && activeMachines.isNotEmpty) {
+    repairedIds = activeMachines
+        .map((machine) => machine['id'] as String)
+        .toList(growable: false);
+  }
+
+  final unchanged = repairedIds.length == config.requiredMachineIds.length &&
+      repairedIds.asMap().entries.every(
+            (entry) => config.requiredMachineIds[entry.key] == entry.value,
+          );
+  return unchanged ? config : config.copyWith(requiredMachineIds: repairedIds);
+}
+
 class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
   static const _key = 'production_flow_config';
+  Completer<void>? _loadCompleter;
+  String? _loadError;
+
+  String? get loadError => _loadError;
 
   @override
   ProductionFlowConfig build() {
+    _loadCompleter = Completer<void>();
     _load();
     return const ProductionFlowConfig();
   }
 
+  Future<void> ensureLoaded() => _loadCompleter?.future ?? Future.value();
+
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    if (raw != null) {
-      try {
-        state = ProductionFlowConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-      } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw != null) {
+        state = ProductionFlowConfig.fromJson(
+            jsonDecode(raw) as Map<String, dynamic>);
+      }
+    } catch (error) {
+      _loadError = 'Production flow settings could not load: $error';
+    } finally {
+      if (!(_loadCompleter?.isCompleted ?? true)) {
+        _loadCompleter!.complete();
+      }
     }
   }
 
@@ -117,7 +183,8 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
 
   Future<void> setEnabled(bool v) => save(state.copyWith(enabled: v));
 
-  Future<void> setProductionMode(ProductionMode mode) => save(state.copyWith(productionMode: mode));
+  Future<void> setProductionMode(ProductionMode mode) =>
+      save(state.copyWith(productionMode: mode));
 
   Future<void> setRequireFinalMachineForDispatch(bool v) =>
       save(state.copyWith(requireFinalMachineForDispatch: v));
@@ -128,4 +195,5 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
 
 final productionFlowProvider =
     NotifierProvider<ProductionFlowNotifier, ProductionFlowConfig>(
-        ProductionFlowNotifier.new,);
+  ProductionFlowNotifier.new,
+);

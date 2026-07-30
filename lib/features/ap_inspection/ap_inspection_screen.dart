@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
+import '../final_dispatch/final_dispatch_providers.dart';
 import 'ap_inspection_providers.dart';
 
 class ApInspectionScreen extends ConsumerStatefulWidget {
@@ -14,12 +15,14 @@ class ApInspectionScreen extends ConsumerStatefulWidget {
 
 class _ApPartEntry {
   _ApPartEntry({
+    required this.batchNumber,
     required this.partId,
     required this.partCode,
     required this.partName,
     required this.availableQty,
   });
 
+  final String batchNumber;
   final String partId;
   final String partCode;
   final String partName;
@@ -32,8 +35,9 @@ class _ApPartEntry {
   double get checked => double.tryParse(checkedCtrl.text) ?? 0;
   double get rejected => double.tryParse(rejectedCtrl.text) ?? 0;
   double get rtvQty => double.tryParse(rtvQtyCtrl.text) ?? 0;
-  double get approved => (checked - rejected - rtvQty).clamp(0, double.infinity);
-  bool get isBalanced => (approved + rejected + rtvQty - checked).abs() < 0.001;
+  double get approved => (checked - rejected).clamp(0, double.infinity);
+  bool get isBalanced =>
+      (approved + rejected - checked).abs() < 0.001 && rtvQty <= rejected;
   bool get exceedsAvailable => checked > availableQty;
 
   void dispose() {
@@ -72,13 +76,23 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
 
   void _addPart(Map<String, dynamic> stockItem) {
     final id = stockItem['id'] as String;
-    if (_entries.any((e) => e.partId == id)) return;
-    setState(() => _entries.add(_ApPartEntry(
+    final batchNumber = stockItem['batch_number'] as String;
+    if (_entries.any(
+      (entry) => entry.partId == id && entry.batchNumber == batchNumber,
+    )) {
+      return;
+    }
+    setState(
+      () => _entries.add(
+        _ApPartEntry(
+          batchNumber: batchNumber,
           partId: id,
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
           availableQty: (stockItem['balance'] as num).toDouble(),
-        ),),);
+        ),
+      ),
+    );
   }
 
   void _removeEntry(int idx) {
@@ -97,29 +111,32 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         return;
       }
       if (e.exceedsAvailable) {
-        setState(() => _error = '${e.partCode}: Checked (${e.checked.toInt()}) exceeds available stock (${e.availableQty.toInt()})');
+        setState(() => _error =
+            '${e.partCode}: Checked (${e.checked.toInt()}) exceeds available stock (${e.availableQty.toInt()})');
         return;
       }
       if (!e.isBalanced) {
-        setState(() => _error = '${e.partCode}: OK + Rejected + RTV must equal Checked');
+        setState(
+          () => _error =
+              '${e.partCode}: OK + Rejected must equal Checked, and RTV cannot exceed Rejected',
+        );
         return;
       }
     }
 
-    setState(() { _isSaving = true; _error = null; _success = null; });
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _success = null;
+    });
 
     try {
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(apInspectionRepositoryProvider);
 
-      // Auto-generate batch number
-      final now = _recordedAt;
-      final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-      final batchNumber = 'AP-$dateStr-${_entries.length}P';
-
       for (final e in _entries) {
         final result = await repo.save(
-          batchNumber: batchNumber,
+          batchNumber: e.batchNumber,
           partId: e.partId,
           qtyChecked: e.checked,
           approvedQty: e.approved,
@@ -135,10 +152,15 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         }
       }
 
-      setState(() => _success = 'AP Inspection saved! Batch: $batchNumber');
+      setState(
+        () => _success =
+            'AP Inspection saved for ${_entries.length} batch item(s).',
+      );
       ref.invalidate(apInspectionListProvider);
+      ref.invalidate(pendingApStockProvider);
       ref.invalidate(apRejectedStockProvider);
       ref.invalidate(apOkStockProvider);
+      ref.invalidate(approvedDispatchBatchesProvider);
       ref.invalidate(rtvStockProvider);
       _reset();
     } catch (e) {
@@ -201,7 +223,9 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             label: 'Reject Reason (if any)',
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _rejectReason,
-            items: kApRejectReasons.map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+            items: kApRejectReasons
+                .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                .toList(),
             onChanged: (v) => setState(() => _rejectReason = v),
           ),
           const SizedBox(height: 20),
@@ -209,13 +233,19 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           // After Plating stock — select parts to inspect
           Row(
             children: [
-              Text('PENDING AP STOCK', style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.primary, fontWeight: FontWeight.bold,
-              ),),
+              Text(
+                'PENDING AP STOCK',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(width: 8),
               Tooltip(
-                message: 'Parts received from Faco vendor, waiting for AP inspection',
-                child: Icon(Icons.info_outline, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                message:
+                    'Parts received from Faco vendor, waiting for AP inspection',
+                child: Icon(Icons.info_outline,
+                    size: 14, color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -241,10 +271,17 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 spacing: 8,
                 runSpacing: 6,
                 children: items.map((item) {
-                  final alreadyAdded = _entries.any((e) => e.partId == item['id']);
+                  final alreadyAdded = _entries.any(
+                    (entry) =>
+                        entry.partId == item['id'] &&
+                        entry.batchNumber == item['batch_number'],
+                  );
                   final balance = (item['balance'] as num).toInt();
                   return FilterChip(
-                    label: Text('${item['code']} ($balance PCS)'),
+                    label: Text(
+                      '${item['code']} • ${item['batch_number']} '
+                      '($balance PCS)',
+                    ),
                     selected: alreadyAdded,
                     onSelected: alreadyAdded ? null : (_) => _addPart(item),
                     avatar: alreadyAdded
@@ -295,7 +332,8 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     final list = ref.watch(apInspectionListProvider);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+      error: (e, _) =>
+          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
       data: (records) {
         if (records.isEmpty) {
           return const EmptyState(
@@ -315,20 +353,29 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.green.withValues(alpha: 0.12),
-                child: const Icon(Icons.verified, color: Colors.green, size: 20),
+                child:
+                    const Icon(Icons.verified, color: Colors.green, size: 20),
               ),
-              title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
+              title: Text(
+                r['batch_number'] ?? '—',
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+              ),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('✓$approved  ✗$rejected',
-                      style: const TextStyle(fontWeight: FontWeight.bold),),
+                  Text(
+                    '✓$approved  ✗$rejected',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   if (rtv > 0)
-                    Text('RTV $rtv',
-                        style: const TextStyle(fontSize: 11, color: Colors.deepOrange),),
+                    Text(
+                      'RTV $rtv',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.deepOrange),
+                    ),
                 ],
               ),
             );
@@ -404,22 +451,40 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(e.partCode,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),),
-                      Text(e.partName,
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),),
+                      Text(
+                        e.partCode,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      Text(
+                        e.partName,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      Text(
+                        'Batch ${e.batchNumber}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.secondaryContainer,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     'Available: ${e.availableQty.toInt()} PCS',
-                    style: TextStyle(fontSize: 11, color: theme.colorScheme.onSecondaryContainer),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSecondaryContainer),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -455,7 +520,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
             ),
             const SizedBox(height: 10),
             NumberFormField(
-              label: 'RTV Qty (return to vendor)',
+              label: 'RTV from Rejected Qty',
               controller: e.rtvQtyCtrl,
               allowDecimal: false,
               prefixIcon: const Icon(Icons.undo, size: 18),
@@ -476,7 +541,8 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                 )
               else
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: e.isBalanced
                         ? Colors.green.withValues(alpha: 0.08)
@@ -489,7 +555,9 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                       Row(
                         children: [
                           Icon(
-                            e.isBalanced ? Icons.verified_outlined : Icons.pending_outlined,
+                            e.isBalanced
+                                ? Icons.verified_outlined
+                                : Icons.pending_outlined,
                             size: 16,
                             color: e.isBalanced ? Colors.green : Colors.orange,
                           ),
@@ -497,7 +565,8 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                           Text(
                             'OK: ${e.approved.toInt()} PCS',
                             style: TextStyle(
-                              color: e.isBalanced ? Colors.green : Colors.orange,
+                              color:
+                                  e.isBalanced ? Colors.green : Colors.orange,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -525,7 +594,8 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    'OK + Rejected + RTV = ${(e.approved + e.rejected + e.rtvQty).toInt()} ≠ Checked ${e.checked.toInt()}',
+                    'OK + Rejected = ${(e.approved + e.rejected).toInt()} / '
+                    'Checked ${e.checked.toInt()}. RTV must be within Rejected.',
                     style: const TextStyle(color: Colors.orange, fontSize: 11),
                   ),
                 ),
@@ -550,8 +620,11 @@ class _SplitChip extends StatelessWidget {
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(label,
-          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),),
+      child: Text(
+        label,
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
     );
   }
 }
@@ -568,7 +641,8 @@ class _ApRejectedTab extends ConsumerWidget {
 
     return stockAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+      error: (e, _) =>
+          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
       data: (items) {
         if (items.isEmpty) {
           return const EmptyState(
@@ -577,7 +651,8 @@ class _ApRejectedTab extends ConsumerWidget {
           );
         }
 
-        final totalQty = items.fold(0.0, (s, r) => s + ((r['qty'] as num?)?.toDouble() ?? 0));
+        final totalQty = items.fold(
+            0.0, (s, r) => s + ((r['qty'] as num?)?.toDouble() ?? 0));
 
         return Column(
           children: [
@@ -600,11 +675,16 @@ class _ApRejectedTab extends ConsumerWidget {
                         Text(
                           '${totalQty.toInt()} PCS AP Rejected',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.red,
+                          ),
                         ),
                         Text(
                           'Will be scrapped via SAP system',
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ],
                     ),
@@ -623,12 +703,14 @@ class _ApRejectedTab extends ConsumerWidget {
                   return Card(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
-                      side: BorderSide(color: Colors.red.withValues(alpha: 0.2)),
+                      side:
+                          BorderSide(color: Colors.red.withValues(alpha: 0.2)),
                     ),
                     child: ListTile(
                       leading: CircleAvatar(
                         backgroundColor: Colors.red.withValues(alpha: 0.1),
-                        child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                        child: const Icon(Icons.cancel,
+                            color: Colors.red, size: 20),
                       ),
                       title: Text(
                         '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
@@ -638,7 +720,10 @@ class _ApRejectedTab extends ConsumerWidget {
                       trailing: Text(
                         '$qty PCS',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red,),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.red,
+                        ),
                       ),
                     ),
                   );

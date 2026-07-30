@@ -91,16 +91,21 @@ class _NotifPrefsNotifier extends Notifier<_NotifPrefs> {
     state = prefs;
   }
 
-  Future<void> toggle(bool Function(_NotifPrefs) getter, _NotifPrefs Function(bool) updater, bool val) async {
+  Future<void> toggle(bool Function(_NotifPrefs) getter,
+      _NotifPrefs Function(bool) updater, bool val) async {
     await _save(updater(val));
   }
 
-  Future<void> setEnabled(bool v) => _save(state.copyWith(enableNotifications: v));
+  Future<void> setEnabled(bool v) =>
+      _save(state.copyWith(enableNotifications: v));
   Future<void> setSound(bool v) => _save(state.copyWith(soundEnabled: v));
-  Future<void> setVibration(bool v) => _save(state.copyWith(vibrationEnabled: v));
-  Future<void> setProductionAlerts(bool v) => _save(state.copyWith(productionAlerts: v));
+  Future<void> setVibration(bool v) =>
+      _save(state.copyWith(vibrationEnabled: v));
+  Future<void> setProductionAlerts(bool v) =>
+      _save(state.copyWith(productionAlerts: v));
   Future<void> setSyncAlerts(bool v) => _save(state.copyWith(syncAlerts: v));
-  Future<void> setDowntimeAlerts(bool v) => _save(state.copyWith(downtimeAlerts: v));
+  Future<void> setDowntimeAlerts(bool v) =>
+      _save(state.copyWith(downtimeAlerts: v));
 }
 
 final _notifPrefsProvider =
@@ -120,7 +125,8 @@ Widget _masterTile(
     title: Text(title),
     subtitle: Text(subtitle),
     trailing: const Icon(Icons.chevron_right),
-    onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
+    onTap: () =>
+        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
   );
 }
 
@@ -177,7 +183,10 @@ class SettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [theme.colorScheme.primaryContainer, theme.colorScheme.secondaryContainer],
+                  colors: [
+                    theme.colorScheme.primaryContainer,
+                    theme.colorScheme.secondaryContainer
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -185,7 +194,10 @@ class SettingsScreen extends ConsumerWidget {
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountSettingsScreen())),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                        builder: (_) => const AccountSettingsScreen())),
                 child: Row(
                   children: [
                     _buildAvatar(context, user),
@@ -194,25 +206,36 @@ class SettingsScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(user.name, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(user.name,
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 2),
-                          Text(user.email, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          Text(user.email,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant)),
                           const SizedBox(height: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               user.role.value.toUpperCase(),
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: theme.colorScheme.primary, letterSpacing: 1),
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                  letterSpacing: 1),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(Icons.chevron_right,
+                        color: theme.colorScheme.onSurfaceVariant),
                   ],
                 ),
               ),
@@ -225,26 +248,43 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Daily Production Targets'),
             subtitle: const Text('Part-wise & day-wise targets'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionTargetsPage())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const _ProductionTargetsPage())),
           ),
           ListTile(
             leading: const Icon(Icons.account_tree_outlined),
             title: const Text('Multi-Machine Flow'),
             subtitle: const Text('Machine sequence, WIP & dispatch rules'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionFlowPage())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const _ProductionFlowPage())),
           ),
           const Divider(),
 
           // ── MASTER DATA ──────────────────────────────────────────────────
           const _SectionLabel('Master Data'),
-          _masterTile(context, Icons.category_outlined, 'Parts', 'Add, edit or remove parts', const _PartsPage()),
-          _masterTile(context, Icons.precision_manufacturing_outlined, 'Machines', 'Add, reorder & set machine sequence', const _MachinesPage()),
-          _masterTile(context, Icons.people_outline, 'Operators', 'Add or remove operators', const _OperatorsPage()),
-          _masterTile(context, Icons.local_shipping_outlined, 'Suppliers', 'Material suppliers', const _SuppliersPage()),
-          _masterTile(context, Icons.store_outlined, 'Vendors (Faco)', 'Plating vendors', const _VendorsPage()),
-          _masterTile(context, Icons.person_outlined, 'Drivers', 'Add or remove drivers', const _DriversPage()),
-          _masterTile(context, Icons.directions_car_outlined, 'Vehicles', 'Number plates', const _VehiclesPage()),
+          _masterTile(context, Icons.category_outlined, 'Parts',
+              'Add, edit or remove parts', const _PartsPage()),
+          _masterTile(
+              context,
+              Icons.precision_manufacturing_outlined,
+              'Machines',
+              'Add, reorder & set machine sequence',
+              const _MachinesPage()),
+          _masterTile(context, Icons.people_outline, 'Operators',
+              'Add or remove operators', const _OperatorsPage()),
+          _masterTile(context, Icons.local_shipping_outlined, 'Suppliers',
+              'Material suppliers', const _SuppliersPage()),
+          _masterTile(context, Icons.store_outlined, 'Vendors (Faco)',
+              'Plating vendors', const _VendorsPage()),
+          _masterTile(context, Icons.person_outlined, 'Drivers',
+              'Add or remove drivers', const _DriversPage()),
+          _masterTile(context, Icons.directions_car_outlined, 'Vehicles',
+              'Number plates', const _VehiclesPage()),
           const Divider(),
 
           // ── APP SETTINGS ─────────────────────────────────────────────────
@@ -252,16 +292,26 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Theme'),
-            subtitle: Text(themeMode.name[0].toUpperCase() + themeMode.name.substring(1)),
+            subtitle: Text(
+                themeMode.name[0].toUpperCase() + themeMode.name.substring(1)),
             trailing: SegmentedButton<ThemeMode>(
               segments: const [
-                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 18)),
-                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto, size: 18)),
-                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
+                ButtonSegment(
+                    value: ThemeMode.light,
+                    icon: Icon(Icons.light_mode, size: 18)),
+                ButtonSegment(
+                    value: ThemeMode.system,
+                    icon: Icon(Icons.brightness_auto, size: 18)),
+                ButtonSegment(
+                    value: ThemeMode.dark,
+                    icon: Icon(Icons.dark_mode, size: 18)),
               ],
               selected: {themeMode},
-              onSelectionChanged: (s) => ref.read(themeModeProvider.notifier).setThemeMode(s.first),
-              style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact),
+              onSelectionChanged: (s) =>
+                  ref.read(themeModeProvider.notifier).setThemeMode(s.first),
+              style: const ButtonStyle(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact),
             ),
           ),
           SwitchListTile(
@@ -269,7 +319,8 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Batch Number Tracking'),
             subtitle: const Text('Show batch numbers on entries'),
             value: showBatchNumber,
-            onChanged: (val) => ref.read(batchConfigProvider.notifier).toggle(val),
+            onChanged: (val) =>
+                ref.read(batchConfigProvider.notifier).toggle(val),
           ),
           Consumer(
             builder: (context, ref, _) {
@@ -282,9 +333,16 @@ class SettingsScreen extends ConsumerWidget {
                   return SwitchListTile(
                     secondary: const Icon(Icons.fingerprint),
                     title: const Text('Biometric Lock'),
-                    subtitle: Text(available ? 'Fingerprint / face unlock' : 'Not available on this device'),
+                    subtitle: Text(available
+                        ? 'Fingerprint / face unlock'
+                        : 'Not available on this device'),
                     value: biometricAsync.value ?? false,
-                    onChanged: available ? (val) async { await svc.setEnabled(val); ref.invalidate(_biometricEnabledProvider); } : null,
+                    onChanged: available
+                        ? (val) async {
+                            await svc.setEnabled(val);
+                            ref.invalidate(_biometricEnabledProvider);
+                          }
+                        : null,
                   );
                 },
               );
@@ -295,7 +353,10 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Notifications'),
             subtitle: const Text('Alerts, sound & vibration preferences'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _NotificationsPage())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const _NotificationsPage())),
           ),
           const Divider(),
 
@@ -306,26 +367,38 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Correction Requests'),
             subtitle: const Text('Review, approve or reject edit requests'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const CorrectionsScreen())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const CorrectionsScreen())),
           ),
           ListTile(
             leading: const Icon(Icons.cloud_sync_outlined),
             title: const Text('Cloud Sync Status'),
             subtitle: const Text('Pending queue & sync history'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _DatabaseSyncStatusPage())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const _DatabaseSyncStatusPage())),
           ),
           ListTile(
-            leading: const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
+            leading:
+                const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
             title: const Text('Erase Data'),
             subtitle: const Text('Clear transaction records'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _EraseDataPage())),
+            onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                    builder: (_) => const _EraseDataPage())),
           ),
           if (user != null)
             ListTile(
-              leading: const Icon(Icons.no_accounts_outlined, color: Colors.red),
-              title: const Text('Delete My Account', style: TextStyle(color: Colors.red)),
+              leading:
+                  const Icon(Icons.no_accounts_outlined, color: Colors.red),
+              title: const Text('Delete My Account',
+                  style: TextStyle(color: Colors.red)),
               subtitle: const Text('Remove access and clear local data'),
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
@@ -439,10 +512,10 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
       ),
     );
   }
@@ -468,7 +541,8 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       ),
       body: operators.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -491,11 +565,13 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _showEditDialog(op['id'] as String, op['name'] as String),
+                      onPressed: () => _showEditDialog(
+                          op['id'] as String, op['name'] as String),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(op['id'] as String, op['name'] as String),
+                      onPressed: () => _confirmDelete(
+                          op['id'] as String, op['name'] as String),
                     ),
                   ],
                 ),
@@ -590,7 +666,8 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       ),
       body: suppliers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -606,7 +683,8 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
               final name = supplier['name'] as String;
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.tertiaryContainer,
                   child: Text(name[0].toUpperCase()),
                 ),
                 title: Text(name),
@@ -719,7 +797,8 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       ),
       body: parts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -734,10 +813,12 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
               final p = list[i];
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primaryContainer,
                   child: Text(
                     p['code'] as String,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
                 title: Text(p['name'] as String),
@@ -755,7 +836,8 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(p['id'] as String, p['name'] as String),
+                      onPressed: () => _confirmDelete(
+                          p['id'] as String, p['name'] as String),
                     ),
                   ],
                 ),
@@ -767,7 +849,8 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     );
   }
 
-  Future<void> _showEditDialog(String? id, String? currentCode, String? currentName) async {
+  Future<void> _showEditDialog(
+      String? id, String? currentCode, String? currentName) async {
     String? resultCode;
     String? resultName;
     await showDialog<void>(
@@ -778,11 +861,13 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) return;
+              if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty)
+                return;
               resultCode = codeCtrl.text.trim();
               resultName = nameCtrl.text.trim();
               Navigator.pop(ctx);
             }
+
             return AlertDialog(
               title: Text(id == null ? 'Add Part' : 'Edit Part'),
               content: SingleChildScrollView(
@@ -868,7 +953,8 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       ),
       body: machines.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -893,14 +979,17 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
               return ListTile(
                 key: ValueKey(m['id']),
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.secondaryContainer,
                   child: Text(
                     m['machine_code'] as String? ?? '?',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                 ),
                 title: Text(m['name'] as String),
-                subtitle: Text('Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}'),
+                subtitle: Text(
+                    'Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -915,7 +1004,8 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(m['id'] as String, m['name'] as String),
+                      onPressed: () => _confirmDelete(
+                          m['id'] as String, m['name'] as String),
                     ),
                     const Icon(Icons.drag_handle, color: Colors.grey),
                   ],
@@ -929,7 +1019,10 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
   }
 
   Future<void> _showEditDialog(
-    String? id, String? currentName, String? currentCode, int? currentSeq,
+    String? id,
+    String? currentName,
+    String? currentCode,
+    int? currentSeq,
   ) async {
     String? resultName;
     String? resultCode;
@@ -939,16 +1032,19 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       builder: (ctx) {
         final nameCtrl = TextEditingController(text: currentName ?? '');
         final codeCtrl = TextEditingController(text: currentCode ?? '');
-        final seqCtrl = TextEditingController(text: currentSeq?.toString() ?? '');
+        final seqCtrl =
+            TextEditingController(text: currentSeq?.toString() ?? '');
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty) return;
+              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty)
+                return;
               resultName = nameCtrl.text.trim();
               resultCode = codeCtrl.text.trim().toUpperCase();
               resultSeq = int.tryParse(seqCtrl.text.trim()) ?? 1;
               Navigator.pop(ctx);
             }
+
             return AlertDialog(
               title: Text(id == null ? 'Add Machine' : 'Edit Machine'),
               content: SingleChildScrollView(
@@ -1050,7 +1146,8 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       ),
       body: vendors.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1063,10 +1160,12 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final v = list[i];
-              final name = v['name'] as String? ?? v['company_name'] as String? ?? '—';
+              final name =
+                  v['name'] as String? ?? v['company_name'] as String? ?? '—';
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.tertiaryContainer,
                   child: const Icon(Icons.store_outlined, size: 20),
                 ),
                 title: Text(name),
@@ -1110,7 +1209,9 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1165,7 +1266,8 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       ),
       body: drivers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1228,7 +1330,9 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1285,7 +1389,8 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       ),
       body: vehicles.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) =>
+            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1300,7 +1405,8 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
               final v = list[i];
               final plate = v['number_plate'] as String? ?? '—';
               return ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.directions_car_outlined, size: 18)),
+                leading: const CircleAvatar(
+                    child: Icon(Icons.directions_car_outlined, size: 18)),
                 title: Text(plate),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -1342,7 +1448,9 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1486,7 +1594,8 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.storage_rounded, color: Colors.blue, size: 28),
+                      const Icon(Icons.storage_rounded,
+                          color: Colors.blue, size: 28),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1494,18 +1603,21 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           children: [
                             Text(
                               'Local App Database',
-                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 2),
                             const Text(
                               'Engine: SQLite (Native High Speed)',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                              style:
+                                  TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
@@ -1513,9 +1625,14 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle, size: 14, color: Colors.green),
+                            Icon(Icons.check_circle,
+                                size: 14, color: Colors.green),
                             SizedBox(width: 4),
-                            Text('Active & Saved', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                            Text('Active & Saved',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -1547,7 +1664,9 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                   Row(
                     children: [
                       Icon(
-                        isOnline ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                        isOnline
+                            ? Icons.cloud_done_outlined
+                            : Icons.cloud_off_outlined,
                         color: isOnline ? Colors.indigo : Colors.grey,
                         size: 28,
                       ),
@@ -1558,11 +1677,15 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           children: [
                             Text(
                               'Cloud Sync (Supabase)',
-                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             Text(
                               isOnline ? 'Network Connected' : 'Offline Mode',
-                              style: TextStyle(fontSize: 12, color: isOnline ? Colors.indigo : Colors.grey),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      isOnline ? Colors.indigo : Colors.grey),
                             ),
                           ],
                         ),
@@ -1579,10 +1702,14 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           '$pendingCount records',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: pendingCount > 0 ? Colors.orange.shade800 : Colors.green.shade800,
+                            color: pendingCount > 0
+                                ? Colors.orange.shade800
+                                : Colors.green.shade800,
                           ),
                         ),
-                        backgroundColor: pendingCount > 0 ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                        backgroundColor: pendingCount > 0
+                            ? Colors.orange.withValues(alpha: 0.15)
+                            : Colors.green.withValues(alpha: 0.15),
                       ),
                     ],
                   ),
@@ -1591,14 +1718,17 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                        final res = await ref.read(syncServiceProvider).syncPending();
+                        final res =
+                            await ref.read(syncServiceProvider).syncPending();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
                                 res.synced > 0
                                     ? 'Successfully synced ${res.synced} records to cloud database.'
-                                    : (res.offline ? 'Offline — Device is not connected to internet.' : 'Local database is fully up to date.'),
+                                    : (res.offline
+                                        ? 'Offline — Device is not connected to internet.'
+                                        : 'Local database is fully up to date.'),
                               ),
                             ),
                           );
@@ -1684,49 +1814,81 @@ class _ProductionFlowPage extends ConsumerWidget {
                   : 'Disabled — Single machine direct production mode',
             ),
             value: flow.enabled,
-            onChanged: (v) => ref.read(productionFlowProvider.notifier).setEnabled(v),
+            onChanged: (v) async {
+              final notifier = ref.read(productionFlowProvider.notifier);
+              if (v && flow.requiredMachineIds.isEmpty) {
+                final orderedMachines = [
+                  ...?machines.value,
+                ]..sort(
+                    (a, b) => ((a['sequence_order'] as num?)?.toInt() ?? 0)
+                        .compareTo((b['sequence_order'] as num?)?.toInt() ?? 0),
+                  );
+                if (orderedMachines.isNotEmpty) {
+                  await notifier.setRequiredMachines(
+                    orderedMachines
+                        .map((machine) => machine['id'] as String)
+                        .toList(growable: false),
+                  );
+                }
+              }
+              await notifier.setEnabled(v);
+            },
           ),
           if (flow.enabled) ...[
             const Divider(),
             const SizedBox(height: 8),
             Text(
               'Production Mode',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             RadioListTile<ProductionMode>(
               value: ProductionMode.multiStageSequential,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+                if (m != null)
+                  ref
+                      .read(productionFlowProvider.notifier)
+                      .setProductionMode(m);
               },
               title: const Text('Multi-Stage Sequential Flow (Recommended)'),
-              subtitle: const Text('Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.'),
+              subtitle: const Text(
+                  'Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.'),
             ),
             RadioListTile<ProductionMode>(
               value: ProductionMode.directSingleStage,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+                if (m != null)
+                  ref
+                      .read(productionFlowProvider.notifier)
+                      .setProductionMode(m);
               },
               title: const Text('Direct Single-Stage Mode'),
-              subtitle: const Text('Every machine entry immediately counts as completed final production.'),
+              subtitle: const Text(
+                  'Every machine entry immediately counts as completed final production.'),
             ),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.block_outlined, color: Colors.orange),
-              title: const Text('Require Final Machine Completion for Vendor Dispatch'),
-              subtitle: const Text('Prevent vendor dispatch for batches that have not completed the final sequence machine.'),
+              title: const Text(
+                  'Require Final Machine Completion for Vendor Dispatch'),
+              subtitle: const Text(
+                  'Prevent vendor dispatch for batches that have not completed the final sequence machine.'),
               value: flow.requireFinalMachineForDispatch,
-              onChanged: (v) => ref.read(productionFlowProvider.notifier).setRequireFinalMachineForDispatch(v),
+              onChanged: (v) => ref
+                  .read(productionFlowProvider.notifier)
+                  .setRequireFinalMachineForDispatch(v),
             ),
             const Divider(),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'Required Machine Sequence (select in order M1 -> M2 -> M3)',
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             machines.when(
@@ -1752,11 +1914,15 @@ class _ProductionFlowPage extends ConsumerWidget {
                                   backgroundColor: theme.colorScheme.primary,
                                   child: Text(
                                     '$seqIdx',
-                                    style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                 )
                               : null,
-                          label: Text(isSelected ? '$name (Seq $seqIdx)' : name),
+                          label:
+                              Text(isSelected ? '$name (Seq $seqIdx)' : name),
                           selected: isSelected,
                           onSelected: (selected) {
                             final updated = [...flow.requiredMachineIds];
@@ -1765,7 +1931,9 @@ class _ProductionFlowPage extends ConsumerWidget {
                             } else {
                               updated.remove(id);
                             }
-                            ref.read(productionFlowProvider.notifier).setRequiredMachines(updated);
+                            ref
+                                .read(productionFlowProvider.notifier)
+                                .setRequiredMachines(updated);
                           },
                         );
                       }).toList(),
@@ -1774,6 +1942,16 @@ class _ProductionFlowPage extends ConsumerWidget {
                 );
               },
             ),
+            if (flow.validationError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                '${flow.validationError} Select at least one active machine.',
+                style: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
             if (flow.requiredMachineIds.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(
@@ -1781,16 +1959,19 @@ class _ProductionFlowPage extends ConsumerWidget {
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: Colors.green.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
+                    const Icon(Icons.check_circle_outline,
+                        color: Colors.green, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
-                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            color: Colors.green, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -1856,10 +2037,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     await _loadCounts();
     setState(() => _working = false);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${section.label} erased.'),
-        backgroundColor: Colors.orange,
-      ),);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${section.label} erased.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -1893,10 +2076,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     await _loadCounts();
     setState(() => _working = false);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('All transaction data erased.'),
-        backgroundColor: Colors.orange,
-      ),);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All transaction data erased.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -1918,12 +2103,16 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: Colors.orange.withValues(alpha: 0.4),),
+                          color: Colors.orange.withValues(alpha: 0.4),
+                        ),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.info_outline,
-                              color: Colors.orange, size: 18,),
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.orange,
+                            size: 18,
+                          ),
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -1951,10 +2140,15 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         title: Text(s.label),
                         subtitle: Text('$count records'),
                         trailing: TextButton.icon(
-                          icon: const Icon(Icons.delete_outline,
-                              size: 16, color: Colors.red,),
-                          label: const Text('Erase',
-                              style: TextStyle(color: Colors.red),),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 16,
+                            color: Colors.red,
+                          ),
+                          label: const Text(
+                            'Erase',
+                            style: TextStyle(color: Colors.red),
+                          ),
                           onPressed: (_working || count == 0)
                               ? null
                               : () => _eraseSection(s),
@@ -2000,10 +2194,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
 class _ProductionTargetsPage extends ConsumerStatefulWidget {
   const _ProductionTargetsPage();
   @override
-  ConsumerState<_ProductionTargetsPage> createState() => _ProductionTargetsPageState();
+  ConsumerState<_ProductionTargetsPage> createState() =>
+      _ProductionTargetsPageState();
 }
 
-class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> {
+class _ProductionTargetsPageState
+    extends ConsumerState<_ProductionTargetsPage> {
   static const _dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // partId → {dayOfWeek → {id, qty}}
@@ -2079,7 +2275,8 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
       return;
     }
     final id = existing?['id'] as String? ?? const Uuid().v4();
-    db.upsertTarget(id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty);
+    db.upsertTarget(
+        id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty);
     _targetMap.putIfAbsent(_selectedPartId!, () => {});
     _targetMap[_selectedPartId!]![day] = {'id': id, 'qty': qty};
   }
@@ -2087,12 +2284,13 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
   /// Fill all 7 days with the value from the first non-empty field, or show dialog.
   void _applyToAllDays() {
     final firstVal = _ctrls.map((c) => int.tryParse(c.text.trim())).firstWhere(
-      (v) => v != null && v > 0,
-      orElse: () => null,
-    );
+          (v) => v != null && v > 0,
+          orElse: () => null,
+        );
     if (firstVal == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a target for at least one day first.')),
+        const SnackBar(
+            content: Text('Enter a target for at least one day first.')),
       );
       return;
     }
@@ -2109,20 +2307,23 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     if (_parts.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Daily Production Targets')),
         body: const EmptyState(
-          message: 'No parts found.\nAdd parts first in Settings → Master Data → Parts.',
+          message:
+              'No parts found.\nAdd parts first in Settings → Master Data → Parts.',
           icon: Icons.category_outlined,
         ),
       );
     }
 
     final dayMap = _targetMap[_selectedPartId] ?? {};
-    final totalWeekTarget = dayMap.values.fold(0, (s, v) => s + ((v['qty'] as int?) ?? 0));
+    final totalWeekTarget =
+        dayMap.values.fold(0, (s, v) => s + ((v['qty'] as int?) ?? 0));
 
     return Scaffold(
       appBar: AppBar(
@@ -2140,10 +2341,12 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
           // Part selector tabs
           if (_parts.length > 1)
             Container(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.4),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: _parts.map((p) {
                     final pid = p['id'] as String;
@@ -2172,18 +2375,22 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    color: theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: theme.colorScheme.primary),
+                      Icon(Icons.info_outline,
+                          size: 16, color: theme.colorScheme.primary),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Set target per day. Leave blank = no target that day. '
                           'Tap "Apply to All Days" to copy one value to all 7 days instantly.',
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ),
                     ],
@@ -2225,7 +2432,8 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                                   'Today',
                                   style: TextStyle(
                                     fontSize: 9,
-                                    color: theme.colorScheme.onPrimary.withValues(alpha: 0.8),
+                                    color: theme.colorScheme.onPrimary
+                                        .withValues(alpha: 0.8),
                                   ),
                                 ),
                             ],
@@ -2260,12 +2468,17 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                                 setState(() {});
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text('+50', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                                child: const Text('+50',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -2273,17 +2486,23 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                               onTap: () {
                                 final v = int.tryParse(_ctrls[day].text) ?? 0;
                                 final newV = (v - 50).clamp(0, 99999);
-                                _ctrls[day].text = newV > 0 ? newV.toString() : '';
+                                _ctrls[day].text =
+                                    newV > 0 ? newV.toString() : '';
                                 _saveDay(day);
                                 setState(() {});
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.10),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text('-50', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                                child: const Text('-50',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
@@ -2297,8 +2516,14 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Weekly Total Target', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                    Text('$totalWeekTarget PCS', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontSize: 16)),
+                    Text('Weekly Total Target',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold)),
+                    Text('$totalWeekTarget PCS',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                            fontSize: 16)),
                   ],
                 ),
                 const SizedBox(height: 32),

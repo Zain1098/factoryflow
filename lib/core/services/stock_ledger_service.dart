@@ -25,6 +25,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _writeIn(
       partId: partId,
@@ -32,6 +33,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'material_receives',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -55,6 +57,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final outResult = await _writeOut(
       partId: partId,
@@ -62,6 +65,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'bp_inspections',
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
 
@@ -71,6 +75,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'bp_inspections',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -78,6 +83,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final outResult = await _writeOut(
       partId: partId,
@@ -85,6 +91,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'dispatch_to_facos',
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
 
@@ -94,6 +101,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'dispatch_to_facos',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -101,6 +109,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final outResult = await _writeOut(
       partId: partId,
@@ -108,6 +117,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'receive_from_facos',
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
 
@@ -117,6 +127,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'receive_from_facos',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -127,6 +138,7 @@ class StockLedgerService {
     required double rejectedQty,
     double rtvQty = 0,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final outResult = await _writeOut(
       partId: partId,
@@ -134,6 +146,7 @@ class StockLedgerService {
       qty: checkedQty,
       refTable: 'ap_inspections',
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
 
@@ -144,17 +157,27 @@ class StockLedgerService {
         qty: approvedQty,
         refTable: 'ap_inspections',
         refId: refId,
+        triggerSync: triggerSync,
       );
       if (!approvedResult.success) return approvedResult;
     }
 
-    if (rejectedQty > 0) {
+    final rejectedHoldQty = rejectedQty - rtvQty;
+    if (rejectedHoldQty < 0) {
+      return const StockLedgerResult(
+        success: false,
+        error: 'RTV quantity cannot exceed rejected quantity.',
+      );
+    }
+
+    if (rejectedHoldQty > 0) {
       final rejectedResult = await _writeIn(
         partId: partId,
         stage: StockStage.apRejected,
-        qty: rejectedQty,
+        qty: rejectedHoldQty,
         refTable: 'ap_inspections',
         refId: refId,
+        triggerSync: triggerSync,
       );
       if (!rejectedResult.success) return rejectedResult;
     }
@@ -166,6 +189,7 @@ class StockLedgerService {
         qty: rtvQty,
         refTable: 'ap_inspections',
         refId: refId,
+        triggerSync: triggerSync,
       );
     }
 
@@ -177,6 +201,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _writeOut(
       partId: partId,
@@ -184,6 +209,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'ap_rejected_actions',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -192,6 +218,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final outResult = await _writeOut(
       partId: partId,
@@ -199,6 +226,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'ap_rejected_actions',
       refId: refId,
+      triggerSync: triggerSync,
     );
     if (!outResult.success) return outResult;
     return _writeIn(
@@ -207,6 +235,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'ap_rejected_actions',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -214,6 +243,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _writeOut(
       partId: partId,
@@ -221,6 +251,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'rtvs',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -228,6 +259,7 @@ class StockLedgerService {
     required String partId,
     required double okQty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _writeIn(
       partId: partId,
@@ -235,6 +267,101 @@ class StockLedgerService {
       qty: okQty,
       refTable: 'rtv_reinspections',
       refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
+  /// Receives material back from an RTV cycle and records the reinspection
+  /// outcome. Rejected-again pieces remain in RTV stock so they can be sent in
+  /// the next cycle; approved pieces move to dispatch-ready AP stock.
+  Future<StockLedgerResult> rtvReinspectionSplit({
+    required String partId,
+    required double quantityReceived,
+    required double okQty,
+    required double rejectAgainQty,
+    required String refId,
+    bool triggerSync = true,
+  }) async {
+    if ((okQty + rejectAgainQty - quantityReceived).abs() > 0.001) {
+      return const StockLedgerResult(
+        success: false,
+        error: 'RTV OK + Reject Again must equal the received quantity.',
+      );
+    }
+
+    final outResult = await _writeOut(
+      partId: partId,
+      stage: StockStage.rtvStock,
+      qty: quantityReceived,
+      refTable: 'rtv_reinspections',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+    if (!outResult.success) return outResult;
+
+    if (okQty > 0) {
+      final okResult = await rtvReturnOk(
+        partId: partId,
+        okQty: okQty,
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+      if (!okResult.success) return okResult;
+    }
+
+    if (rejectAgainQty > 0) {
+      return _writeIn(
+        partId: partId,
+        stage: StockStage.rtvStock,
+        qty: rejectAgainQty,
+        refTable: 'rtv_reinspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+    }
+
+    return const StockLedgerResult(success: true);
+  }
+
+  /// Resolves an escalated RTV by writing the rejected pieces off.
+  Future<StockLedgerResult> rtvEscalationScrap({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) {
+    return _writeOut(
+      partId: partId,
+      stage: StockStage.rtvStock,
+      qty: qty,
+      refTable: 'rtvs',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
+  /// Admin override: moves escalated RTV pieces into approved AP stock so they
+  /// can enter the normal final-dispatch flow.
+  Future<StockLedgerResult> rtvEscalationForceDispatch({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) async {
+    final outResult = await rtvEscalationScrap(
+      partId: partId,
+      qty: qty,
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+    if (!outResult.success) return outResult;
+    return _writeIn(
+      partId: partId,
+      stage: StockStage.approvedAp,
+      qty: qty,
+      refTable: 'rtvs',
+      refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -242,6 +369,7 @@ class StockLedgerService {
     required String partId,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _writeOut(
       partId: partId,
@@ -249,6 +377,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'dispatch_items',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -340,6 +469,7 @@ class StockLedgerService {
     required LedgerDirection direction,
     required double qty,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _write(
       partId: partId,
@@ -348,6 +478,7 @@ class StockLedgerService {
       qty: qty,
       refTable: 'stock_adjustments',
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -357,6 +488,7 @@ class StockLedgerService {
     required double qty,
     required String refTable,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _write(
       partId: partId,
@@ -365,6 +497,7 @@ class StockLedgerService {
       qty: qty,
       refTable: refTable,
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -374,6 +507,7 @@ class StockLedgerService {
     required double qty,
     required String refTable,
     required String refId,
+    bool triggerSync = true,
   }) {
     return _write(
       partId: partId,
@@ -382,6 +516,7 @@ class StockLedgerService {
       qty: qty,
       refTable: refTable,
       refId: refId,
+      triggerSync: triggerSync,
     );
   }
 
@@ -436,6 +571,7 @@ class StockLedgerService {
     required double qty,
     required String refTable,
     required String refId,
+    bool triggerSync = true,
   }) async {
     final factoryId = _db.activeWorkspaceId;
     final ledgerId = _uuid.v4();
@@ -463,9 +599,19 @@ class StockLedgerService {
           'ref_table': refTable,
           'ref_id': refId,
         },
+        triggerSync: triggerSync,
       );
     }
 
     return result;
   }
+}
+
+class StockPostingFailure implements Exception {
+  const StockPostingFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }

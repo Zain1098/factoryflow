@@ -189,7 +189,7 @@ class DatabaseService {
         sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS dispatch_items (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, factory_id TEXT,
-        part_id TEXT, dispatch_qty REAL,
+        part_id TEXT, batch_number TEXT, dispatch_qty REAL,
         sync_status TEXT DEFAULT 'pending')''',
       'CREATE INDEX IF NOT EXISTS idx_dispatch_items_session ON dispatch_items(session_id)',
       'CREATE INDEX IF NOT EXISTS idx_dispatch_sessions_date ON dispatch_sessions(date)',
@@ -314,6 +314,15 @@ class DatabaseService {
     if (!apNames.contains('rtv_qty')) {
       db.execute(
           'ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0');
+    }
+
+    final dispatchItemCols = db.select('PRAGMA table_info(dispatch_items)');
+    final dispatchItemNames =
+        dispatchItemCols.map((row) => row['name'] as String).toSet();
+    if (!dispatchItemNames.contains('batch_number')) {
+      db.execute(
+        'ALTER TABLE dispatch_items ADD COLUMN batch_number TEXT',
+      );
     }
   }
 
@@ -876,6 +885,15 @@ class DatabaseService {
     String? dateTo,
     int limit = 50,
   }) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
+    if (batchNumber == null &&
+        partId == null &&
+        challanNumber == null &&
+        dateFrom == null &&
+        dateTo == null) {
+      return [];
+    }
     final results = <Map<String, dynamic>>[];
     final tables = [
       'productions',
@@ -889,31 +907,43 @@ class DatabaseService {
     ];
 
     for (final table in tables) {
-      final conditions = <String>[];
-      final params = <Object?>[];
+      final conditions = <String>['factory_id = ?'];
+      final params = <Object?>[factoryId];
+      var hasApplicableFilter = false;
 
       if (batchNumber != null && _hasBatchColumn(table)) {
         conditions.add('batch_number LIKE ?');
         params.add('%$batchNumber%');
+        hasApplicableFilter = true;
       }
       if (partId != null) {
         conditions.add('part_id = ?');
         params.add(partId);
+        hasApplicableFilter = true;
       }
-      if (challanNumber != null && _hasChallanColumn(table)) {
-        conditions.add('(challan_number LIKE ? OR supplier_challan LIKE ?)');
-        params.addAll(['%$challanNumber%', '%$challanNumber%']);
+      if (challanNumber != null) {
+        if (table == 'receive_from_facos') {
+          conditions.add('supplier_challan LIKE ?');
+          params.add('%$challanNumber%');
+          hasApplicableFilter = true;
+        } else if (_hasChallanColumn(table)) {
+          conditions.add('challan_number LIKE ?');
+          params.add('%$challanNumber%');
+          hasApplicableFilter = true;
+        }
       }
       if (dateFrom != null) {
         conditions.add('date >= ?');
         params.add(dateFrom);
+        hasApplicableFilter = true;
       }
       if (dateTo != null) {
         conditions.add('date <= ?');
         params.add(dateTo);
+        hasApplicableFilter = true;
       }
 
-      if (conditions.isEmpty) continue;
+      if (!hasApplicableFilter) continue;
 
       var sql =
           'SELECT * FROM $table WHERE ${conditions.join(' AND ')} ORDER BY date DESC LIMIT $limit';
@@ -932,7 +962,6 @@ class DatabaseService {
 
   bool _hasChallanColumn(String table) => [
         'dispatch_to_facos',
-        'receive_from_facos',
         'final_dispatches',
       ].contains(table);
 
@@ -942,34 +971,43 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
       String partId) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
     final result = db.select(
       "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
       "FROM purchase_orders po "
-      "LEFT JOIN parts p ON p.id = po.part_id "
-      "LEFT JOIN suppliers s ON s.id = po.supplier_id "
-      "WHERE po.part_id = ? AND po.status != 'received' "
+      "LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id "
+      "LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.factory_id = po.factory_id "
+      "WHERE po.factory_id = ? AND po.part_id = ? AND po.status != 'received' "
       "ORDER BY po.created_at DESC LIMIT 20",
-      [partId],
+      [factoryId, partId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
       {int limit = 50}) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
     final result = db.select(
       "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
       "FROM purchase_orders po "
-      "LEFT JOIN parts p ON p.id = po.part_id "
-      "LEFT JOIN suppliers s ON s.id = po.supplier_id "
+      "LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id "
+      "LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.factory_id = po.factory_id "
+      "WHERE po.factory_id = ? "
       "ORDER BY po.created_at DESC LIMIT ?",
-      [limit],
+      [factoryId, limit],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<void> updatePurchaseOrderStatus(String id, String status) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return;
     db.execute(
-        'UPDATE purchase_orders SET status = ? WHERE id = ?', [status, id]);
+      'UPDATE purchase_orders SET status = ? WHERE factory_id = ? AND id = ?',
+      [status, factoryId, id],
+    );
   }
 
   // ── Backup & Erase ────────────────────────────────────────────────────
@@ -1095,7 +1133,7 @@ class DatabaseService {
   }
 
   void dispose() {
-    _db?.dispose();
+    _db?.close();
     _db = null;
     _initialized = false;
   }

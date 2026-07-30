@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show FlutterErrorDetails;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/batch_config_provider.dart';
@@ -35,6 +34,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
   // Async & Notification State
   bool _isSaving = false;
+  bool _isFlowReady = false;
+  bool _didRepairFlow = false;
+  String? _flowSetupError;
   String? _error;
   String? _success;
   String? _savedBatchNumber;
@@ -63,6 +65,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       });
     };
     FlutterError.onError = _productionFlutterErrorHandler;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prepareProductionFlow();
+    });
   }
 
   @override
@@ -98,6 +103,45 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
   void _setShift(String shift) => setState(() => _shiftId = shift);
 
+  Future<void> _prepareProductionFlow() async {
+    try {
+      final notifier = ref.read(productionFlowProvider.notifier);
+      await notifier.ensureLoaded();
+      if (!mounted) return;
+
+      if (notifier.loadError != null) {
+        setState(() {
+          _flowSetupError = notifier.loadError;
+          _isFlowReady = true;
+        });
+        return;
+      }
+
+      var flow = ref.read(productionFlowProvider);
+      final machines = await ref.read(machinesProvider.future);
+      if (!mounted) return;
+
+      final repairedFlow = repairProductionFlowConfig(flow, machines);
+      if (!identical(repairedFlow, flow)) {
+        flow = repairedFlow;
+        await notifier.save(flow);
+        _didRepairFlow = true;
+      }
+
+      setState(() {
+        _flowSetupError = flow.validationError;
+        _isFlowReady = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _flowSetupError =
+            'Production setup could not be verified. Check Settings and retry. Details: $error';
+        _isFlowReady = true;
+      });
+    }
+  }
+
   Future<void> _saveAll() async {
     if (_partId == null) {
       setState(() => _error = 'Please select a Part first.');
@@ -109,6 +153,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     }
 
     final flow = ref.read(productionFlowProvider);
+    final flowError = flow.validationError ?? _flowSetupError;
+    if (!_isFlowReady || flowError != null) {
+      setState(() {
+        _error = flowError ?? 'Production setup is still loading. Please wait.';
+      });
+      return;
+    }
 
     // Multi-stage validation across session entries
     if (flow.isMultiStage && _sessionEntries.length > 1) {
@@ -325,6 +376,24 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     final isMasterDataLoading =
         machinesAsync.isLoading || operatorsAsync.isLoading;
     final masterDataError = machinesAsync.hasError || operatorsAsync.hasError;
+    final flow = ref.watch(productionFlowProvider);
+    final rawMaterialAsync = _partId == null
+        ? null
+        : ref.watch(productionRawMaterialProvider(_partId!));
+    final hasWipInput = _wipBatchNumber != null && (_wipLastGoodQty ?? 0) > 0;
+    final rawMaterialQty = rawMaterialAsync?.value;
+    final hasRawInput = rawMaterialQty != null && rawMaterialQty > 0;
+    final inputStockLoading =
+        _partId != null && (rawMaterialAsync?.isLoading ?? true);
+    final inputStockError = rawMaterialAsync?.hasError ?? false;
+    final canAddMachine = _isFlowReady &&
+        _flowSetupError == null &&
+        _partId != null &&
+        !isMasterDataLoading &&
+        !masterDataError &&
+        !inputStockLoading &&
+        !inputStockError &&
+        (hasWipInput || hasRawInput);
     final theme = Theme.of(context);
 
     return ListView(
@@ -354,6 +423,62 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           ),
           const SizedBox(height: 12),
         ],
+        if (!_isFlowReady)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Verifying production workflow…')),
+                ],
+              ),
+            ),
+          )
+        else if (_flowSetupError != null)
+          Card(
+            color: theme.colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text(
+                _flowSetupError!,
+                style: TextStyle(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+          )
+        else
+          Card(
+            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_tree_outlined),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      flow.isMultiStage
+                          ? 'Active route: ${_productionRouteLabel(flow, machinesAsync.value ?? const [])}'
+                          : 'Active route: Raw Material → Finished Production',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (_didRepairFlow) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Production machine sequence was repaired from active master data.',
+            style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+          ),
+        ],
+        const SizedBox(height: 12),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -391,6 +516,48 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             ),
           ),
         ),
+        if (_partId != null) ...[
+          const SizedBox(height: 12),
+          rawMaterialAsync!.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (error, _) => Text(
+              'Input stock could not be checked: $error',
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+            data: (rawQty) {
+              final availableQty = hasWipInput ? _wipLastGoodQty! : rawQty;
+              final available = availableQty > 0;
+              return Card(
+                color: (available ? Colors.teal : Colors.red)
+                    .withValues(alpha: 0.10),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Icon(
+                        available
+                            ? Icons.inventory_2_outlined
+                            : Icons.warning_amber_outlined,
+                        color: available
+                            ? Colors.teal.shade800
+                            : Colors.red.shade700,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          available
+                              ? '${hasWipInput ? 'Previous-stage WIP' : 'Raw material'} available: ${availableQty.toInt()} PCS'
+                              : 'No raw material is available for $_partCode. Receive material before entering production.',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 16),
         Text('Machine entries', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -415,9 +582,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           ),
         const SizedBox(height: 12),
         FilledButton.icon(
-          onPressed: _partId == null || isMasterDataLoading || masterDataError
-              ? null
-              : _showAddEntryModal,
+          onPressed: canAddMachine ? _showAddEntryModal : null,
           icon: isMasterDataLoading
               ? const SizedBox.square(
                   dimension: 18,
@@ -451,6 +616,22 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         ],
       ],
     );
+  }
+
+  String _productionRouteLabel(
+    ProductionFlowConfig flow,
+    List<Map<String, dynamic>> machines,
+  ) {
+    final namesById = {
+      for (final machine in machines)
+        if (machine['id'] is String)
+          machine['id'] as String:
+              machine['name'] as String? ?? 'Unnamed machine',
+    };
+    final names = flow.requiredMachineIds
+        .map((id) => namesById[id] ?? 'Unavailable machine')
+        .toList(growable: false);
+    return ['Raw Material', ...names, 'Finished Production'].join(' → ');
   }
 
   Future<void> _pickPart(List<Map<String, dynamic>> parts) async {
@@ -1183,10 +1364,10 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     final existingOperatorAvailable = existingEntry != null &&
         operators.any((operator) => operator['id'] == existingEntry.operatorId);
     String localOperatorId = existingOperatorAvailable
-        ? existingEntry!.operatorId
+        ? existingEntry.operatorId
         : defaultOperator['id'] as String;
     String localOperatorName = existingOperatorAvailable
-        ? existingEntry!.operatorName
+        ? existingEntry.operatorName
         : defaultOperator['name'] as String;
 
     // Filter available machines
@@ -1215,7 +1396,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
     // Determine default machine selection
     String localMachineId = existingMachineAvailable
-        ? existingEntry!.machineId
+        ? existingEntry.machineId
         : (_wipDoneMachineIds.isNotEmpty
             ? (flow.getNextMachineId(_wipDoneMachineIds.last) ??
                 seqMachines.first['id'] as String)
@@ -1995,51 +2176,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           },
         );
       },
-    );
-  }
-}
-
-class _WipTabIcon extends StatelessWidget {
-  const _WipTabIcon({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          const Center(child: Icon(Icons.pending_actions_outlined)),
-          if (count > 0)
-            Positioned(
-              top: -5,
-              right: -7,
-              child: ExcludeSemantics(
-                child: Container(
-                  constraints:
-                      const BoxConstraints(minWidth: 16, minHeight: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.error,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    count > 99 ? '99+' : '$count',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onError,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

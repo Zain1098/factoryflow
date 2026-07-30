@@ -73,8 +73,11 @@ final dailyProductionReportProvider =
     FutureProvider.autoDispose<List<DailyProductionRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       p.date,
       COALESCE(SUM(p.production_qty), 0) AS total_prod,
@@ -83,12 +86,17 @@ final dailyProductionReportProvider =
       COALESCE(t.target, 0) AS target
     FROM productions p
     LEFT JOIN (
-      SELECT day_of_week, SUM(target_qty) AS target FROM target_master GROUP BY day_of_week
+      SELECT day_of_week, SUM(target_qty) AS target
+      FROM target_master
+      WHERE factory_id = ?
+      GROUP BY day_of_week
     ) t ON t.day_of_week = (CAST(strftime('%w', p.date) AS INTEGER))
-    WHERE p.date BETWEEN ? AND ?
+    WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
     GROUP BY p.date
     ORDER BY p.date DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, factoryId, range.fromStr, range.toStr],
+  );
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -132,8 +140,11 @@ final machineReportProvider =
     FutureProvider.autoDispose<List<MachineReportRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       m.name AS machine_name,
       COALESCE(SUM(p.production_qty), 0) AS total_prod,
@@ -142,16 +153,27 @@ final machineReportProvider =
       COUNT(DISTINCT p.date) AS run_days,
       COALESCE(dt.downtime_mins, 0) AS downtime_mins
     FROM machines m
-    LEFT JOIN productions p ON p.machine_id = m.id AND p.date BETWEEN ? AND ?
+    LEFT JOIN productions p ON p.factory_id = m.factory_id
+      AND p.machine_id = m.id AND p.date BETWEEN ? AND ?
     LEFT JOIN (
-      SELECT machine_id, SUM(duration_minutes) AS downtime_mins
-      FROM machine_downtimes WHERE date BETWEEN ? AND ?
-      GROUP BY machine_id
-    ) dt ON dt.machine_id = m.id
-    WHERE m.active = 1
+      SELECT factory_id, machine_id, SUM(duration_minutes) AS downtime_mins
+      FROM machine_downtimes
+      WHERE factory_id = ? AND date BETWEEN ? AND ?
+      GROUP BY factory_id, machine_id
+    ) dt ON dt.factory_id = m.factory_id AND dt.machine_id = m.id
+    WHERE m.factory_id = ? AND m.active = 1
     GROUP BY m.id, m.name
     ORDER BY total_prod DESC
-  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr],);
+  ''',
+    [
+      range.fromStr,
+      range.toStr,
+      factoryId,
+      range.fromStr,
+      range.toStr,
+      factoryId,
+    ],
+  );
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -193,8 +215,11 @@ final operatorReportProvider =
     FutureProvider.autoDispose<List<OperatorReportRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       o.name AS op_name,
       COALESCE(SUM(p.production_qty), 0) AS total_prod,
@@ -202,11 +227,14 @@ final operatorReportProvider =
       COALESCE(SUM(p.good_qty), 0) AS good,
       COUNT(DISTINCT p.date) AS run_days
     FROM operators o
-    LEFT JOIN productions p ON p.operator_id = o.id AND p.date BETWEEN ? AND ?
-    WHERE o.active = 1
+    LEFT JOIN productions p ON p.factory_id = o.factory_id
+      AND p.operator_id = o.id AND p.date BETWEEN ? AND ?
+    WHERE o.factory_id = ? AND o.active = 1
     GROUP BY o.id, o.name
     ORDER BY total_prod DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [range.fromStr, range.toStr, factoryId],
+  );
 
   return rows.map((r) {
     final prod = (r['total_prod'] as num).toDouble();
@@ -247,26 +275,36 @@ final downtimeReportProvider =
     FutureProvider.autoDispose<List<DowntimeRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT dt.date, m.name AS machine_name,
            dt.start_time, dt.end_time,
            COALESCE(dt.duration_minutes, 0) AS duration_minutes,
            COALESCE(dt.reason, '') AS reason
     FROM machine_downtimes dt
     LEFT JOIN machines m ON m.id = dt.machine_id
-    WHERE dt.date BETWEEN ? AND ?
+      AND m.factory_id = dt.factory_id
+    WHERE dt.factory_id = ? AND dt.date BETWEEN ? AND ?
     ORDER BY dt.date DESC, dt.start_time DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
-  return rows.map((r) => DowntimeRow(
-        date: r['date'] as String,
-        machineName: r['machine_name'] as String? ?? '—',
-        startTime: r['start_time'] as String? ?? '',
-        endTime: r['end_time'] as String?,
-        durationMinutes: (r['duration_minutes'] as num).toInt(),
-        reason: r['reason'] as String,
-      ),).toList();
+  return rows
+      .map(
+        (r) => DowntimeRow(
+          date: r['date'] as String,
+          machineName: r['machine_name'] as String? ?? '—',
+          startTime: r['start_time'] as String? ?? '',
+          endTime: r['end_time'] as String?,
+          durationMinutes: (r['duration_minutes'] as num).toInt(),
+          reason: r['reason'] as String,
+        ),
+      )
+      .toList();
 });
 
 // ─── 5. Reject Analysis (BP + AP combined) ───────────────────────────────────
@@ -294,8 +332,11 @@ final rejectAnalysisProvider =
     FutureProvider.autoDispose<List<RejectAnalysisRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       p.date,
       pt.name AS part_name,
@@ -303,16 +344,27 @@ final rejectAnalysisProvider =
       COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
       COALESCE(ap.ap_rej, 0) AS ap_rej
     FROM productions p
-    LEFT JOIN parts pt ON pt.id = p.part_id
+    LEFT JOIN parts pt ON pt.id = p.part_id AND pt.factory_id = p.factory_id
     LEFT JOIN (
-      SELECT part_id, date, SUM(rejected_qty) AS ap_rej
-      FROM ap_inspections WHERE date BETWEEN ? AND ?
-      GROUP BY part_id, date
-    ) ap ON ap.part_id = p.part_id AND ap.date = p.date
-    WHERE p.date BETWEEN ? AND ?
+      SELECT factory_id, part_id, date, SUM(rejected_qty) AS ap_rej
+      FROM ap_inspections
+      WHERE factory_id = ? AND date BETWEEN ? AND ?
+      GROUP BY factory_id, part_id, date
+    ) ap ON ap.factory_id = p.factory_id
+      AND ap.part_id = p.part_id AND ap.date = p.date
+    WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
     GROUP BY p.date, p.part_id
     ORDER BY p.date DESC
-  ''', [range.fromStr, range.toStr, range.fromStr, range.toStr],);
+  ''',
+    [
+      factoryId,
+      range.fromStr,
+      range.toStr,
+      factoryId,
+      range.fromStr,
+      range.toStr,
+    ],
+  );
 
   return rows.map((r) {
     final prod = (r['production'] as num).toDouble();
@@ -356,26 +408,35 @@ final rtvReportProvider =
     FutureProvider.autoDispose<List<RtvReportRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT r.date, pt.name AS part_name, v.name AS vendor_name,
            r.rtv_qty, r.status, r.expected_return_date, r.cycle_number
     FROM rtvs r
-    LEFT JOIN parts pt ON pt.id = r.part_id
-    LEFT JOIN vendors v ON v.id = r.vendor_id
-    WHERE r.date BETWEEN ? AND ?
+    LEFT JOIN parts pt ON pt.id = r.part_id AND pt.factory_id = r.factory_id
+    LEFT JOIN vendors v ON v.id = r.vendor_id AND v.factory_id = r.factory_id
+    WHERE r.factory_id = ? AND r.date BETWEEN ? AND ?
     ORDER BY r.date DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
-  return rows.map((r) => RtvReportRow(
-        date: r['date'] as String,
-        partName: r['part_name'] as String? ?? '—',
-        vendorName: r['vendor_name'] as String? ?? '—',
-        rtvQty: (r['rtv_qty'] as num).toDouble(),
-        status: r['status'] as String? ?? 'pending',
-        expectedReturn: r['expected_return_date'] as String?,
-        cycleNumber: (r['cycle_number'] as num?)?.toInt() ?? 1,
-      ),).toList();
+  return rows
+      .map(
+        (r) => RtvReportRow(
+          date: r['date'] as String,
+          partName: r['part_name'] as String? ?? '—',
+          vendorName: r['vendor_name'] as String? ?? '—',
+          rtvQty: (r['rtv_qty'] as num).toDouble(),
+          status: r['status'] as String? ?? 'pending',
+          expectedReturn: r['expected_return_date'] as String?,
+          cycleNumber: (r['cycle_number'] as num?)?.toInt() ?? 1,
+        ),
+      )
+      .toList();
 });
 
 // ─── 7. Dispatch Report ───────────────────────────────────────────────────────
@@ -401,27 +462,40 @@ final dispatchReportProvider =
     FutureProvider.autoDispose<List<DispatchReportRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
-    SELECT fd.date, pt.name AS part_name, c.name AS customer_name,
-           fd.dispatch_qty, COALESCE(fd.challan_number,'') AS challan,
+  final rows = db.db.select(
+    '''
+    SELECT ds.date, pt.name AS part_name, c.name AS customer_name,
+           di.dispatch_qty, COALESCE(ds.challan_number,'') AS challan,
            COALESCE(v.number_plate,'') AS vehicle
-    FROM final_dispatches fd
-    LEFT JOIN parts pt ON pt.id = fd.part_id
-    LEFT JOIN customers c ON c.id = fd.customer_id
-    LEFT JOIN vehicles v ON v.id = fd.vehicle_id
-    WHERE fd.date BETWEEN ? AND ?
-    ORDER BY fd.date DESC
-  ''', [range.fromStr, range.toStr],);
+    FROM dispatch_sessions ds
+    INNER JOIN dispatch_items di ON di.factory_id = ds.factory_id
+      AND di.session_id = ds.id
+    LEFT JOIN parts pt ON pt.id = di.part_id AND pt.factory_id = di.factory_id
+    LEFT JOIN customers c ON c.id = ds.customer_id
+      AND c.factory_id = ds.factory_id
+    LEFT JOIN vehicles v ON v.id = ds.vehicle_id
+      AND v.factory_id = ds.factory_id
+    WHERE ds.factory_id = ? AND ds.date BETWEEN ? AND ?
+    ORDER BY ds.date DESC, ds.time DESC
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
-  return rows.map((r) => DispatchReportRow(
-        date: r['date'] as String,
-        partName: r['part_name'] as String? ?? '—',
-        customerName: r['customer_name'] as String? ?? '—',
-        dispatchQty: (r['dispatch_qty'] as num).toDouble(),
-        challanNumber: r['challan'] as String,
-        vehicleNumber: r['vehicle'] as String,
-      ),).toList();
+  return rows
+      .map(
+        (r) => DispatchReportRow(
+          date: r['date'] as String,
+          partName: r['part_name'] as String? ?? '—',
+          customerName: r['customer_name'] as String? ?? '—',
+          dispatchQty: (r['dispatch_qty'] as num).toDouble(),
+          challanNumber: r['challan'] as String,
+          vehicleNumber: r['vehicle'] as String,
+        ),
+      )
+      .toList();
 });
 
 // ─── 8. Faco Pending Material ─────────────────────────────────────────────────
@@ -446,25 +520,33 @@ class FacoPendingRow {
 final facoPendingReportProvider =
     FutureProvider.autoDispose<List<FacoPendingRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       pt.name AS part_name,
       v.name AS vendor_name,
       COALESCE(SUM(df.qty), 0) AS dispatched,
-      COALESCE(rf.received, 0) AS received,
+      COALESCE(SUM(rf.received), 0) AS received,
       MIN(df.date) AS oldest_date
     FROM dispatch_to_facos df
-    LEFT JOIN parts pt ON pt.id = df.part_id
-    LEFT JOIN vendors v ON v.id = df.vendor_id
+    LEFT JOIN parts pt ON pt.id = df.part_id AND pt.factory_id = df.factory_id
+    LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
     LEFT JOIN (
-      SELECT part_id, SUM(qty_received) AS received
-      FROM receive_from_facos GROUP BY part_id
-    ) rf ON rf.part_id = df.part_id
+      SELECT factory_id, dispatch_ref_id, SUM(qty_received) AS received
+      FROM receive_from_facos
+      WHERE factory_id = ?
+      GROUP BY factory_id, dispatch_ref_id
+    ) rf ON rf.factory_id = df.factory_id AND rf.dispatch_ref_id = df.id
+    WHERE df.factory_id = ?
     GROUP BY df.part_id, df.vendor_id
-    HAVING (COALESCE(SUM(df.qty), 0) - COALESCE(rf.received, 0)) > 0
+    HAVING (COALESCE(SUM(df.qty), 0) - COALESCE(SUM(rf.received), 0)) > 0
     ORDER BY oldest_date ASC
-  ''');
+  ''',
+    [factoryId, factoryId],
+  );
 
   return rows.map((r) {
     final disp = (r['dispatched'] as num).toDouble();
@@ -510,8 +592,11 @@ class LiveStockRow {
 final liveStockReportProvider =
     FutureProvider.autoDispose<List<LiveStockRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT
       p.name, p.code,
       COALESCE(MAX(CASE WHEN sl.stage='raw_material' THEN sl.running_balance END), 0) AS raw,
@@ -522,15 +607,19 @@ final liveStockReportProvider =
       COALESCE(MAX(CASE WHEN sl.stage='ap_rejected' THEN sl.running_balance END), 0) AS aprej,
       COALESCE(MAX(CASE WHEN sl.stage='rtv_stock' THEN sl.running_balance END), 0) AS rtv
     FROM parts p
-    LEFT JOIN stock_ledger sl ON sl.part_id = p.id
+    LEFT JOIN stock_ledger sl ON sl.factory_id = p.factory_id
+      AND sl.part_id = p.id
       AND sl.created_at = (
         SELECT MAX(created_at) FROM stock_ledger
-        WHERE part_id = p.id AND stage = sl.stage
+        WHERE factory_id = p.factory_id
+          AND part_id = p.id AND stage = sl.stage
       )
-    WHERE p.active = 1
+    WHERE p.factory_id = ? AND p.active = 1
     GROUP BY p.id, p.name, p.code
     ORDER BY p.name
-  ''');
+  ''',
+    [factoryId],
+  );
 
   return rows.map((r) {
     final raw = (r['raw'] as num).toDouble();
@@ -580,26 +669,35 @@ final ledgerMovementProvider =
     FutureProvider.autoDispose<List<LedgerMovementRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) return [];
 
-  final rows = db.db.select('''
+  final rows = db.db.select(
+    '''
     SELECT sl.date, pt.name AS part_name, sl.stage,
            sl.direction, sl.qty, sl.running_balance, sl.ref_table
     FROM stock_ledger sl
-    LEFT JOIN parts pt ON pt.id = sl.part_id
-    WHERE sl.date BETWEEN ? AND ?
+    LEFT JOIN parts pt ON pt.id = sl.part_id AND pt.factory_id = sl.factory_id
+    WHERE sl.factory_id = ? AND sl.date BETWEEN ? AND ?
     ORDER BY sl.created_at DESC
     LIMIT 500
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
-  return rows.map((r) => LedgerMovementRow(
-        date: r['date'] as String,
-        partName: r['part_name'] as String? ?? '—',
-        stage: r['stage'] as String,
-        direction: r['direction'] as String,
-        qty: (r['qty'] as num).toDouble(),
-        runningBalance: (r['running_balance'] as num).toDouble(),
-        refTable: r['ref_table'] as String? ?? '—',
-      ),).toList();
+  return rows
+      .map(
+        (r) => LedgerMovementRow(
+          date: r['date'] as String,
+          partName: r['part_name'] as String? ?? '—',
+          stage: r['stage'] as String,
+          direction: r['direction'] as String,
+          qty: (r['qty'] as num).toDouble(),
+          runningBalance: (r['running_balance'] as num).toDouble(),
+          refTable: r['ref_table'] as String? ?? '—',
+        ),
+      )
+      .toList();
 });
 
 // ─── Summary Totals Helpers ───────────────────────────────────────────────────
@@ -608,8 +706,10 @@ extension DailyProductionSummary on List<DailyProductionRow> {
   double get totalProd => fold(0, (s, r) => s + r.totalProduction);
   double get totalBpReject => fold(0, (s, r) => s + r.bpReject);
   double get totalGood => fold(0, (s, r) => s + r.goodQty);
-  double get avgEfficiency => isEmpty ? 0 : fold(0.0, (s, r) => s + r.efficiency) / length;
-  double get overallRejectPct => totalProd > 0 ? (totalBpReject / totalProd * 100) : 0;
+  double get avgEfficiency =>
+      isEmpty ? 0 : fold(0.0, (s, r) => s + r.efficiency) / length;
+  double get overallRejectPct =>
+      totalProd > 0 ? (totalBpReject / totalProd * 100) : 0;
 }
 
 extension DispatchSummary on List<DispatchReportRow> {
@@ -675,16 +775,26 @@ final holdMaterialReportProvider =
     FutureProvider.autoDispose<HoldMaterialReportData>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) {
+    return const HoldMaterialReportData(
+      bpHoldList: [],
+      rtvHoldList: [],
+    );
+  }
 
   // 1. Fetch BP Inspections (Hold Before Plating)
-  final bpRows = db.db.select('''
+  final bpRows = db.db.select(
+    '''
     SELECT bi.date, p.code as part_code, p.name as part_name, m.name as machine_name, bi.bp_reject_qty, bi.reject_reason_id
     FROM bp_inspections bi
-    LEFT JOIN parts p ON p.id = bi.part_id
-    LEFT JOIN machines m ON m.id = bi.machine_id
-    WHERE bi.date BETWEEN ? AND ?
+    LEFT JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
+    LEFT JOIN machines m ON m.id = bi.machine_id AND m.factory_id = bi.factory_id
+    WHERE bi.factory_id = ? AND bi.date BETWEEN ? AND ?
     ORDER BY bi.date DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
   final bpHoldList = bpRows.map((r) {
     return BpHoldRow(
@@ -698,14 +808,18 @@ final holdMaterialReportProvider =
   }).toList();
 
   // 2. Fetch Active RTV Stock (Hold After Plating)
-  final rtvRows = db.db.select('''
+  final rtvRows = db.db.select(
+    '''
     SELECT r.date, p.code as part_code, p.name as part_name, v.name as vendor_name, r.rtv_qty, r.status
     FROM rtvs r
-    LEFT JOIN parts p ON p.id = r.part_id
-    LEFT JOIN vendors v ON v.id = r.vendor_id
-    WHERE r.status != 'received' AND r.date BETWEEN ? AND ?
+    LEFT JOIN parts p ON p.id = r.part_id AND p.factory_id = r.factory_id
+    LEFT JOIN vendors v ON v.id = r.vendor_id AND v.factory_id = r.factory_id
+    WHERE r.factory_id = ? AND r.status != 'received'
+      AND r.date BETWEEN ? AND ?
     ORDER BY r.date DESC
-  ''', [range.fromStr, range.toStr],);
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
 
   final rtvHoldList = rtvRows.map((r) {
     final rtvDateStr = r['date'] as String;

@@ -10,7 +10,8 @@ import '../auth/auth_providers.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-final _stockOverviewProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final _stockOverviewProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final parts = await db.getActiveParts();
   final result = <Map<String, dynamic>>[];
@@ -25,7 +26,8 @@ final _stockOverviewProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   return result;
 });
 
-final _adjustmentHistoryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+final _adjustmentHistoryProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) {
   return ref.watch(databaseServiceProvider).getStockAdjustments();
 });
 
@@ -35,7 +37,8 @@ class StockManagementScreen extends ConsumerStatefulWidget {
   const StockManagementScreen({super.key});
 
   @override
-  ConsumerState<StockManagementScreen> createState() => _StockManagementScreenState();
+  ConsumerState<StockManagementScreen> createState() =>
+      _StockManagementScreenState();
 }
 
 class _StockManagementScreenState extends ConsumerState<StockManagementScreen>
@@ -107,7 +110,8 @@ class _PartStockCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final balances = part['balances'] as Map<String, double>;
-    final nonZero = StockStage.values.where((s) => (balances[s.value] ?? 0) > 0).toList();
+    final nonZero =
+        StockStage.values.where((s) => (balances[s.value] ?? 0) > 0).toList();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -123,7 +127,8 @@ class _PartStockCard extends ConsumerWidget {
                   backgroundColor: theme.colorScheme.primaryContainer,
                   child: Text(
                     part['code'] as String,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -161,7 +166,8 @@ class _PartStockCard extends ConsumerWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   'No stock recorded',
-                  style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
           ],
@@ -200,7 +206,8 @@ class _PartStockCard extends ConsumerWidget {
                     initialValue: selectedStage,
                     decoration: const InputDecoration(labelText: 'Stage'),
                     items: StockStage.values
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                        .map((s) =>
+                            DropdownMenuItem(value: s, child: Text(s.label)))
                         .toList(),
                     onChanged: (v) => setS(() => selectedStage = v!),
                   ),
@@ -226,7 +233,8 @@ class _PartStockCard extends ConsumerWidget {
                   const SizedBox(height: 12),
                   TextField(
                     controller: qtyCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
@@ -243,13 +251,17 @@ class _PartStockCard extends ConsumerWidget {
                   ),
                   if (errorMsg != null) ...[
                     const SizedBox(height: 8),
-                    Text(errorMsg!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                    Text(errorMsg!,
+                        style:
+                            const TextStyle(color: Colors.red, fontSize: 12)),
                   ],
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
               FilledButton(
                 onPressed: () async {
                   final qty = double.tryParse(qtyCtrl.text.trim());
@@ -323,17 +335,8 @@ class _PartStockCard extends ConsumerWidget {
         return;
     }
 
+    if (newQty < 0) return;
     final adjId = const Uuid().v4();
-    final result = await ledger.manualAdjustment(
-      partId: partId,
-      stage: stage,
-      direction: direction,
-      qty: adjustedQty,
-      refId: adjId,
-    );
-
-    if (!result.success) return;
-
     final adjData = {
       'id': adjId,
       'factory_id': factoryId,
@@ -341,24 +344,50 @@ class _PartStockCard extends ConsumerWidget {
       'part_id': partId,
       'stage': stage.value,
       'previous_qty': currentQty,
-      'adjusted_qty': direction == LedgerDirection.out ? -adjustedQty : adjustedQty,
+      'adjusted_qty':
+          direction == LedgerDirection.out ? -adjustedQty : adjustedQty,
       'new_qty': newQty,
       'remarks': remark,
       'created_at': DateTime.now().toIso8601String(),
       'sync_status': 'pending',
     };
-    await db.insertStockAdjustment(adjData);
-    await sync.queueInsert(
-      tableName: 'stock_adjustments',
-      recordId: adjId,
-      payload: adjData,
-    );
+
+    try {
+      await db.runInTransaction(() async {
+        final result = await ledger.manualAdjustment(
+          partId: partId,
+          stage: stage,
+          direction: direction,
+          qty: adjustedQty,
+          refId: adjId,
+          triggerSync: false,
+        );
+        if (!result.success) {
+          throw StockPostingFailure(
+            result.error ?? 'Unable to adjust stock.',
+          );
+        }
+        await db.insertStockAdjustment(adjData);
+        await sync.queueInsert(
+          tableName: 'stock_adjustments',
+          recordId: adjId,
+          payload: adjData,
+          triggerSync: false,
+        );
+      });
+    } on StockPostingFailure {
+      return;
+    } catch (_) {
+      return;
+    }
+    await sync.schedulePendingSync();
 
     ref.invalidate(_stockOverviewProvider);
     ref.invalidate(_adjustmentHistoryProvider);
   }
 
-  String _fmt(double v) => v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
+  String _fmt(double v) =>
+      v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
 }
 
 // ── History Tab ───────────────────────────────────────────────────────────────
@@ -434,12 +463,14 @@ class _AdjustmentTile extends StatelessWidget {
           if ((item['remarks'] as String?)?.isNotEmpty == true)
             Text(
               item['remarks'] as String,
-              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
             ),
           if (createdAt != null)
             Text(
               _formatDate(createdAt),
-              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
             ),
         ],
       ),
@@ -452,7 +483,20 @@ class _AdjustmentTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime dt) {
-    final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}  '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }

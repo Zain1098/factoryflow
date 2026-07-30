@@ -1,5 +1,41 @@
 # Documentation Changelog
 
+## v3.0-dev - 2026-07-30
+- Restored the Android/Gradle files after confirming the latest run failure was
+  a laptop/tooling issue; no build-troubleshooting override remains in the app.
+- Repaired invalid legacy Production Flow configuration on load and blocked
+  production posting when a multi-stage route is empty or unusable.
+- Added Production route/stock visibility and zero-stock guidance so the form
+  explains why entry is unavailable instead of appearing blank.
+- Made Material Receive, Purchase Order status, BP inspection, Faco
+  dispatch/partial receive, AP inspection/reject actions, RTV, Final Dispatch,
+  downtime, and manual adjustment locally transactional with their ledger and
+  sync-queue records.
+- Corrected the AP equation to `Approved + Rejected = Checked`; RTV is a subset
+  of Rejected and cannot duplicate rejected stock.
+- Completed the RTV client flow: AP candidate selection, vendor assignment,
+  partial/full return, reinspection, reject-again cycles, cycle-3 escalation,
+  and audited Admin Scrap/Force Dispatch resolution.
+- Preserved the original Production batch through mandatory BP selection, Faco
+  dispatch/receive, AP batch candidates, RTV, and batch-aware Final Dispatch
+  items instead of generating unrelated AP/dispatch batch identifiers.
+- Factory-scoped operational reports and global search, corrected normalized
+  Final Dispatch reporting, and fixed dispatch-specific challan searches.
+- Added deterministic offline test connectivity injection and bounded the
+  production connectivity probe so a missing platform channel cannot block a
+  durable local post.
+- Added a read-only local database diagnostic for balances, pending sync,
+  production/ledger mismatches, and RTV over-receipts.
+- Prepared (but did not apply) `supabase/sync_schema_alignment.sql` for missing
+  server tables/columns, owner-to-Admin policy semantics, RTV update policies,
+  constraints, indexes, grants, and RLS. Live application requires explicit
+  Product Owner approval.
+- Added Production, transaction rollback, partial receive, AP/RTV equation,
+  Final Dispatch aggregation, report factory-isolation, and search regression
+  coverage. The previously executed 23 targeted tests passed; the newly added
+  RTV tests are analyzer-clean but could not execute because the local Flutter
+  command itself currently hangs, including `flutter --version`.
+
 ## v3.0-dev - 2026-07-29
 - Added the Gate 0 repository gap report and safe migration plan.
 - Recorded current native sqlite3 divergence from the locked Drift architecture.

@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart';
 void main() {
   late Database sqliteDatabase;
   late DatabaseService databaseService;
+  late SyncService syncService;
   late StockLedgerService ledgerService;
   late ProductionRepository repository;
 
@@ -19,7 +20,10 @@ void main() {
     databaseService = DatabaseService.forTesting(sqliteDatabase);
     await databaseService.setActiveWorkspaceId('factory-a');
 
-    final syncService = SyncService(databaseService);
+    syncService = SyncService(
+      databaseService,
+      onlineCheck: () async => false,
+    );
     ledgerService = StockLedgerService(databaseService, syncService);
     repository = ProductionRepository(
       databaseService,
@@ -198,6 +202,49 @@ void main() {
     );
   });
 
+  test('invalid multi-stage configuration is blocked before stock changes',
+      () async {
+    final invalidRepository = ProductionRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+      const ProductionFlowConfig(enabled: true),
+      true,
+    );
+    final ledgerCountBefore = sqliteDatabase
+        .select('SELECT COUNT(*) AS count FROM stock_ledger')
+        .first['count'];
+
+    final result = await invalidRepository.saveJob(
+      partId: 'part-a',
+      partCode: 'PART-A',
+      entries: [
+        MachineEntry(
+          machineId: 'machine-a1',
+          machineName: 'Bending',
+          machineCode: 'B',
+          sequenceIndex: 1,
+          isFinal: false,
+          operatorId: 'operator-a',
+          operatorName: 'Operator A',
+          shiftId: 'A',
+          productionQty: 10,
+          rejectQty: 0,
+        ),
+      ],
+      createdBy: 'user-a',
+      recordedAt: DateTime.utc(2026, 7, 29, 8),
+    );
+
+    expect(result.error, contains('no machine sequence is configured'));
+    expect(
+      sqliteDatabase
+          .select('SELECT COUNT(*) AS count FROM stock_ledger')
+          .first['count'],
+      ledgerCountBefore,
+    );
+  });
+
   test('production insert failure rolls back ledger and sync queue', () async {
     final productionCountBefore = sqliteDatabase
         .select('SELECT COUNT(*) AS count FROM productions')
@@ -353,7 +400,10 @@ void main() {
       () async {
     final legacyRepository = ProductionRepository(
       databaseService,
-      SyncService(databaseService),
+      SyncService(
+        databaseService,
+        onlineCheck: () async => false,
+      ),
       ledgerService,
       const ProductionFlowConfig(
         enabled: true,

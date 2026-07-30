@@ -68,6 +68,7 @@ class NumberFormField extends StatelessWidget {
     this.hint,
     this.allowDecimal = true,
     this.prefixIcon,
+    this.readOnly = false,
   });
 
   final String label;
@@ -77,11 +78,13 @@ class NumberFormField extends StatelessWidget {
   final String? hint;
   final bool allowDecimal;
   final Widget? prefixIcon;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
+      readOnly: readOnly,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(
