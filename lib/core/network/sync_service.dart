@@ -41,6 +41,15 @@ final isOnlineProvider = Provider<bool>((ref) {
 /// Columns that are GENERATED in Supabase and must be stripped before upsert.
 const _generatedColumns = {'good_qty'};
 
+/// RTV rows are immutable through the Data API. State changes use narrow
+/// server RPCs so batch, quantity, cycle, part, vendor, and factory cannot be
+/// changed by a generic update payload.
+String rtvUpdateRpcName(String status) {
+  return status == 'scrapped' || status == 'force_dispatched'
+      ? 'resolve_rtv_escalation'
+      : 'refresh_rtv_status';
+}
+
 /// Offline-first sync engine with exponential backoff and notification alerts.
 class SyncService {
   SyncService(
@@ -186,15 +195,43 @@ class SyncService {
                 .timeout(const Duration(seconds: 12));
           } else if (operation == 'update') {
             final factoryId = payload['factory_id']?.toString() ?? '';
-            final updatePayload = Map<String, dynamic>.from(payload)
-              ..remove('id')
-              ..remove('factory_id');
-            await client
-                .from(tableName)
-                .update(updatePayload)
-                .eq('id', recordId)
-                .eq('factory_id', factoryId)
-                .timeout(const Duration(seconds: 12));
+            if (tableName == 'rtvs') {
+              final status = payload['status']?.toString() ?? '';
+              final rpcName = rtvUpdateRpcName(status);
+              final result = rpcName == 'resolve_rtv_escalation'
+                  ? await client.rpc(
+                      rpcName,
+                      params: {
+                        'p_rtv_id': recordId,
+                        'p_factory_id': factoryId,
+                        'p_action': status,
+                        'p_reason': payload['remarks']?.toString() ?? '',
+                      },
+                    ).timeout(const Duration(seconds: 12))
+                  : await client.rpc(
+                      rpcName,
+                      params: {
+                        'p_rtv_id': recordId,
+                        'p_factory_id': factoryId,
+                      },
+                    ).timeout(const Duration(seconds: 12));
+              if (result is Map && result['success'] == false) {
+                throw StateError(
+                  result['error']?.toString() ??
+                      'RTV state transition was rejected.',
+                );
+              }
+            } else {
+              final updatePayload = Map<String, dynamic>.from(payload)
+                ..remove('id')
+                ..remove('factory_id');
+              await client
+                  .from(tableName)
+                  .update(updatePayload)
+                  .eq('id', recordId)
+                  .eq('factory_id', factoryId)
+                  .timeout(const Duration(seconds: 12));
+            }
           } else if (operation == 'delete') {
             await client
                 .from(tableName)

@@ -26,10 +26,24 @@
   durable local post.
 - Added a read-only local database diagnostic for balances, pending sync,
   production/ledger mismatches, and RTV over-receipts.
-- Prepared (but did not apply) `supabase/sync_schema_alignment.sql` for missing
-  server tables/columns, owner-to-Admin policy semantics, RTV update policies,
-  constraints, indexes, grants, and RLS. Live application requires explicit
-  Product Owner approval.
+- Applied live Supabase migration
+  `20260730173550_secure_sync_schema_alignment`: added the missing Purchase
+  Order, AP rejected-action, Dispatch session/item schema; validated quantity
+  constraints; enabled factory-scoped RLS; and added explicit Data API grants.
+- Kept the stored `owner` role while granting it the Admin authorization
+  ceiling only inside its own factory. Cross-factory write smoke testing passed.
+- Replaced generic RTV table updates with `refresh_rtv_status` and
+  `resolve_rtv_escalation`. The server derives status from reinspection and
+  ledger rows, while direct authenticated RTV UPDATE is revoked.
+- Hardened workspace/profile/Google/OTP RPC identity checks, made workspace
+  creation retries idempotent, stopped storing password-change values in OTP
+  rows, set privileged function search paths to empty, and removed all 11
+  anonymous SECURITY DEFINER advisor warnings.
+- Applied follow-up migration
+  `20260730173825_index_purchase_orders_part_fk`; the new Purchase Order foreign
+  key now has a covering index.
+- Routed mobile RTV sync updates through the controlled server RPCs and added
+  RPC-selection regression tests.
 - Added Production, transaction rollback, partial receive, AP/RTV equation,
   Final Dispatch aggregation, report factory-isolation, and search regression
   coverage. The previously executed 23 targeted tests passed; the newly added

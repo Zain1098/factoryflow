@@ -2,8 +2,8 @@
 
 Date: 2026-07-30
 Branch: `codex/production-v3-checkpoint`
-Status: Local implementation complete for this slice; controlled server rollout
-and device acceptance remain.
+Status: Local implementation and controlled schema/security rollout complete
+for this slice; device acceptance and server-ledger reconciliation remain.
 
 ## Outcome
 
@@ -54,32 +54,50 @@ or queue write rolls the whole action back and shows a non-destructive error.
 - Total previously executed targeted tests: 23 passed.
 - Added three RTV tests covering assignment/no double-use, partial return stock
   split, and third-cycle Admin resolution/idempotency.
+- Added two RTV sync-security tests proving normal updates route to the
+  server-derived status RPC and Admin decisions route to the restricted
+  resolution RPC.
 - Direct Dart analysis of all changed core and flow files reports no syntax or
   type errors. Remaining findings are existing style infos and one unused
   legacy Production layout method.
+- Direct Dart formatting and targeted analysis of the latest sync/test files
+  pass with no issues. Test execution still stalls in the laptop's Flutter/Dart
+  build-hook launcher; the bounded command produced no test failure.
 - `git diff --check` passes.
 - Flutter test/device rerun is pending because the laptop Flutter launcher
   hangs even on `flutter --version`. Android/Gradle configuration was not
   changed to work around that machine issue.
 
-## Hosted Supabase rollout pending approval
+## Hosted Supabase rollout completed
 
-`supabase/sync_schema_alignment.sql` is prepared but not applied. It is
-forward-only and preserves existing history. It adds:
+Product Owner approval was received and the hardened forward-only migration was
+applied live as `20260730173550_secure_sync_schema_alignment`. It preserves
+existing history and adds:
 
 - `purchase_orders`, `ap_rejected_actions`, `dispatch_sessions`, and
   `dispatch_items`;
 - missing Material Receive and AP RTV columns;
 - Final Dispatch and operational indexes;
-- quantity constraints;
+- validated quantity constraints;
 - RLS/grants for new tables;
-- scoped RTV update policies for Quality Inspector and Admin;
+- controlled RTV status/resolution RPCs with direct table UPDATE revoked;
 - server authorization mapping where stored role `owner` has Admin authority.
 
-The live server currently has an `owner` user but its role helper returns
-`owner`, while existing write policies expect `Admin`. Until the prepared
-migration is explicitly approved and applied, an Owner's local entries can
-remain queued and fail hosted RLS authorization.
+The migration also hardened workspace, Google, profile, and OTP RPCs; made
+workspace setup retries idempotent; stopped storing password-change values in
+OTP rows; set privileged function search paths to empty; and revoked anonymous
+execution. Security Advisor anonymous SECURITY DEFINER warnings dropped from
+11 to 0. The follow-up migration
+`20260730173825_index_purchase_orders_part_fk` added the one missing new-table
+foreign-key index.
+
+Live verification passed for migration history, new tables/columns, all six
+validated constraints, RLS, authenticated-only policies, explicit grants,
+Owner own-factory insert, cross-factory denial, direct RTV UPDATE denial,
+controlled RTV RPC grants, idempotent workspace retry, cross-user OTP denial,
+and password-value non-persistence. Existing Production and ledger counts
+remained 3 and 3; the new operational tables remain empty after rollback-only
+smoke tests.
 
 Read-only hosted reconciliation on 2026-07-30 found 3 Production rows and 3
 total ledger rows, but all 3 Production rows still have no ledger row linked by
@@ -89,22 +107,20 @@ complete.
 
 ## Release blockers that remain
 
-1. Product Owner explicitly approves the hosted Supabase migration.
-2. Apply it through migration tooling, record the returned migration version,
-   and verify constraints, RLS, grants, and advisors.
-3. Reconcile trusted device ledger rows with hosted Production history before
+1. Reconcile trusted device ledger rows with hosted Production history before
    enabling atomic Production sync. Do not invent/backfill balances from event
    rows alone.
-4. Convert non-Production hosted event plus ledger fan-out to idempotent atomic
+2. Convert non-Production hosted event plus ledger fan-out to idempotent atomic
    server commands. Local atomicity is complete; hosted cross-table atomicity
    is not yet complete.
-5. Run the full Flutter suite and connected-device golden workflow when the
+3. Run the full Flutter suite and connected-device golden workflow when the
    local Flutter launcher is healthy.
-6. Complete conflict review/dependency ordering and the separately approved
+4. Complete conflict review/dependency ordering and the separately approved
    SQLite-to-Drift architecture decision.
+5. Enable Supabase leaked-password protection and document the remaining
+   intentional authenticated SECURITY DEFINER advisor notices.
 
 ## Safe next action
 
-After explicit approval, apply and verify the prepared hosted migration. Then
-run the local reconciliation export against the trusted phone database before
+Run the local reconciliation export against the trusted phone database before
 changing `ATOMIC_PRODUCTION_SYNC_ENABLED`.

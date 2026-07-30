@@ -41,7 +41,7 @@ Deliverable: signed gap report and safe migration plan.
 - Pending approval: ADR for staged Drift adoption over the existing SQLite file.
 - Pending work: database/ledger characterization tests, backup/restore proof,
   server-ledger baseline reconciliation and atomic rollout activation,
-  remaining live SECURITY DEFINER privilege cleanup from the advisor baseline,
+  reviewed authenticated-RPC advisor exceptions, leaked-password protection,
   migration fixture, and CI baseline.
 - Full system flow audit is recorded in
   `17_FULL_SYSTEM_FLOW_AUDIT_20260729.md`. Central local stock/dashboard reads
@@ -52,6 +52,16 @@ Deliverable: signed gap report and safe migration plan.
   stock-changing modules outside Production, the Final Dispatch local/server
   table mismatch, unscoped report/search paths, incomplete RTV reinspection,
   and missing sync dependency/conflict-review models.
+- Live schema alignment is now applied as
+  `20260730173550_secure_sync_schema_alignment`, with missing operational
+  tables/columns, validated constraints, explicit grants, RLS, factory-scoped
+  Owner authorization, hardened auth RPCs, and controlled RTV transitions.
+- The follow-up FK index migration
+  `20260730173825_index_purchase_orders_part_fk` is also live. Security Advisor
+  anonymous SECURITY DEFINER warnings dropped from 11 to 0. Remaining signed-in
+  SECURITY DEFINER notices are intentional RPC surfaces with internal identity,
+  factory, role, and input checks; leaked-password protection remains a
+  dashboard configuration action.
 
 ## Phase 1 - Foundation
 - App shell, routing, themes
