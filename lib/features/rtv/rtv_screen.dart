@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -338,10 +339,10 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
               subtitle: Text(
-                  '${r['vendor_name'] ?? ''} · Cycle $cycle · ${r['date']}'),
+                  '${r['vendor_name'] ?? ''} · Cycle $cycle · ${r['date']}',),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -796,9 +797,9 @@ class _RtvStockTab extends ConsumerWidget {
 
         // Group by part for summary
         final totalRtv = items.fold(
-            0.0, (s, r) => s + ((r['rtv_qty'] as num?)?.toDouble() ?? 0));
+            0.0, (s, r) => s + ((r['rtv_qty'] as num?)?.toDouble() ?? 0),);
         final totalCurrent = items.fold(0.0,
-            (s, r) => s + ((r['current_balance'] as num?)?.toDouble() ?? 0));
+            (s, r) => s + ((r['current_balance'] as num?)?.toDouble() ?? 0),);
 
         return Column(
           children: [
@@ -815,7 +816,7 @@ class _RtvStockTab extends ConsumerWidget {
               child: Row(
                 children: [
                   const Icon(Icons.inventory_2_outlined,
-                      color: Colors.deepOrange, size: 28),
+                      color: Colors.deepOrange, size: 28,),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -833,7 +834,7 @@ class _RtvStockTab extends ConsumerWidget {
                           '${totalRtv.toInt()} PCS total sent for RTV',
                           style: TextStyle(
                               fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
+                              color: theme.colorScheme.onSurfaceVariant,),
                         ),
                       ],
                     ),
@@ -860,7 +861,7 @@ class _RtvStockTab extends ConsumerWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                       side: BorderSide(
-                          color: Colors.deepOrange.withValues(alpha: 0.2)),
+                          color: Colors.deepOrange.withValues(alpha: 0.2),),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -876,7 +877,7 @@ class _RtvStockTab extends ConsumerWidget {
                                     Text(
                                       '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.bold),
+                                          fontWeight: FontWeight.bold,),
                                     ),
                                     Text(
                                       'Batch: $batch',
@@ -944,7 +945,7 @@ class _RtvStockTab extends ConsumerWidget {
 
 class _InfoChip extends StatelessWidget {
   const _InfoChip(
-      {required this.icon, required this.label, required this.color});
+      {required this.icon, required this.label, required this.color,});
   final IconData icon;
   final String label;
   final Color color;

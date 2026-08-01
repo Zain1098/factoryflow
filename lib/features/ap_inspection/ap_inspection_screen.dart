@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../final_dispatch/final_dispatch_providers.dart';
@@ -112,7 +113,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
       }
       if (e.exceedsAvailable) {
         setState(() => _error =
-            '${e.partCode}: Checked (${e.checked.toInt()}) exceeds available stock (${e.availableQty.toInt()})');
+            '${e.partCode}: Checked (${e.checked.toInt()}) exceeds available stock (${e.availableQty.toInt()})',);
         return;
       }
       if (!e.isBalanced) {
@@ -245,7 +246,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 message:
                     'Parts received from Faco vendor, waiting for AP inspection',
                 child: Icon(Icons.info_outline,
-                    size: 14, color: theme.colorScheme.onSurfaceVariant),
+                    size: 14, color: theme.colorScheme.onSurfaceVariant,),
               ),
             ],
           ),
@@ -359,7 +360,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
@@ -374,7 +375,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                     Text(
                       'RTV $rtv',
                       style: const TextStyle(
-                          fontSize: 11, color: Colors.deepOrange),
+                          fontSize: 11, color: Colors.deepOrange,),
                     ),
                 ],
               ),
@@ -454,13 +455,13 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                       Text(
                         e.partCode,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14),
+                            fontWeight: FontWeight.bold, fontSize: 14,),
                       ),
                       Text(
                         e.partName,
                         style: TextStyle(
                             fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant),
+                            color: theme.colorScheme.onSurfaceVariant,),
                       ),
                       Text(
                         'Batch ${e.batchNumber}',
@@ -484,7 +485,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                     'Available: ${e.availableQty.toInt()} PCS',
                     style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.onSecondaryContainer),
+                        color: theme.colorScheme.onSecondaryContainer,),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -652,7 +653,7 @@ class _ApRejectedTab extends ConsumerWidget {
         }
 
         final totalQty = items.fold(
-            0.0, (s, r) => s + ((r['qty'] as num?)?.toDouble() ?? 0));
+            0.0, (s, r) => s + ((r['qty'] as num?)?.toDouble() ?? 0),);
 
         return Column(
           children: [
@@ -684,7 +685,7 @@ class _ApRejectedTab extends ConsumerWidget {
                           'Will be scrapped via SAP system',
                           style: TextStyle(
                               fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
+                              color: theme.colorScheme.onSurfaceVariant,),
                         ),
                       ],
                     ),
@@ -710,7 +711,7 @@ class _ApRejectedTab extends ConsumerWidget {
                       leading: CircleAvatar(
                         backgroundColor: Colors.red.withValues(alpha: 0.1),
                         child: const Icon(Icons.cancel,
-                            color: Colors.red, size: 20),
+                            color: Colors.red, size: 20,),
                       ),
                       title: Text(
                         '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',

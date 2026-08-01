@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,34 +9,38 @@ import '../../core/constants/stock_stages.dart';
 import '../../core/constants/user_roles.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/services/alert_producer_service.dart';
 import '../../core/services/stock_ledger_service.dart';
+
+import '../../core/providers/master_data_providers.dart';
 
 const _uuid = Uuid();
 
 const kRtvStatuses = [
-  'sent',
-  'partially_received',
-  'approved',
-  'rejected_again',
-  'escalated',
-  'scrapped',
-  'force_dispatched',
+  'sent', 'partially_received', 'approved', 'rejected_again',
+  'escalated', 'scrapped', 'force_dispatched',
 ];
 
-// RTV Reasons — shared with AP Inspection inline RTV
-const kRtvReasons = [
-  'Plating Quality Reject',
-  'Vendor Processing Delay',
-  'Damaged in Transit',
-  'Wrong Quantity Received',
+// Fallback reasons used only when DB has no configured reasons yet.
+const kRtvReasonsFallback = [
+  'Plating Quality Reject', 'Vendor Processing Delay',
+  'Damaged in Transit', 'Wrong Quantity Received',
 ];
+
+/// Live RTV reasons from DB, falling back to defaults.
+final rtvReasonsListProvider = FutureProvider<List<String>>((ref) async {
+  final rows = await ref.watch(rtvReasonsProvider.future);
+  if (rows.isEmpty) return kRtvReasonsFallback;
+  return rows.map((r) => r['reason'] as String).toList();
+});
 
 class RtvRepository {
-  RtvRepository(this._db, this._sync, this._ledger);
+  RtvRepository(this._db, this._sync, this._ledger, this._alerts);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final AlertProducerService _alerts;
 
   Future<RtvResult> save({
     required String batchNumber,
@@ -174,6 +179,7 @@ class RtvRepository {
     }
 
     await _sync.schedulePendingSync();
+    unawaited(_alerts.checkRtvPending());
     return RtvResult(success: true, recordId: id, cycleNumber: cycleNumber);
   }
 
@@ -391,6 +397,7 @@ class RtvRepository {
     }
 
     await _sync.schedulePendingSync();
+    unawaited(_alerts.checkRtvPending());
     return RtvReinspectionResult(
       success: true,
       recordId: id,
@@ -553,6 +560,7 @@ final rtvRepositoryProvider = Provider<RtvRepository>((ref) {
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(alertProducerServiceProvider),
   );
 });
 

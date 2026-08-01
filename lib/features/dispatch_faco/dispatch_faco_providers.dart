@@ -9,6 +9,22 @@ import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
 
+class DispatchFacoLineItem {
+  const DispatchFacoLineItem({
+    required this.partId,
+    required this.partCode,
+    required this.partName,
+    required this.qty,
+    this.batchNumber,
+  });
+
+  final String partId;
+  final String partCode;
+  final String partName;
+  final double qty;
+  final String? batchNumber;
+}
+
 class DispatchFacoRepository {
   DispatchFacoRepository(this._db, this._sync, this._ledger, this._flow);
 
@@ -17,10 +33,50 @@ class DispatchFacoRepository {
   final StockLedgerService _ledger;
   final ProductionFlowConfig _flow;
 
+  /// Parts with available Own BP Stock that can go to FACO (BP inspection optional).
+  Future<List<Map<String, dynamic>>> getAvailableBpStockParts() async {
+    final rows =
+        await _db.getBalancesByStage(StockStage.bpStock.value);
+    return rows
+        .where((r) => ((r['balance'] as num?)?.toDouble() ?? 0) > 0)
+        .map((r) => Map<String, dynamic>.from(r))
+        .toList();
+  }
+
   Future<DispatchFacoResult> save({
     required String batchNumber,
     required String partId,
     required double qty,
+    required String vendorId,
+    String? vehicleId,
+    String? driverId,
+    String? challannumber,
+    String? remarks,
+    required String createdBy,
+    DateTime? recordedAt,
+  }) {
+    return saveMulti(
+      items: [
+        DispatchFacoLineItem(
+          partId: partId,
+          partCode: '',
+          partName: '',
+          qty: qty,
+          batchNumber: batchNumber,
+        ),
+      ],
+      vendorId: vendorId,
+      vehicleId: vehicleId,
+      driverId: driverId,
+      challannumber: challannumber,
+      remarks: remarks,
+      createdBy: createdBy,
+      recordedAt: recordedAt,
+    );
+  }
+
+  Future<DispatchFacoResult> saveMulti({
+    required List<DispatchFacoLineItem> items,
     required String vendorId,
     String? vehicleId,
     String? driverId,
@@ -36,33 +92,19 @@ class DispatchFacoRepository {
         error: 'No active factory workspace is selected.',
       );
     }
-    if (qty <= 0) {
+    if (items.isEmpty) {
       return const DispatchFacoResult(
         success: false,
-        error: 'Dispatch quantity must be greater than zero.',
+        error: 'Add at least one part to dispatch.',
       );
     }
-
-    final candidates = await getRecentBpInspections();
-    final matching = candidates.where(
-      (candidate) =>
-          candidate['batch_number'] == batchNumber &&
-          candidate['part_id'] == partId,
-    );
-    if (matching.isEmpty) {
-      return const DispatchFacoResult(
-        success: false,
-        error: 'No BP-inspected stock is available for this batch and part.',
-      );
-    }
-    final batchAvailable =
-        (matching.first['available_qty'] as num?)?.toDouble() ?? 0;
-    if (qty > batchAvailable) {
-      return DispatchFacoResult(
-        success: false,
-        error:
-            'Dispatch quantity ($qty) exceeds this batch BP-approved stock ($batchAvailable PCS).',
-      );
+    for (final item in items) {
+      if (item.qty <= 0) {
+        return DispatchFacoResult(
+          success: false,
+          error: 'Quantity for ${item.partCode} must be greater than zero.',
+        );
+      }
     }
     if (_flow.validationError != null) {
       return DispatchFacoResult(
@@ -71,89 +113,92 @@ class DispatchFacoRepository {
       );
     }
 
-    // Multi-stage validation: If enabled, check if batch has completed the final machine sequence
-    if (_flow.isMultiStage &&
-        _flow.requireFinalMachineForDispatch &&
-        batchNumber.isNotEmpty) {
-      final finalMachineId = _flow.requiredMachineIds.last;
-      final check = _db.db.select(
-        'SELECT COUNT(*) as cnt FROM productions '
-        'WHERE factory_id = ? AND batch_number = ? AND machine_id = ?',
-        [factoryId, batchNumber, finalMachineId],
-      );
-      if ((check.first['cnt'] as int) == 0) {
-        final mRow = _db.db.select(
-          'SELECT name FROM machines WHERE factory_id = ? AND id = ?',
-          [factoryId, finalMachineId],
-        );
-        final mName = mRow.isNotEmpty
-            ? mRow.first['name'] as String
-            : 'Final Stage Machine';
+    for (final item in items) {
+      final available =
+          await _ledger.getAvailableStock(item.partId, StockStage.bpStock);
+      if (item.qty > available) {
         return DispatchFacoResult(
           success: false,
           error:
-              'Batch "$batchNumber" is still Work-In-Progress (BP stock). It must complete $mName (Final Sequence) before vendor dispatch.',
+              '${item.partCode}: dispatch qty (${item.qty}) exceeds Own BP Stock ($available PCS)',
         );
+      }
+
+      if (_flow.isMultiStage &&
+          _flow.requireFinalMachineForDispatch &&
+          (item.batchNumber ?? '').isNotEmpty) {
+        final finalMachineId = _flow.requiredMachineIds.last;
+        final check = _db.db.select(
+          'SELECT COUNT(*) as cnt FROM productions '
+          'WHERE factory_id = ? AND batch_number = ? AND machine_id = ?',
+          [factoryId, item.batchNumber, finalMachineId],
+        );
+        if ((check.first['cnt'] as int) == 0) {
+          final mRow = _db.db.select(
+            'SELECT name FROM machines WHERE factory_id = ? AND id = ?',
+            [factoryId, finalMachineId],
+          );
+          final mName = mRow.isNotEmpty
+              ? mRow.first['name'] as String
+              : 'Final Stage Machine';
+          return DispatchFacoResult(
+            success: false,
+            error:
+                'Batch "${item.batchNumber}" must complete $mName before vendor dispatch.',
+          );
+        }
       }
     }
 
-    // Validate: qty <= BP stock (PRD 4.5)
-    final available =
-        await _ledger.getAvailableStock(partId, StockStage.bpStock);
-    if (qty > available) {
-      return DispatchFacoResult(
-        success: false,
-        error:
-            'Dispatch qty ($qty) exceeds available BP stock ($available PCS)',
-      );
-    }
-
-    final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();
     final dateStr =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    final record = {
-      'id': id,
-      'factory_id': factoryId,
-      'batch_number': batchNumber,
-      'date': dateStr,
-      'time': timeStr,
-      'part_id': partId,
-      'qty': qty,
-      'vendor_id': vendorId,
-      'vehicle_id': vehicleId,
-      'driver_id': driverId,
-      'challan_number': challannumber,
-      'remarks': remarks,
-      'created_by': createdBy,
-      'sync_status': 'pending',
-    };
-
-    // Stock: BP Stock OUT → At Faco IN (PRD 7.1)
+    final savedIds = <String>[];
     try {
       await _db.runInTransaction(() async {
-        final ledgerResult = await _ledger.dispatchToFaco(
-          partId: partId,
-          qty: qty,
-          refId: id,
-          triggerSync: false,
-        );
-        if (!ledgerResult.success) {
-          throw StockPostingFailure(
-            ledgerResult.error ?? 'Unable to update Faco stock.',
-          );
-        }
+        for (final item in items) {
+          final id = _uuid.v4();
+          final record = {
+            'id': id,
+            'factory_id': factoryId,
+            'batch_number': item.batchNumber ?? '',
+            'date': dateStr,
+            'time': timeStr,
+            'part_id': item.partId,
+            'qty': item.qty,
+            'vendor_id': vendorId,
+            'vehicle_id': vehicleId,
+            'driver_id': driverId,
+            'challan_number': challannumber,
+            'remarks': remarks,
+            'created_by': createdBy,
+            'sync_status': 'pending',
+          };
 
-        await _db.insertRecord('dispatch_to_facos', record);
-        await _sync.queueInsert(
-          tableName: 'dispatch_to_facos',
-          recordId: id,
-          payload: record,
-          triggerSync: false,
-        );
+          final ledgerResult = await _ledger.dispatchToFaco(
+            partId: item.partId,
+            qty: item.qty,
+            refId: id,
+            triggerSync: false,
+          );
+          if (!ledgerResult.success) {
+            throw StockPostingFailure(
+              ledgerResult.error ?? 'Unable to update Faco stock.',
+            );
+          }
+
+          await _db.insertRecord('dispatch_to_facos', record);
+          await _sync.queueInsert(
+            tableName: 'dispatch_to_facos',
+            recordId: id,
+            payload: record,
+            triggerSync: false,
+          );
+          savedIds.add(id);
+        }
       });
     } on StockPostingFailure catch (error) {
       return DispatchFacoResult(success: false, error: error.message);
@@ -166,7 +211,7 @@ class DispatchFacoRepository {
     }
 
     await _sync.schedulePendingSync();
-    return DispatchFacoResult(success: true, recordId: id);
+    return DispatchFacoResult(success: true, recordId: savedIds.first);
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
@@ -195,6 +240,7 @@ class DispatchFacoRepository {
     return rows.map((r) => r['batch_number'] as String).toList();
   }
 
+  /// BP-inspected batches still available (optional path).
   Future<List<Map<String, dynamic>>> getRecentBpInspections() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
@@ -245,6 +291,11 @@ final dispatchFacoRepositoryProvider = Provider<DispatchFacoRepository>((ref) {
 final dispatchFacoListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(dispatchFacoRepositoryProvider).getRecent();
+});
+
+final bpStockPartsForDispatchProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.watch(dispatchFacoRepositoryProvider).getAvailableBpStockParts();
 });
 
 final bpReinspectedBatchesProvider =

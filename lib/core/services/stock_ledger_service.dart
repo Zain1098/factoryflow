@@ -51,6 +51,109 @@ class StockLedgerService {
     );
   }
 
+  /// Moves inspected material into BP Hold (quality has not cleared it yet).
+  Future<StockLedgerResult> bpHoldFromStock({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) async {
+    final outResult = await _writeOut(
+      partId: partId,
+      stage: StockStage.bpStock,
+      qty: qty,
+      refTable: 'bp_inspections',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+    if (!outResult.success) return outResult;
+
+    return _writeIn(
+      partId: partId,
+      stage: StockStage.bpHold,
+      qty: qty,
+      refTable: 'bp_inspections',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
+  /// Completes a BP hold: reject → bp_rejected, approved → back to bp_stock.
+  Future<StockLedgerResult> bpHoldResolve({
+    required String partId,
+    required double inspectedQty,
+    required double rejectQty,
+    required String refId,
+    bool triggerSync = true,
+  }) async {
+    if (inspectedQty <= 0) {
+      return const StockLedgerResult(
+        success: false,
+        error: 'Inspected quantity must be greater than zero.',
+      );
+    }
+    if (rejectQty < 0 || rejectQty > inspectedQty) {
+      return const StockLedgerResult(
+        success: false,
+        error: 'Reject quantity must be between 0 and inspected quantity.',
+      );
+    }
+
+    final holdResult = await bpHoldFromStock(
+      partId: partId,
+      qty: inspectedQty,
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+    if (!holdResult.success) return holdResult;
+
+    final approvedQty = inspectedQty - rejectQty;
+    if (rejectQty > 0) {
+      final rejectOut = await _writeOut(
+        partId: partId,
+        stage: StockStage.bpHold,
+        qty: rejectQty,
+        refTable: 'bp_inspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+      if (!rejectOut.success) return rejectOut;
+
+      final rejectIn = await _writeIn(
+        partId: partId,
+        stage: StockStage.bpRejected,
+        qty: rejectQty,
+        refTable: 'bp_inspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+      if (!rejectIn.success) return rejectIn;
+    }
+
+    if (approvedQty > 0) {
+      final okOut = await _writeOut(
+        partId: partId,
+        stage: StockStage.bpHold,
+        qty: approvedQty,
+        refTable: 'bp_inspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+      if (!okOut.success) return okOut;
+
+      return _writeIn(
+        partId: partId,
+        stage: StockStage.bpStock,
+        qty: approvedQty,
+        refTable: 'bp_inspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+    }
+
+    return const StockLedgerResult(success: true);
+  }
+
   /// Moves a pre-plating QC rejection out of BP stock into its own tracked
   /// reject location. Reject material must never disappear from the ledger.
   Future<StockLedgerResult> bpRejectToRejected({

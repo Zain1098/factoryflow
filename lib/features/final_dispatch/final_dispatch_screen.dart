@@ -208,7 +208,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'),),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -237,7 +237,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'),),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -382,7 +382,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.2),),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -391,14 +391,14 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                     'Total Dispatch',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary),
+                        color: theme.colorScheme.primary,),
                   ),
                   Text(
                     '${_items.fold(0.0, (s, i) => s + i.qty).toInt()} PCS (${_items.length} parts)',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: theme.colorScheme.primary),
+                        color: theme.colorScheme.primary,),
                   ),
                 ],
               ),
@@ -453,7 +453,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                 ),
                 const SizedBox(width: 8),
                 IconButton.outlined(
-                    onPressed: _addNewVehicle, icon: const Icon(Icons.add)),
+                    onPressed: _addNewVehicle, icon: const Icon(Icons.add),),
               ],
             ),
           ),
@@ -483,7 +483,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                 ),
                 const SizedBox(width: 8),
                 IconButton.outlined(
-                    onPressed: _addNewDriver, icon: const Icon(Icons.add)),
+                    onPressed: _addNewDriver, icon: const Icon(Icons.add),),
               ],
             ),
           ),
@@ -521,7 +521,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                         'Challan: $_savedChallan',
                         style: const TextStyle(
                             fontFamily: 'monospace',
-                            fontWeight: FontWeight.bold),
+                            fontWeight: FontWeight.bold,),
                       ),
                     ],
                   ),
@@ -561,7 +561,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
             final totalQty = items.fold(
                 0,
                 (s, item) =>
-                    s + ((item['dispatch_qty'] as num?)?.toInt() ?? 0));
+                    s + ((item['dispatch_qty'] as num?)?.toInt() ?? 0),);
             final isSynced = session['sync_status'] == 'synced';
 
             return Card(
@@ -578,7 +578,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                              horizontal: 8, vertical: 3,),
                           decoration: BoxDecoration(
                             color: Colors.indigo.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(6),
@@ -622,7 +622,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                       Text(
                         'Challan: ${session['challan_number']}',
                         style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 12),
+                            fontFamily: 'monospace', fontSize: 12,),
                       ),
                     ],
                     if (session['vehicle_plate'] != null ||
@@ -638,7 +638,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                         style: TextStyle(
                             fontSize: 12,
                             color:
-                                Theme.of(context).colorScheme.onSurfaceVariant),
+                                Theme.of(context).colorScheme.onSurfaceVariant,),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -651,7 +651,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                         child: Row(
                           children: [
                             const Icon(Icons.circle,
-                                size: 6, color: Colors.indigo),
+                                size: 6, color: Colors.indigo,),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -664,7 +664,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                             Text(
                               '${(item['dispatch_qty'] as num?)?.toInt() ?? 0} PCS',
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 13),
+                                  fontWeight: FontWeight.w600, fontSize: 13,),
                             ),
                           ],
                         ),
@@ -738,7 +738,7 @@ class _DispatchItemCardState extends State<_DispatchItemCard> {
                     item.partName,
                     style: TextStyle(
                         fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant),
+                        color: theme.colorScheme.onSurfaceVariant,),
                   ),
                   Text(
                     'Batch ${item.batchNumber}',
@@ -751,7 +751,7 @@ class _DispatchItemCardState extends State<_DispatchItemCard> {
                   Text(
                     'Available: ${item.availableQty.toInt()} PCS',
                     style: TextStyle(
-                        fontSize: 11, color: theme.colorScheme.primary),
+                        fontSize: 11, color: theme.colorScheme.primary,),
                   ),
                 ],
               ),

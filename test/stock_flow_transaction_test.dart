@@ -179,6 +179,14 @@ void main() {
       100,
     );
     expect(await repository.getPendingDispatches('part-a'), isEmpty);
+    // Insert part so the JOIN in getPendingBatches resolves correctly.
+    await databaseService.insertRecord('parts', {
+      'id': 'part-a',
+      'factory_id': 'factory-a',
+      'code': 'A',
+      'name': 'Part A',
+      'active': 1,
+    });
     final pendingAp = await ApInspectionRepository(
       databaseService,
       syncService,
@@ -483,7 +491,7 @@ void main() {
     );
 
     expect(blocked.success, isFalse);
-    expect(blocked.error, contains('exceeds AP OK stock'));
+    expect(blocked.error, contains('exceeds batch AP OK stock'));
     expect(
       sqliteDatabase
           .select('SELECT COUNT(*) AS count FROM dispatch_sessions')

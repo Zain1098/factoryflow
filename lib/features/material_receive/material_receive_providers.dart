@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/services/alert_producer_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
@@ -128,11 +131,12 @@ class PurchaseOrderRepository {
 // ─── Material Receive Repository ──────────────────────────────────────────────
 
 class MaterialReceiveRepository {
-  MaterialReceiveRepository(this._db, this._sync, this._ledger);
+  MaterialReceiveRepository(this._db, this._sync, this._ledger, this._alerts);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final AlertProducerService _alerts;
 
   Future<MaterialReceiveResult> save({
     required String partId,
@@ -235,6 +239,7 @@ class MaterialReceiveRepository {
     }
 
     await _sync.schedulePendingSync();
+    unawaited(_alerts.checkLowStock());
     return MaterialReceiveResult(
       success: true,
       recordId: id,
@@ -279,6 +284,7 @@ final materialReceiveRepositoryProvider =
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(alertProducerServiceProvider),
   );
 });
 

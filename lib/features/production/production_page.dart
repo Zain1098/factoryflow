@@ -96,10 +96,19 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
   String _suggestShift(DateTime dateTime) {
     final hour = dateTime.hour;
+    // Default shift suggestion by time — actual shift IDs come from DB
     if (hour >= 6 && hour < 14) return 'A';
     if (hour >= 14 && hour < 22) return 'B';
     return 'C';
   }
+
+  bool _isToday(DateTime dt) {
+    final now = DateTime.now();
+    return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+  }
+
+  String _formatDate(DateTime dt) =>
+      '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
 
   void _setShift(String shift) => setState(() => _shiftId = shift);
 
@@ -291,7 +300,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 Text(
                   'Active WIP Batch Found!',
                   style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.white),
+                      fontWeight: FontWeight.bold, color: Colors.white,),
                 ),
               ],
             ),
@@ -408,7 +417,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(Icons.error_outline,
-                      color: theme.colorScheme.onErrorContainer),
+                      color: theme.colorScheme.onErrorContainer,),
                   const SizedBox(width: 10),
                   Expanded(
                     child: SelectableText(
@@ -487,8 +496,44 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               children: [
                 Text('Production details', style: theme.textTheme.titleMedium),
                 const SizedBox(height: 12),
-                Text(
-                    'Date: ${MaterialLocalizations.of(context).formatMediumDate(_recordedAt)}'),
+                RecordDateTimePicker(
+                  value: _recordedAt,
+                  onChanged: (dt) => setState(() {
+                    _recordedAt = dt;
+                    _shiftId = _suggestShift(dt);
+                  }),
+                ),
+                if (!_isToday(_recordedAt)) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Backdated entry: ${_recordedAt.day == DateTime.now().subtract(const Duration(days: 1)).day ? 'Yesterday' : _formatDate(_recordedAt)}. Tap date to correct.',
+                            style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          onPressed: () => setState(() {
+                            _recordedAt = DateTime.now();
+                            _shiftId = _suggestShift(_recordedAt);
+                          }),
+                          child: const Text('Use Today', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 SegmentedButton<String>(
                   showSelectedIcon: false,
@@ -508,7 +553,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                     icon: const Icon(Icons.category_outlined),
                     label: Text(_partId == null
                         ? 'Select finished part'
-                        : _partCode ?? 'Selected part'),
+                        : _partCode ?? 'Selected part',),
                     onPressed: () => _pickPart(parts),
                   ),
                 ),
@@ -566,7 +611,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             child: Padding(
               padding: EdgeInsets.all(24),
               child: Text(
-                  'Select a part, then add each machine stage for this batch.'),
+                  'Select a part, then add each machine stage for this batch.',),
             ),
           )
         else
@@ -575,7 +620,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               child: ListTile(
                 title: Text(entry.machineName),
                 subtitle: Text(
-                    '${entry.operatorName} · Input ${entry.productionQty.toInt()} · OK ${entry.goodQty.toInt()}'),
+                    '${entry.operatorName} · Input ${entry.productionQty.toInt()} · OK ${entry.goodQty.toInt()}',),
                 trailing: Text('${entry.rejectQty.toInt()} reject'),
               ),
             ),
@@ -591,7 +636,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               : const Icon(Icons.add),
           label: Text(isMasterDataLoading
               ? 'Loading machines and operators…'
-              : 'Add machine entry'),
+              : 'Add machine entry',),
         ),
         if (masterDataError) ...[
           const SizedBox(height: 8),
@@ -643,7 +688,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               .map((part) => ListTile(
                     title: Text('${part['code']} – ${part['name']}'),
                     onTap: () => Navigator.pop(context, part['id'] as String),
-                  ))
+                  ),)
               .toList(),
         ),
       ),
@@ -700,7 +745,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 color: Colors.amber.shade900.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                    color: Colors.amber.shade700.withValues(alpha: 0.4)),
+                    color: Colors.amber.shade700.withValues(alpha: 0.4),),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -752,7 +797,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(
                   color:
-                      theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.6),),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -776,7 +821,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       if (flow.isMultiStage)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                              horizontal: 8, vertical: 3,),
                           decoration: BoxDecoration(
                             color: theme.colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(6),
@@ -860,7 +905,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                 ? 'Raw material ready • ${rawQty.toInt()} PCS available'
                                 : 'No raw material available for a new production batch',
                         style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 12),
+                            fontWeight: FontWeight.w600, fontSize: 12,),
                       ),
                     ),
                   ],
@@ -889,7 +934,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                     'Record each machine step for this batch',
                     style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant),
+                        color: theme.colorScheme.onSurfaceVariant,),
                   ),
                 ],
               ),
@@ -910,7 +955,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 color: theme.colorScheme.surfaceContainerLowest,
                 border: Border.all(
                     color: theme.colorScheme.outlineVariant
-                        .withValues(alpha: 0.5)),
+                        .withValues(alpha: 0.5),),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Center(
@@ -1059,11 +1104,11 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                             IconButton(
                               icon: const Icon(Icons.edit_outlined, size: 18),
                               onPressed: () => _showAddEntryModal(
-                                  existingEntry: entry, index: idx),
+                                  existingEntry: entry, index: idx,),
                             ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline,
-                                  color: Colors.red, size: 18),
+                                  color: Colors.red, size: 18,),
                               onPressed: () {
                                 setState(() {
                                   _sessionEntries.removeAt(idx);
@@ -1077,7 +1122,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
                             _buildStatItem('Input',
-                                '${entry.productionQty.toInt()} PCS', theme),
+                                '${entry.productionQty.toInt()} PCS', theme,),
                             _buildStatItem(
                               'Rejects',
                               '${entry.rejectQty.toInt()} PCS',
@@ -1098,7 +1143,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           Text(
                             'Remarks: ${entry.remarks}',
                             style: const TextStyle(
-                                fontSize: 11, fontStyle: FontStyle.italic),
+                                fontSize: 11, fontStyle: FontStyle.italic,),
                           ),
                         ],
                       ],
@@ -1137,7 +1182,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                             const Text(
                               'Saved Batch Number:',
                               style: TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w600),
+                                  fontSize: 11, fontWeight: FontWeight.w600,),
                             ),
                             Text(
                               _savedBatchNumber!,
@@ -1180,7 +1225,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2, color: Colors.white,),
                         )
                       : const Icon(Icons.save_outlined, size: 18),
                   label: Text(_isSaving ? 'Saving...' : 'Save Production Job'),
@@ -1207,7 +1252,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         Text(
           label,
           style: TextStyle(
-              fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
+              fontSize: 10, color: theme.colorScheme.onSurfaceVariant,),
         ),
         const SizedBox(height: 2),
         Text(
@@ -1237,7 +1282,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1245,7 +1290,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           Row(
             children: [
               Icon(Icons.assessment_outlined,
-                  size: 18, color: theme.colorScheme.primary),
+                  size: 18, color: theme.colorScheme.primary,),
               const SizedBox(width: 8),
               Text(
                 'PRODUCTION SUMMARY',
@@ -1263,9 +1308,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Machine Steps in this Entry:',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),),
               Text('${_sessionEntries.length} machine(s)',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                  style: const TextStyle(fontWeight: FontWeight.bold),),
             ],
           ),
           const SizedBox(height: 6),
@@ -1273,10 +1318,10 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total BP Rejects:',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),),
               Text('$totalRejects PCS',
                   style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                      fontWeight: FontWeight.bold, color: Colors.red.shade700,),),
             ],
           ),
           const Divider(height: 18),
@@ -1292,7 +1337,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           ? 'Final Good Qty (BP Stock):'
                           : 'Intermediate Good Qty (WIP):',
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 13),
+                          fontWeight: FontWeight.bold, fontSize: 13,),
                     ),
                     Text(
                       willCompleteBatch
@@ -1300,7 +1345,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           : 'Held in WIP Stock until final machine finishes',
                       style: TextStyle(
                           fontSize: 10,
-                          color: theme.colorScheme.onSurfaceVariant),
+                          color: theme.colorScheme.onSurfaceVariant,),
                     ),
                   ],
                 ),
@@ -1326,7 +1371,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
   // ─── ADD / EDIT ENTRY MODAL ──────────────────────────────────────────────────
 
   Future<void> _showAddEntryModal(
-      {MachineEntry? existingEntry, int? index}) async {
+      {MachineEntry? existingEntry, int? index,}) async {
     final operatorsAsync = ref.read(operatorsProvider);
     final machinesAsync = ref.read(machinesProvider);
     final flow = ref.read(productionFlowProvider);
@@ -1337,7 +1382,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     if (operatorsAsync.isLoading || machinesAsync.isLoading) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Master data is still loading. Please try again.')),
+            content: Text('Master data is still loading. Please try again.'),),
       );
       return;
     }
@@ -1346,7 +1391,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Could not load operators or machines. Check Settings and try again.'),
+              'Could not load operators or machines. Check Settings and try again.',),
         ),
       );
       return;
@@ -1355,7 +1400,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     if (operators.isEmpty || machines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Operators or Machines data missing in Settings.')),
+            content: Text('Operators or Machines data missing in Settings.'),),
       );
       return;
     }
@@ -1375,7 +1420,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         flow.isMultiStage && flow.requiredMachineIds.isNotEmpty
             ? flow.requiredMachineIds
                 .map((id) => machines.firstWhere((m) => m['id'] == id,
-                    orElse: () => <String, dynamic>{}))
+                    orElse: () => <String, dynamic>{},),)
                 .where((m) => m.isNotEmpty)
                 .toList()
             : machines;
@@ -1440,7 +1485,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           builder: (ctx, setModalState) {
             final selectedMachine = machines.firstWhere(
                 (m) => m['id'] == localMachineId,
-                orElse: () => machines.first);
+                orElse: () => machines.first,);
             final mName = selectedMachine['name'] as String? ?? 'Machine';
             final mCode = selectedMachine['machine_code'] as String? ??
                 mName.substring(0, 1);
@@ -1524,7 +1569,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           child: Row(
                             children: [
                               Icon(Icons.account_tree_outlined,
-                                  color: Theme.of(ctx).colorScheme.primary),
+                                  color: Theme.of(ctx).colorScheme.primary,),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
@@ -1534,7 +1579,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                       '$inputLocation  →  $outputLocation',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 12),
+                                          fontSize: 12,),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
@@ -1584,7 +1629,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         const Text(
                           'Running Machine',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 13),
+                              fontWeight: FontWeight.bold, fontSize: 13,),
                         ),
                         const SizedBox(height: 6),
                         Wrap(
@@ -1609,17 +1654,17 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                     Text('#$sIdx ',
                                         style: const TextStyle(
                                             fontSize: 10,
-                                            fontWeight: FontWeight.bold)),
+                                            fontWeight: FontWeight.bold,),),
                                   ],
                                   Text(name),
                                   if (isDone) ...[
                                     const SizedBox(width: 4),
                                     const Icon(Icons.check_circle,
-                                        size: 14, color: Colors.green),
+                                        size: 14, color: Colors.green,),
                                   ] else if (isFinalM) ...[
                                     const SizedBox(width: 4),
                                     const Icon(Icons.star,
-                                        size: 12, color: Colors.amber),
+                                        size: 12, color: Colors.amber,),
                                   ],
                                 ],
                               ),
@@ -1642,7 +1687,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           value: localStatus,
                           items: kMachineStatuses
                               .map((s) =>
-                                  DropdownMenuItem(value: s, child: Text(s)))
+                                  DropdownMenuItem(value: s, child: Text(s)),)
                               .toList(),
                           onChanged: (v) =>
                               setModalState(() => localStatus = v ?? 'Running'),
@@ -1688,7 +1733,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                 ? 'Reject quantity cannot exceed input quantity.'
                                 : null,
                             prefixIcon: const Icon(Icons.cancel_outlined,
-                                color: Colors.red),
+                                color: Colors.red,),
                             border: const OutlineInputBorder(),
                           ),
                           onChanged: (_) => setModalState(() {}),
@@ -1708,12 +1753,12 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         // Calculated Good Qty Preview
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
+                              horizontal: 12, vertical: 10,),
                           decoration: BoxDecoration(
                             color: Colors.teal.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                                color: Colors.teal.withValues(alpha: 0.3)),
+                                color: Colors.teal.withValues(alpha: 0.3),),
                           ),
                           child: Row(
                             children: [
@@ -1729,7 +1774,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
-                                    color: Colors.teal),
+                                    color: Colors.teal,),
                               ),
                             ],
                           ),
@@ -1762,7 +1807,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(
                                     content: Text(
-                                        'Please enter a valid production quantity (> 0).')),
+                                        'Please enter a valid production quantity (> 0).',),),
                               );
                               return;
                             }
@@ -1771,7 +1816,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                      'Reject quantity cannot exceed input quantity.'),
+                                      'Reject quantity cannot exceed input quantity.',),
                                 ),
                               );
                               return;
@@ -1816,13 +1861,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           },
                           child: Text(existingEntry == null
                               ? 'Add Machine Entry to List'
-                              : 'Update Machine Entry'),
+                              : 'Update Machine Entry',),
                         ),
                         const SizedBox(height: 10),
                       ],
                     ),
                   ),
-                ));
+                ),);
           },
         );
       },
@@ -1851,7 +1896,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               Icon(Icons.settings_outlined,
                   size: 54,
                   color: theme.colorScheme.onSurfaceVariant
-                      .withValues(alpha: 0.4)),
+                      .withValues(alpha: 0.4),),
               const SizedBox(height: 14),
               Text(
                 'Multi-Stage Flow is currently disabled.\nEnable it in Settings → Production Flow to track WIP batches.',
@@ -1867,7 +1912,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     return wipAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => EmptyState(
-          message: 'Error loading WIP batches: $e', icon: Icons.error_outline),
+          message: 'Error loading WIP batches: $e', icon: Icons.error_outline,),
       data: (wips) {
         if (wips.isEmpty) {
           return const EmptyState(
@@ -1880,7 +1925,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         final machines = machinesAsync.value ?? [];
         String getMachineName(String id) {
           final m = machines.firstWhere((m) => m['id'] == id,
-              orElse: () => <String, dynamic>{});
+              orElse: () => <String, dynamic>{},);
           return m['name'] as String? ?? id.substring(0, 6);
         }
 
@@ -1905,7 +1950,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
                 side: BorderSide(
-                    color: Colors.amber.shade700.withValues(alpha: 0.4)),
+                    color: Colors.amber.shade700.withValues(alpha: 0.4),),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -1916,7 +1961,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                              horizontal: 8, vertical: 4,),
                           decoration: BoxDecoration(
                             color: Colors.amber.shade100,
                             borderRadius: BorderRadius.circular(6),
@@ -1956,14 +2001,14 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       '${w['part_code']} – ${w['part_name']} · Date: ${w['date']}',
                       style: TextStyle(
                           fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant),
+                          color: theme.colorScheme.onSurfaceVariant,),
                     ),
                     const SizedBox(height: 12),
 
                     // Stage Progress Chips
                     const Text('Stage Progress:',
                         style: TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.bold)),
+                            fontSize: 11, fontWeight: FontWeight.bold,),),
                     const SizedBox(height: 6),
                     Wrap(
                       spacing: 6,
@@ -1972,9 +2017,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         ...doneIds.map(
                           (id) => Chip(
                             avatar: const Icon(Icons.check_circle,
-                                size: 14, color: Colors.green),
+                                size: 14, color: Colors.green,),
                             label: Text(getMachineName(id),
-                                style: const TextStyle(fontSize: 11)),
+                                style: const TextStyle(fontSize: 11),),
                             backgroundColor:
                                 Colors.green.withValues(alpha: 0.12),
                             visualDensity: VisualDensity.compact,
@@ -1984,9 +2029,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         ...missingIds.map(
                           (id) => Chip(
                             avatar: const Icon(Icons.hourglass_empty,
-                                size: 14, color: Colors.amber),
+                                size: 14, color: Colors.amber,),
                             label: Text(getMachineName(id),
-                                style: const TextStyle(fontSize: 11)),
+                                style: const TextStyle(fontSize: 11),),
                             backgroundColor:
                                 Colors.amber.withValues(alpha: 0.12),
                             visualDensity: VisualDensity.compact,
@@ -2003,9 +2048,9 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         TextButton.icon(
                           onPressed: () => _showBatchTrailSheet(batchNum),
                           icon: const Icon(Icons.remove_red_eye_outlined,
-                              size: 16),
+                              size: 16,),
                           label: const Text('View History Trail',
-                              style: TextStyle(fontSize: 12)),
+                              style: TextStyle(fontSize: 12),),
                         ),
                         FilledButton.icon(
                           style: FilledButton.styleFrom(
@@ -2058,7 +2103,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         child: Text(
                           'Batch Trail: $batchNumber',
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
+                              fontWeight: FontWeight.bold, fontSize: 14,),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -2086,14 +2131,14 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                             child: Text('${idx + 1}'),
                           ),
                           title: Text(
-                              '${r['machine_name']} (${r['operator_name']})'),
+                              '${r['machine_name']} (${r['operator_name']})',),
                           subtitle: Text(
-                              'Date: ${r['date']} ${r['time'] ?? ''} · Status: ${r['machine_status_id']}'),
+                              'Date: ${r['date']} ${r['time'] ?? ''} · Status: ${r['machine_status_id']}',),
                           trailing: Text(
                             '${(r['good_qty'] as num?)?.toInt() ?? 0} OK',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.teal),
+                                color: Colors.teal,),
                           ),
                         );
                       },
@@ -2139,14 +2184,14 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               leading: CircleAvatar(
                 backgroundColor: Colors.teal.withValues(alpha: 0.12),
                 child: const Icon(Icons.precision_manufacturing,
-                    color: Colors.teal, size: 20),
+                    color: Colors.teal, size: 20,),
               ),
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
                     fontFamily: 'monospace',
                     fontWeight: FontWeight.bold,
-                    fontSize: 13),
+                    fontSize: 13,),
               ),
               subtitle: Text(
                 '${r['part_code'] ?? ''} · ${r['machine_name'] ?? ''}\nOperator: ${r['operator_name'] ?? ''} · ${r['date']}',
@@ -2160,10 +2205,10 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                     style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.teal,
-                        fontSize: 14),
+                        fontSize: 14,),
                   ),
                   Text('Prod: $prodQty | Rej: $rejQty',
-                      style: const TextStyle(fontSize: 10)),
+                      style: const TextStyle(fontSize: 10),),
                   const SizedBox(height: 2),
                   Icon(
                     isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,

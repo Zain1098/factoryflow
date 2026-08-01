@@ -323,7 +323,7 @@ class SyncBadge extends StatelessWidget {
       child: Text(
         '$count pending sync',
         style: const TextStyle(
-            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600,),
       ),
     );
   }
@@ -351,7 +351,7 @@ class SaveButton extends StatelessWidget {
               width: 18,
               height: 18,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
+                  strokeWidth: 2, color: Colors.white,),
             )
           : const Icon(Icons.save_outlined),
       label: Text(label),
@@ -377,7 +377,7 @@ class ErrorBanner extends StatelessWidget {
       child: Row(
         children: [
           Icon(Icons.error_outline,
-              color: theme.colorScheme.onErrorContainer, size: 18),
+              color: theme.colorScheme.onErrorContainer, size: 18,),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -416,7 +416,7 @@ class SuccessBanner extends StatelessWidget {
             child: Text(
               message,
               style: const TextStyle(
-                  color: Colors.green, fontWeight: FontWeight.w500),
+                  color: Colors.green, fontWeight: FontWeight.w500,),
             ),
           ),
         ],
@@ -478,11 +478,11 @@ Future<bool> showConfirmDialog(
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
+            child: const Text('Cancel'),),
         FilledButton(
           style: isDestructive
               ? FilledButton.styleFrom(
-                  backgroundColor: Theme.of(ctx).colorScheme.error)
+                  backgroundColor: Theme.of(ctx).colorScheme.error,)
               : null,
           onPressed: () => Navigator.pop(ctx, true),
           child: Text(confirmLabel),
@@ -580,7 +580,7 @@ class RecordDateTimePicker extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(showTime ? Icons.access_time : Icons.calendar_today,
-                      size: 18),
+                      size: 18,),
                   const SizedBox(width: 8),
                   ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: labelMaxWidth),

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "758654945175",
+    "project_id": "alien-storm-453600-u3",
+    "storage_bucket": "alien-storm-453600-u3.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:758654945175:android:000000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.proflow.factoryflow"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "PLACEHOLDER_NOT_USED"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

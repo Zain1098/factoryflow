@@ -152,7 +152,12 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
       : 0.0;
 
   // Today's production totals
-  final todaySummary = await db.getTodayProductionSummary(todayStr);
+  final finalMachineId =
+      flow.isMultiStage && sequence.isNotEmpty ? sequence.last : null;
+  final todaySummary = await db.getTodayProductionSummary(
+    todayStr,
+    finalMachineId: finalMachineId,
+  );
   final todayProd = todaySummary['production'] ?? 0;
   final todayBp = todaySummary['bp_reject'] ?? 0;
   final todayAp = todaySummary['ap_reject'] ?? 0;
@@ -224,9 +229,10 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     final dLabel = '${dateVal.day}/${dateVal.month}';
 
     final wProd = db.db.select(
-      'SELECT SUM(production_qty) as qty FROM productions '
-      'WHERE factory_id = ? AND date = ?',
-      [factoryId, dStr],
+      'SELECT COALESCE(SUM(CASE '
+      'WHEN (? IS NULL OR machine_id = ?) THEN good_qty ELSE 0 END), 0) as qty '
+      'FROM productions WHERE factory_id = ? AND date = ?',
+      [finalMachineId, finalMachineId, factoryId, dStr],
     );
     final wQty = (wProd.first['qty'] as num?)?.toDouble() ?? 0.0;
 

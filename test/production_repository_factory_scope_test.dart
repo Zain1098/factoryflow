@@ -202,6 +202,50 @@ void main() {
     );
   });
 
+  test('daily finished production counts only final-machine good pieces',
+      () async {
+    for (final row in [
+      {
+        'id': 'daily-bending',
+        'machine_id': 'machine-a1',
+        'production_qty': 500,
+        'bp_reject_qty': 50,
+        'good_qty': 450,
+      },
+      {
+        'id': 'daily-notching',
+        'machine_id': 'machine-middle',
+        'production_qty': 450,
+        'bp_reject_qty': 50,
+        'good_qty': 400,
+      },
+      {
+        'id': 'daily-end-forming',
+        'machine_id': 'machine-a2',
+        'production_qty': 400,
+        'bp_reject_qty': 50,
+        'good_qty': 350,
+      },
+    ]) {
+      await databaseService.insertRecord('productions', {
+        ...row,
+        'factory_id': 'factory-a',
+        'batch_number': 'DAILY-20260731-001',
+        'part_id': 'part-a',
+        'date': '2026-07-31',
+        'created_at': '2026-07-31T08:00:00.000Z',
+      });
+    }
+
+    final summary = await databaseService.getTodayProductionSummary(
+      '2026-07-31',
+      finalMachineId: 'machine-a2',
+    );
+
+    expect(summary['production'], 350);
+    expect(summary['bp_reject'], 150);
+  });
+
   test('invalid multi-stage configuration is blocked before stock changes',
       () async {
     final invalidRepository = ProductionRepository(

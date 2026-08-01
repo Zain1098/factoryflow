@@ -6,17 +6,22 @@ import '../../core/network/sync_service.dart';
 import '../../core/constants/stock_stages.dart';
 import '../../core/services/stock_ledger_service.dart';
 
+import '../../core/providers/master_data_providers.dart';
+
 const _uuid = Uuid();
 
-// AP Reject Reasons per PRD 15.2
-const kApRejectReasons = [
-  'Plating Peel-off',
-  'Uneven Coating',
-  'Rust/Corrosion Spot',
-  'Discoloration',
-  'Plating Thickness Out of Spec',
-  'Handling Damage',
+// Fallback reasons used only when DB has no configured reasons yet.
+const kApRejectReasonsFallback = [
+  'Plating Peel-off', 'Uneven Coating', 'Rust/Corrosion Spot',
+  'Discoloration', 'Plating Thickness Out of Spec', 'Handling Damage',
 ];
+
+/// Live AP reject reasons from DB, falling back to defaults.
+final apRejectReasonsListProvider = FutureProvider<List<String>>((ref) async {
+  final rows = await ref.watch(apRejectReasonsProvider.future);
+  if (rows.isEmpty) return kApRejectReasonsFallback;
+  return rows.map((r) => r['reason'] as String).toList();
+});
 
 class ApInspectionRepository {
   ApInspectionRepository(this._db, this._sync, this._ledger);

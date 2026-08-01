@@ -35,7 +35,9 @@ class DatabaseService {
   Future<Map<String, double>> getAllStageTotals() async => {};
 
   Future<Map<String, double>> getTodayProductionSummary(
-          String todayStr) async =>
+    String todayStr, {
+    String? finalMachineId,
+  }) async =>
       {
         'production': 0,
         'bp_reject': 0,
@@ -65,10 +67,10 @@ class DatabaseService {
   }) async {}
 
   Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
-          String partId) async =>
+          String partId,) async =>
       [];
   Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
-          {int limit = 50}) async =>
+          {int limit = 50,}) async =>
       [];
   Future<void> updatePurchaseOrderStatus(String id, String status) async {}
 
@@ -376,7 +378,7 @@ class DatabaseService {
         ? list.where((r) => r['part_id'] == partId).toList()
         : list;
     filtered.sort((a, b) =>
-        (b['created_at'] as String).compareTo(a['created_at'] as String));
+        (b['created_at'] as String).compareTo(a['created_at'] as String),);
     return filtered.take(limit).toList();
   }
 

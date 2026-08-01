@@ -255,6 +255,13 @@ class SyncService {
             if (result is Map && result['success'] == false) {
               await _db.markRecordConflict(tableName, recordId);
               await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+              await _db.recordSyncConflict(
+                entityType: tableName,
+                entityId: recordId,
+                localPayload: payload,
+                serverReason: result['error']?.toString() ?? 'RPC conflict detected',
+                suggestedAction: 'review_stock_balance',
+              );
               await _logSyncHistory(
                 tableName: tableName,
                 recordId: recordId,
@@ -274,6 +281,13 @@ class SyncService {
             if (result is Map && result['success'] == false) {
               await _db.markProductionPostingConflict(recordId);
               await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+              await _db.recordSyncConflict(
+                entityType: 'productions',
+                entityId: recordId,
+                localPayload: payload,
+                serverReason: result['error']?.toString() ?? 'RPC conflict detected',
+                suggestedAction: 'review_production_stock',
+              );
               await _logSyncHistory(
                 tableName: tableName,
                 recordId: recordId,

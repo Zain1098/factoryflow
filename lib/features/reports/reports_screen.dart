@@ -17,43 +17,87 @@ class ReportsScreen extends ConsumerWidget {
 
     final sections = [
       _ReportSection('Production', Colors.teal, [
-        _ReportTile('Daily Production', Icons.today, Colors.teal,
-            'Day-wise output, target & efficiency',
-            () => _push(context, const _DailyProductionReport()),),
-        _ReportTile('Machine-wise', Icons.precision_manufacturing, Colors.blue,
-            'Output & downtime per machine',
-            () => _push(context, const _MachineReport()),),
-        _ReportTile('Operator-wise', Icons.person_outline, Colors.indigo,
-            'Output & avg per operator',
-            () => _push(context, const _OperatorReport()),),
-        _ReportTile('Machine Downtime', Icons.build_outlined, Colors.orange,
-            'Breakdown & maintenance log',
-            () => _push(context, const _DowntimeReport()),),
+        _ReportTile(
+          'Daily Production',
+          Icons.today,
+          Colors.teal,
+          'Day-wise output, target & efficiency',
+          () => _push(context, const _DailyProductionReport()),
+        ),
+        _ReportTile(
+          'Machine-wise',
+          Icons.precision_manufacturing,
+          Colors.blue,
+          'Output & downtime per machine',
+          () => _push(context, const _MachineReport()),
+        ),
+        _ReportTile(
+          'Operator-wise',
+          Icons.person_outline,
+          Colors.indigo,
+          'Output & avg per operator',
+          () => _push(context, const _OperatorReport()),
+        ),
+        _ReportTile(
+          'Machine Downtime',
+          Icons.build_outlined,
+          Colors.orange,
+          'Breakdown & maintenance log',
+          () => _push(context, const _DowntimeReport()),
+        ),
       ]),
       _ReportSection('Quality', Colors.red, [
-        _ReportTile('Reject Analysis', Icons.cancel_outlined, Colors.red,
-            'BP + AP rejection by part & date',
-            () => _push(context, const _RejectReport()),),
-        _ReportTile('RTV Analysis', Icons.undo, Colors.deepOrange,
-            'Return to vendor summary & status',
-            () => _push(context, const _RtvReport()),),
-        _ReportTile('Hold Material', Icons.back_hand_outlined, Colors.redAccent,
-            'BP QC hold & active RTV aging',
-            () => _push(context, const _HoldReport()),),
+        _ReportTile(
+          'Reject Analysis',
+          Icons.cancel_outlined,
+          Colors.red,
+          'BP + AP rejection by part & date',
+          () => _push(context, const _RejectReport()),
+        ),
+        _ReportTile(
+          'RTV Analysis',
+          Icons.undo,
+          Colors.deepOrange,
+          'Return to vendor summary & status',
+          () => _push(context, const _RtvReport()),
+        ),
+        _ReportTile(
+          'Hold Material',
+          Icons.back_hand_outlined,
+          Colors.redAccent,
+          'BP QC hold & active RTV aging',
+          () => _push(context, const _HoldReport()),
+        ),
       ]),
       _ReportSection('Inventory & Dispatch', Colors.green, [
-        _ReportTile('Live Stock', Icons.inventory_2_outlined, Colors.green,
-            'Current stock at every stage',
-            () => _push(context, const _LiveStockReport()),),
-        _ReportTile('Faco Pending', Icons.pending_outlined, Colors.amber,
-            'Material still at Faco vendor',
-            () => _push(context, const _FacoPendingReport()),),
-        _ReportTile('Dispatch Report', Icons.send_outlined, Colors.purple,
-            'Final dispatch to customers',
-            () => _push(context, const _DispatchReport()),),
-        _ReportTile('Inventory Movement', Icons.swap_horiz, Colors.blueGrey,
-            'Full stock ledger movement',
-            () => _push(context, const _LedgerReport()),),
+        _ReportTile(
+          'Live Stock',
+          Icons.inventory_2_outlined,
+          Colors.green,
+          'Current stock at every stage',
+          () => _push(context, const _LiveStockReport()),
+        ),
+        _ReportTile(
+          'Faco Pending',
+          Icons.pending_outlined,
+          Colors.amber,
+          'Material still at Faco vendor',
+          () => _push(context, const _FacoPendingReport()),
+        ),
+        _ReportTile(
+          'Dispatch Report',
+          Icons.send_outlined,
+          Colors.purple,
+          'Final dispatch to customers',
+          () => _push(context, const _DispatchReport()),
+        ),
+        _ReportTile(
+          'Inventory Movement',
+          Icons.swap_horiz,
+          Colors.blueGrey,
+          'Full stock ledger movement',
+          () => _push(context, const _LedgerReport()),
+        ),
       ]),
     ];
 
@@ -91,7 +135,10 @@ class ReportsScreen extends ConsumerWidget {
   String _shortDate(DateTime d) => DateFormat('dd MMM').format(d);
 
   Future<void> _pickRange(
-      BuildContext context, WidgetRef ref, DateRange current,) async {
+    BuildContext context,
+    WidgetRef ref,
+    DateRange current,
+  ) async {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2024),
@@ -100,7 +147,8 @@ class ReportsScreen extends ConsumerWidget {
     );
     if (picked != null) {
       ref.read(reportDateRangeProvider.notifier).set(
-            DateRange(picked.start, picked.end),);
+            DateRange(picked.start, picked.end),
+          );
     }
   }
 }
@@ -155,15 +203,21 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(
         children: [
-          Container(width: 4, height: 16,
-              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),),
+          Container(
+            width: 4,
+            height: 16,
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(2),),
+          ),
           const SizedBox(width: 8),
-          Text(title.toUpperCase(),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),),
+          Text(
+            title.toUpperCase(),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+          ),
         ],
       ),
     );
@@ -186,13 +240,19 @@ class _ReportListTile extends StatelessWidget {
         ),
         child: Icon(tile.icon, color: tile.color, size: 20),
       ),
-      title: Text(tile.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(tile.subtitle,
-          style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,),),
-      trailing: Icon(Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,),
+      title:
+          Text(tile.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(
+        tile.subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Icon(
+        Icons.chevron_right,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
       onTap: tile.onTap,
     );
   }
@@ -208,7 +268,8 @@ class _ReportSection {
 }
 
 class _ReportTile {
-  const _ReportTile(this.title, this.icon, this.color, this.subtitle, this.onTap);
+  const _ReportTile(
+      this.title, this.icon, this.color, this.subtitle, this.onTap,);
   final String title;
   final IconData icon;
   final Color color;
@@ -272,19 +333,30 @@ class _ReportPage extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 56,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),),
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 56,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                  ),
                   const SizedBox(height: 12),
-                  Text(emptyMessage,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,),),
+                  Text(
+                    emptyMessage,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
             )
           : Column(
               children: [
                 if (summaryCards.isNotEmpty) _SummaryRow(summaryCards, color),
-                Expanded(child: _DataTable(header: tableHeader, rows: rows, color: color)),
+                Expanded(
+                    child: _DataTable(
+                        header: tableHeader, rows: rows, color: color,),),
               ],
             ),
     );
@@ -307,25 +379,31 @@ class _SummaryRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       child: Row(
         children: cards
-            .map((c) => Expanded(
-                  child: Column(
-                    children: [
-                      Text(c.value,
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: color,),),
-                      const SizedBox(height: 2),
-                      Text(c.label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,),),
-                    ],
-                  ),
-                ),)
+            .map(
+              (c) => Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      c.value,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      c.label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
             .toList(),
       ),
     );
@@ -341,7 +419,8 @@ class _SummaryCard {
 // ─── Data Table ───────────────────────────────────────────────────────────────
 
 class _DataTable extends StatelessWidget {
-  const _DataTable({required this.header, required this.rows, required this.color});
+  const _DataTable(
+      {required this.header, required this.rows, required this.color,});
   final List<String> header;
   final List<List<String>> rows;
   final Color color;
@@ -353,21 +432,23 @@ class _DataTable extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
         child: DataTable(
-          headingRowColor: WidgetStateProperty.all(color.withValues(alpha: 0.1)),
+          headingRowColor:
+              WidgetStateProperty.all(color.withValues(alpha: 0.1)),
           headingTextStyle: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              color: color,),
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            color: color,
+          ),
           dataTextStyle: theme.textTheme.bodySmall,
           columnSpacing: 20,
           horizontalMargin: 16,
-          columns: header
-              .map((h) => DataColumn(label: Text(h)))
-              .toList(),
+          columns: header.map((h) => DataColumn(label: Text(h))).toList(),
           rows: rows
-              .map((r) => DataRow(
-                    cells: r.map((c) => DataCell(Text(c))).toList(),
-                  ),)
+              .map(
+                (r) => DataRow(
+                  cells: r.map((c) => DataCell(Text(c))).toList(),
+                ),
+              )
               .toList(),
         ),
       ),
@@ -377,7 +458,8 @@ class _DataTable extends StatelessWidget {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-String _n(double v) => v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
+String _n(double v) =>
+    v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
 String _pct(double v) => '${v.toStringAsFixed(1)}%';
 String _mins(int m) => m >= 60 ? '${(m / 60).toStringAsFixed(1)}h' : '${m}m';
 
@@ -404,22 +486,34 @@ class _DailyProductionReport extends ConsumerWidget {
         title: 'Daily Production',
         color: Colors.teal,
         summaryCards: [
-          _SummaryCard('Total Prod', _n(data.totalProd)),
-          _SummaryCard('BP Reject', _n(data.totalBpReject)),
-          _SummaryCard('Good Qty', _n(data.totalGood)),
+          _SummaryCard('Finished OK', _n(data.totalGood)),
+          _SummaryCard('All-stage Reject', _n(data.totalBpReject)),
+          _SummaryCard('Final Input', _n(data.totalProd)),
           _SummaryCard('Avg Eff.', _pct(data.avgEfficiency)),
           _SummaryCard('Rej %', _pct(data.overallRejectPct)),
         ],
-        tableHeader: const ['Date', 'Production', 'BP Rej', 'Good', 'Target', 'Eff %', 'Rej %'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _n(r.target),
-              _pct(r.efficiency),
-              _pct(r.rejectPct),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Final Input',
+          'All Rej',
+          'Finished OK',
+          'Target',
+          'Eff %',
+          'Rej %',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _n(r.target),
+                _pct(r.efficiency),
+                _pct(r.rejectPct),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No production data for selected range',
         onExport: data.isEmpty
             ? null
@@ -465,16 +559,28 @@ class _MachineReport extends ConsumerWidget {
           _SummaryCard('Machines', '${data.length}'),
           _SummaryCard('Total Downtime', _mins(totalDt)),
         ],
-        tableHeader: const ['Machine', 'Production', 'BP Rej', 'Good', 'Rej %', 'Downtime', 'Days'],
-        rows: data.map((r) => [
-              r.machineName,
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _pct(r.rejectPct),
-              _mins(r.downtimeMinutes),
-              '${r.runDays}',
-            ],).toList(),
+        tableHeader: const [
+          'Machine',
+          'Production',
+          'BP Rej',
+          'Good',
+          'Rej %',
+          'Downtime',
+          'Days',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.machineName,
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _pct(r.rejectPct),
+                _mins(r.downtimeMinutes),
+                '${r.runDays}',
+              ],
+            )
+            .toList(),
         emptyMessage: 'No machine data for selected range',
       );
     });
@@ -499,16 +605,28 @@ class _OperatorReport extends ConsumerWidget {
           _SummaryCard('Total Prod', _n(totalProd)),
           _SummaryCard('Operators', '${data.length}'),
         ],
-        tableHeader: const ['Operator', 'Production', 'BP Rej', 'Good', 'Rej %', 'Days', 'Avg/Day'],
-        rows: data.map((r) => [
-              r.operatorName,
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _pct(r.rejectPct),
-              '${r.runDays}',
-              _n(r.avgPerDay),
-            ],).toList(),
+        tableHeader: const [
+          'Operator',
+          'Production',
+          'BP Rej',
+          'Good',
+          'Rej %',
+          'Days',
+          'Avg/Day',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.operatorName,
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _pct(r.rejectPct),
+                '${r.runDays}',
+                _n(r.avgPerDay),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No operator data for selected range',
       );
     });
@@ -534,15 +652,28 @@ class _DowntimeReport extends ConsumerWidget {
           _SummaryCard('Total Events', '${data.length}'),
           _SummaryCard('Total Downtime', _mins(totalMins)),
         ],
-        tableHeader: const ['Date', 'Machine', 'Start', 'End', 'Duration', 'Reason'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.machineName,
-              r.startTime,
-              r.endTime ?? 'Ongoing',
-              _mins(r.durationMinutes),
-              r.reason.length > 20 ? '${r.reason.substring(0, 20)}…' : r.reason,
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Machine',
+          'Start',
+          'End',
+          'Duration',
+          'Reason',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.machineName,
+                r.startTime,
+                r.endTime ?? 'Ongoing',
+                _mins(r.durationMinutes),
+                r.reason.length > 20
+                    ? '${r.reason.substring(0, 20)}…'
+                    : r.reason,
+              ],
+            )
+            .toList(),
         emptyMessage: 'No downtime events for selected range',
         onExport: data.isEmpty
             ? null
@@ -582,7 +713,8 @@ class _RejectReport extends ConsumerWidget {
       final totalBp = data.fold(0.0, (s, r) => s + r.bpReject);
       final totalAp = data.fold(0.0, (s, r) => s + r.apReject);
       final totalProd = data.fold(0.0, (s, r) => s + r.production);
-      final overallPct = totalProd > 0 ? ((totalBp + totalAp) / totalProd * 100) : 0.0;
+      final overallPct =
+          totalProd > 0 ? ((totalBp + totalAp) / totalProd * 100) : 0.0;
       return _ReportPage(
         title: 'Reject Analysis',
         color: Colors.red,
@@ -592,16 +724,30 @@ class _RejectReport extends ConsumerWidget {
           _SummaryCard('Total Rej', _n(totalBp + totalAp)),
           _SummaryCard('Overall %', _pct(overallPct)),
         ],
-        tableHeader: const ['Date', 'Part', 'Production', 'BP Rej', 'AP Rej', 'Total', 'Rej %'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              _n(r.production),
-              _n(r.bpReject),
-              _n(r.apReject),
-              _n(r.totalReject),
-              _pct(r.rejectPct),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Production',
+          'BP Rej',
+          'AP Rej',
+          'Total',
+          'Rej %',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                _n(r.production),
+                _n(r.bpReject),
+                _n(r.apReject),
+                _n(r.totalReject),
+                _pct(r.rejectPct),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No reject data for selected range',
         onExport: data.isEmpty
             ? null
@@ -645,16 +791,32 @@ class _RtvReport extends ConsumerWidget {
           _SummaryCard('Pending', '${data.pendingCount}'),
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Vendor', 'Qty', 'Status', 'Exp. Return', 'Cycle'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 10 ? '${r.partName.substring(0, 10)}…' : r.partName,
-              r.vendorName.length > 10 ? '${r.vendorName.substring(0, 10)}…' : r.vendorName,
-              _n(r.rtvQty),
-              r.status,
-              r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
-              '#${r.cycleNumber}',
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Vendor',
+          'Qty',
+          'Status',
+          'Exp. Return',
+          'Cycle',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 10
+                    ? '${r.partName.substring(0, 10)}…'
+                    : r.partName,
+                r.vendorName.length > 10
+                    ? '${r.vendorName.substring(0, 10)}…'
+                    : r.vendorName,
+                _n(r.rtvQty),
+                r.status,
+                r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
+                '#${r.cycleNumber}',
+              ],
+            )
+            .toList(),
         emptyMessage: 'No RTV data for selected range',
       );
     });
@@ -678,15 +840,30 @@ class _DispatchReport extends ConsumerWidget {
           _SummaryCard('Total Dispatched', _n(data.totalDispatched)),
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Customer', 'Qty', 'Challan', 'Vehicle'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              r.customerName.length > 12 ? '${r.customerName.substring(0, 12)}…' : r.customerName,
-              _n(r.dispatchQty),
-              r.challanNumber.isEmpty ? '—' : r.challanNumber,
-              r.vehicleNumber.isEmpty ? '—' : r.vehicleNumber,
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Customer',
+          'Qty',
+          'Challan',
+          'Vehicle',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                r.customerName.length > 12
+                    ? '${r.customerName.substring(0, 12)}…'
+                    : r.customerName,
+                _n(r.dispatchQty),
+                r.challanNumber.isEmpty ? '—' : r.challanNumber,
+                r.vehicleNumber.isEmpty ? '—' : r.vehicleNumber,
+              ],
+            )
+            .toList(),
         emptyMessage: 'No dispatch data for selected range',
       );
     });
@@ -711,15 +888,30 @@ class _FacoPendingReport extends ConsumerWidget {
           _SummaryCard('Total Pending', _n(totalPending)),
           _SummaryCard('Parts', '${data.length}'),
         ],
-        tableHeader: const ['Part', 'Vendor', 'Dispatched', 'Received', 'Pending', 'Since'],
-        rows: data.map((r) => [
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              r.vendorName.length > 10 ? '${r.vendorName.substring(0, 10)}…' : r.vendorName,
-              _n(r.dispatched),
-              _n(r.received),
-              _n(r.pending),
-              _fmtDate(r.oldestDate),
-            ],).toList(),
+        tableHeader: const [
+          'Part',
+          'Vendor',
+          'Dispatched',
+          'Received',
+          'Pending',
+          'Since',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                r.vendorName.length > 10
+                    ? '${r.vendorName.substring(0, 10)}…'
+                    : r.vendorName,
+                _n(r.dispatched),
+                _n(r.received),
+                _n(r.pending),
+                _fmtDate(r.oldestDate),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No pending material at Faco',
       );
     });
@@ -744,18 +936,34 @@ class _LiveStockReport extends ConsumerWidget {
           _SummaryCard('Total Stock', _n(totalAll)),
           _SummaryCard('Parts', '${data.length}'),
         ],
-        tableHeader: const ['Part', 'Raw', 'BP', 'Faco', 'Pend AP', 'Appr AP', 'AP Rej', 'RTV', 'Total'],
-        rows: data.map((r) => [
-              r.partCode.isNotEmpty ? r.partCode : r.partName.substring(0, r.partName.length.clamp(0, 10)),
-              _n(r.rawMaterial),
-              _n(r.bpStock),
-              _n(r.atFaco),
-              _n(r.pendingAp),
-              _n(r.approvedAp),
-              _n(r.apRejected),
-              _n(r.rtvStock),
-              _n(r.totalStock),
-            ],).toList(),
+        tableHeader: const [
+          'Part',
+          'Raw',
+          'BP',
+          'Faco',
+          'Pend AP',
+          'Appr AP',
+          'AP Rej',
+          'RTV',
+          'Total',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.partCode.isNotEmpty
+                    ? r.partCode
+                    : r.partName.substring(0, r.partName.length.clamp(0, 10)),
+                _n(r.rawMaterial),
+                _n(r.bpStock),
+                _n(r.atFaco),
+                _n(r.pendingAp),
+                _n(r.approvedAp),
+                _n(r.apRejected),
+                _n(r.rtvStock),
+                _n(r.totalStock),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No stock data available',
         onExport: data.isEmpty
             ? null
@@ -793,16 +1001,30 @@ class _LedgerReport extends ConsumerWidget {
         summaryCards: [
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Stage', 'In/Out', 'Qty', 'Balance', 'Source'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 10 ? '${r.partName.substring(0, 10)}…' : r.partName,
-              _stageLabel(r.stage),
-              r.direction == 'in' ? '▲ IN' : '▼ OUT',
-              _n(r.qty),
-              _n(r.runningBalance),
-              _tableLabel(r.refTable),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Stage',
+          'In/Out',
+          'Qty',
+          'Balance',
+          'Source',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 10
+                    ? '${r.partName.substring(0, 10)}…'
+                    : r.partName,
+                _stageLabel(r.stage),
+                r.direction == 'in' ? '▲ IN' : '▼ OUT',
+                _n(r.qty),
+                _n(r.runningBalance),
+                _tableLabel(r.refTable),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No ledger entries for selected range',
       );
     });
@@ -870,7 +1092,8 @@ class _HoldReport extends ConsumerWidget {
         ),
         body: reportAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+          error: (e, _) =>
+              EmptyState(message: 'Error: $e', icon: Icons.error_outline),
           data: (data) {
             return TabBarView(
               children: [
@@ -884,7 +1107,8 @@ class _HoldReport extends ConsumerWidget {
     );
   }
 
-  Widget _buildBpHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+  Widget _buildBpHoldTab(
+      BuildContext context, HoldMaterialReportData data, ThemeData theme,) {
     if (data.bpHoldList.isEmpty) {
       return const EmptyState(
         message: 'No material currently on BP QC Hold.',
@@ -911,12 +1135,19 @@ class _HoldReport extends ConsumerWidget {
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-                  child: const Icon(Icons.build_circle_outlined, color: Colors.redAccent),
+                  child: const Icon(Icons.build_circle_outlined,
+                      color: Colors.redAccent,),
                 ),
                 title: Row(
                   children: [
-                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                    Expanded(
+                        child: Text('${r.partCode} – ${r.partName}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold),),),
+                    Text('${r.qty.toInt()} PCS',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent,),),
                   ],
                 ),
                 subtitle: Padding(
@@ -934,7 +1165,8 @@ class _HoldReport extends ConsumerWidget {
     );
   }
 
-  Widget _buildRtvHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+  Widget _buildRtvHoldTab(
+      BuildContext context, HoldMaterialReportData data, ThemeData theme,) {
     if (data.rtvHoldList.isEmpty) {
       return const EmptyState(
         message: 'No active RTV (Post-Plating) Hold.',
@@ -958,7 +1190,9 @@ class _HoldReport extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (context, i) {
               final r = data.rtvHoldList[i];
-              final ageColor = r.agingDays > 10 ? Colors.red : (r.agingDays > 5 ? Colors.orange : Colors.green);
+              final ageColor = r.agingDays > 10
+                  ? Colors.red
+                  : (r.agingDays > 5 ? Colors.orange : Colors.green);
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.orange.withValues(alpha: 0.1),
@@ -966,8 +1200,13 @@ class _HoldReport extends ConsumerWidget {
                 ),
                 title: Row(
                   children: [
-                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                    Expanded(
+                        child: Text('${r.partCode} – ${r.partName}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold),),),
+                    Text('${r.qty.toInt()} PCS',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.orange,),),
                   ],
                 ),
                 subtitle: Padding(
@@ -977,14 +1216,18 @@ class _HoldReport extends ConsumerWidget {
                     children: [
                       Text('Vendor: ${r.vendorName} · Status: ${r.status}'),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2,),
                         decoration: BoxDecoration(
                           color: ageColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           '${r.agingDays}d aging',
-                          style: TextStyle(color: ageColor, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: ageColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,),
                         ),
                       ),
                     ],
@@ -1021,9 +1264,17 @@ class _HoldReport extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,),),
                 const SizedBox(height: 4),
-                Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: color,),),
               ],
             ),
           ),

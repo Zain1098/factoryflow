@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -46,6 +47,13 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
   return Supabase.instance.client.auth.onAuthStateChange;
 });
 
+final passwordRecoveryPendingProvider = NotifierProvider<_BoolNotifier, bool>(_BoolNotifier.new);
+
+class _BoolNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+}
+
 // ─── Google Sign-In ───────────────────────────────────────────────────────────
 
 final googleSignInProvider = Provider<GoogleSignIn>((ref) {
@@ -54,7 +62,8 @@ final googleSignInProvider = Provider<GoogleSignIn>((ref) {
 
 Future<void> initGoogleSignIn() async {
   await GoogleSignIn.instance.initialize(
-    serverClientId: '758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com',
+    serverClientId:
+        '758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com',
   );
 }
 
@@ -65,9 +74,12 @@ const _secureStorage = FlutterSecureStorage(
 );
 
 Future<void> _saveLocalSession(AppUser user) async {
-  await _secureStorage.write(key: _kSessionKey, value: jsonEncode(user.toJson()));
-  await _secureStorage.write(key: _kSessionCreatedKey, value: DateTime.now().toIso8601String());
-  await _secureStorage.write(key: _kSessionProviderKey, value: user.authProvider);
+  await _secureStorage.write(
+      key: _kSessionKey, value: jsonEncode(user.toJson()),);
+  await _secureStorage.write(
+      key: _kSessionCreatedKey, value: DateTime.now().toIso8601String(),);
+  await _secureStorage.write(
+      key: _kSessionProviderKey, value: user.authProvider,);
 }
 
 Future<AppUser?> _loadLocalSession() async {
@@ -116,7 +128,8 @@ class AuthRepository {
   }) async {
     final client = _client;
     if (client == null) {
-      throw Exception('Server not configured. Use offline login or contact admin.');
+      throw Exception(
+          'Server not configured. Use offline login or contact admin.',);
     }
     final response = await client.auth.signInWithPassword(
       email: email,
@@ -130,10 +143,10 @@ class AuthRepository {
       await _clearLocalSession();
       throw Exception('This account is no longer active.');
     }
-    if (user != null) {
-      await _saveLocalSession(user.copyWith(authProvider: 'email'));
-    }
-    return user;
+    if (user == null) return null;
+    final signedInUser = user.copyWith(authProvider: 'email');
+    await _saveLocalSession(signedInUser);
+    return signedInUser;
   }
 
   /// Google Sign-In.
@@ -166,13 +179,16 @@ class AuthRepository {
       final userId = supabaseResponse.user?.id;
       if (userId == null) throw Exception('No user from Google auth');
 
-      final result = await client.rpc('handle_google_auth_user', params: {
-        'p_user_id': userId,
-        'p_email': googleUser.email,
-        'p_name': googleUser.displayName ?? googleUser.email.split('@').first,
-        'p_avatar_url': googleUser.photoUrl ?? '',
-        'p_workspace_name': 'My Workspace',
-      },);
+      final result = await client.rpc(
+        'handle_google_auth_user',
+        params: {
+          'p_user_id': userId,
+          'p_email': googleUser.email,
+          'p_name': googleUser.displayName ?? googleUser.email.split('@').first,
+          'p_avatar_url': googleUser.photoUrl ?? '',
+          'p_workspace_name': 'My Workspace',
+        },
+      );
 
       final workspaceId = result['workspace_id'] as String;
       final isNew = result['is_new'] as bool? ?? false;
@@ -196,12 +212,14 @@ class AuthRepository {
 
       final appUser = await _fetchAppUser(client, userId);
       if (appUser != null) {
-        await _saveLocalSession(appUser.copyWith(
+        final signedInUser = appUser.copyWith(
           authProvider: 'google',
           avatarUrl: googleUser.photoUrl ?? appUser.avatarUrl,
-        ),);
+        );
+        await _saveLocalSession(signedInUser);
+        return signedInUser;
       }
-      return appUser;
+      return null;
     } on Exception {
       rethrow;
     }
@@ -215,20 +233,77 @@ class AuthRepository {
     final local = await _loadLocalSession();
     final client = _client;
     if (client != null && client.auth.currentUser != null) {
-      _fetchAppUser(client, client.auth.currentUser!.id).then((remote) {
-        if (remote != null) {
-          _saveLocalSession(
-            remote.copyWith(sessionCreatedAt: local?.sessionCreatedAt),
-          );
+      try {
+        final authUser = client.auth.currentUser!;
+        var remote = await _fetchAppUser(client, authUser.id);
+        final provider = authUser.appMetadata['provider'];
+        if (remote == null && provider == 'google') {
+          final metadata = authUser.userMetadata ?? const <String, dynamic>{};
+          await client.rpc('handle_google_auth_user', params: {
+            'p_user_id': authUser.id,
+            'p_email': authUser.email ?? '',
+            'p_name': metadata['full_name'] ??
+                metadata['name'] ??
+                authUser.email?.split('@').first ??
+                'User',
+            'p_avatar_url': metadata['avatar_url'] ??
+                metadata['picture'] ??
+                '',
+            'p_workspace_name': 'My Workspace',
+          },);
+          remote = await _fetchAppUser(client, authUser.id);
         }
-      }).catchError((_) {});
+        if (remote != null) {
+          final restored = remote.copyWith(
+            authProvider: provider == 'google' ? 'google' : 'email',
+            sessionCreatedAt: local?.sessionCreatedAt,
+          );
+          await _hydrateLocalWorkspace(client, restored);
+          await _saveLocalSession(restored);
+          return restored;
+        }
+      } catch (_) {
+        // Offline startup keeps the last verified local session usable.
+      }
     }
     return local;
   }
 
+  Future<void> _hydrateLocalWorkspace(
+    SupabaseClient client,
+    AppUser user,
+  ) async {
+    final factory = await client
+        .from('factories')
+        .select('id, name')
+        .eq('id', user.factoryId)
+        .maybeSingle();
+    final member = await client
+        .from('workspace_members')
+        .select('id, role')
+        .eq('workspace_id', user.factoryId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+    final db = DatabaseService.instance;
+    await db.upsertWorkspace(
+      id: user.factoryId,
+      name: factory?['name'] as String? ?? 'My Workspace',
+      ownerUserId: user.role == UserRole.owner ? user.id : '',
+      syncStatus: 'synced',
+    );
+    await db.upsertWorkspaceMember(
+      id: member?['id'] as String? ?? const Uuid().v4(),
+      workspaceId: user.factoryId,
+      userId: user.id,
+      role: member?['role'] as String? ?? user.role.value,
+      syncStatus: 'synced',
+    );
+    await db.setActiveWorkspaceId(user.factoryId);
+  }
+
   /// Sign up: creates auth user, immediately signs in to get a valid JWT,
   /// then calls the RPC (which needs auth.uid() to be set).
-  Future<AppUser> signUp({
+  Future<AppUser?> signUp({
     required String email,
     required String password,
     required String profileName,
@@ -241,7 +316,14 @@ class AuthRepository {
     // Step 1: Create auth user
     AuthResponse response;
     try {
-      response = await client.auth.signUp(email: email, password: password);
+      response = await client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'profile_name': profileName,
+          'workspace_name': workspaceName,
+        },
+      );
     } on AuthException catch (e) {
       throw Exception('Sign-up failed: ${e.message}');
     }
@@ -252,20 +334,19 @@ class AuthRepository {
 
     // Step 2: Sign in only if signUp didn't return a session.
     if (response.session == null) {
-      try {
-        await client.auth.signInWithPassword(email: email, password: password);
-      } on AuthException catch (e) {
-        throw Exception('Auto sign-in after signup failed: ${e.message}');
-      }
+      return null;
     }
 
     // Step 3: Call RPC — auth.uid() is now valid
     Map result;
     try {
-      result = await client.rpc('create_user_workspace', params: {
-        'p_profile_name': profileName,
-        'p_workspace_name': workspaceName,
-      },);
+      result = await client.rpc(
+        'create_user_workspace',
+        params: {
+          'p_profile_name': profileName,
+          'p_workspace_name': workspaceName,
+        },
+      );
     } catch (e) {
       throw Exception('Workspace setup failed: $e');
     }
@@ -299,40 +380,77 @@ class AuthRepository {
     return user;
   }
 
+  Future<AppUser> verifySignUpOtp({
+    required String email,
+    required String token,
+    required String profileName,
+    required String workspaceName,
+    required DatabaseService db,
+  }) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    final response = await client.auth.verifyOTP(
+      email: email,
+      token: token,
+      type: OtpType.signup,
+    );
+    final userId = response.user?.id;
+    if (userId == null || response.session == null) {
+      throw Exception('Email verification did not create a valid session.');
+    }
+
+    final result = await client.rpc('create_user_workspace', params: {
+      'p_profile_name': profileName,
+      'p_workspace_name': workspaceName,
+    },);
+    final workspaceId = (result as Map)['workspace_id'] as String;
+    await db.upsertWorkspace(
+      id: workspaceId,
+      name: workspaceName,
+      ownerUserId: userId,
+      syncStatus: 'synced',
+    );
+    await db.upsertWorkspaceMember(
+      id: const Uuid().v4(),
+      workspaceId: workspaceId,
+      userId: userId,
+      role: 'owner',
+      syncStatus: 'synced',
+    );
+    await db.setActiveWorkspaceId(workspaceId);
+
+    final user = AppUser(
+      id: userId,
+      factoryId: workspaceId,
+      name: profileName,
+      email: response.user?.email ?? email,
+      role: UserRole.owner,
+    );
+    await _saveLocalSession(user);
+    return user;
+  }
+
+  Future<void> resendSignUpOtp(String email) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    await client.auth.resend(email: email, type: OtpType.signup);
+  }
+
   Future<void> sendPasswordResetEmail(String email) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    await client.auth.resetPasswordForEmail(email);
+    await client.auth.resetPasswordForEmail(
+      email,
+      redirectTo: 'com.proflow.factoryflow://login-callback',
+    );
   }
 
-  Future<String> generateOtp({
-    required String userId,
-    required String purpose,
-    required String newValue,
-  }) async {
+  /// Sends Supabase Auth's real reauthentication OTP to the signed-in user's
+  /// verified email. No OTP is generated or returned to the mobile client.
+  Future<void> sendReauthenticationOtp() async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    final result = await client.rpc('generate_otp', params: {
-      'p_user_id': userId,
-      'p_purpose': purpose,
-      'p_new_value': newValue,
-    },);
-    return result as String;
-  }
-
-  Future<Map<String, dynamic>> verifyOtp({
-    required String userId,
-    required String code,
-    required String purpose,
-  }) async {
-    final client = _client;
-    if (client == null) throw Exception('Server not configured.');
-    final result = await client.rpc('verify_otp', params: {
-      'p_user_id': userId,
-      'p_code': code,
-      'p_purpose': purpose,
-    },);
-    return result as Map<String, dynamic>;
+    await client.auth.reauthenticate();
   }
 
   Future<void> updateProfile({
@@ -342,29 +460,35 @@ class AuthRepository {
   }) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    await client.rpc('update_user_profile', params: {
-      'p_user_id': userId,
-      'p_name': name,
-      'p_avatar_url': avatarUrl,
-    },);
+    await client.rpc(
+      'update_user_profile',
+      params: {
+        'p_user_id': userId,
+        'p_name': name,
+        'p_avatar_url': avatarUrl,
+      },
+    );
   }
 
-  Future<void> updateAuthEmail({
-    required String userId,
+  Future<String> updateAuthEmail({
     required String newEmail,
+    required String nonce,
   }) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    await client.rpc('update_user_email_after_otp', params: {
-      'p_user_id': userId,
-      'p_new_email': newEmail,
-    },);
+    final response = await client.auth.updateUser(
+      UserAttributes(email: newEmail, nonce: nonce),
+    );
+    return response.user?.email ?? newEmail;
   }
 
-  Future<void> changePassword(String newPassword) async {
+  Future<void> changePassword(String newPassword,
+      {required String nonce,}) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    await client.auth.updateUser(UserAttributes(password: newPassword));
+    await client.auth.updateUser(
+      UserAttributes(password: newPassword, nonce: nonce),
+    );
   }
 
   Future<String?> uploadAvatar({
@@ -379,10 +503,10 @@ class AuthRepository {
       final ext = filePath.split('.').last;
       final storagePath = 'avatars/$userId.$ext';
       await client.storage.from('avatars').uploadBinary(
-        storagePath,
-        bytes,
-        fileOptions: const FileOptions(upsert: true),
-      );
+            storagePath,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
       return client.storage.from('avatars').getPublicUrl(storagePath);
     } catch (_) {
       return null;
@@ -417,9 +541,36 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   @override
   Future<AppUser?> build() async {
-    final user = await ref.read(authRepositoryProvider).getLocalSession();
+    ref.listen(authStateProvider, (_, next) {
+      final authState = next.value;
+      if (authState == null) return;
+      if (authState.event == AuthChangeEvent.passwordRecovery) {
+        ref.read(passwordRecoveryPendingProvider.notifier).state = true;
+      }
+      if (authState.event == AuthChangeEvent.signedIn ||
+          authState.event == AuthChangeEvent.tokenRefreshed ||
+          authState.event == AuthChangeEvent.userUpdated) {
+        unawaited(refresh());
+      } else if (authState.event == AuthChangeEvent.signedOut) {
+        // Keep the 14-day local session when Supabase signs out (expired
+        // refresh token / offline). Only clear after explicit signOut().
+        unawaited(_restoreLocalSessionAfterRemoteSignOut());
+      }
+    });
+    final user =
+        await ref.read(authRepositoryProvider).getCurrentAppUser();
     if (user != null) _onSessionRestored();
     return user;
+  }
+
+  Future<void> _restoreLocalSessionAfterRemoteSignOut() async {
+    final local = await ref.read(authRepositoryProvider).getLocalSession();
+    if (local != null) {
+      state = AsyncData(local);
+      _onSessionRestored();
+    } else if (state.value != null) {
+      state = const AsyncData(null);
+    }
   }
 
   Future<void> signIn(String email, String password) async {
@@ -439,6 +590,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   }
 
   Future<void> signInWithGoogle() async {
+    final previous = state.value;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signInWithGoogle();
@@ -447,22 +599,51 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             .read(databaseServiceProvider)
             .setActiveWorkspaceId(user.factoryId);
         _onLoginSuccess();
+        return user;
       }
-      return user;
+      // Web OAuth redirects away; keep prior session until callback lands.
+      // Mobile returning null is an error — surface as no profile.
+      return kIsWeb ? previous : user;
     });
   }
 
-  Future<void> signUp({
+  Future<bool> signUp({
     required String email,
     required String password,
     required String profileName,
     required String workspaceName,
   }) async {
     state = const AsyncLoading();
+    var verificationRequired = false;
     state = await AsyncValue.guard(() async {
       final user = await ref.read(authRepositoryProvider).signUp(
             email: email,
             password: password,
+            profileName: profileName,
+            workspaceName: workspaceName,
+            db: ref.read(databaseServiceProvider),
+          );
+      if (user == null) {
+        verificationRequired = true;
+        return null;
+      }
+      _onLoginSuccess();
+      return user;
+    });
+    return verificationRequired && !state.hasError;
+  }
+
+  Future<void> verifySignUpOtp({
+    required String email,
+    required String token,
+    required String profileName,
+    required String workspaceName,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final user = await ref.read(authRepositoryProvider).verifySignUpOtp(
+            email: email,
+            token: token,
             profileName: profileName,
             workspaceName: workspaceName,
             db: ref.read(databaseServiceProvider),
@@ -516,6 +697,13 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
     state = await AsyncValue.guard(
       () => ref.read(authRepositoryProvider).getCurrentAppUser(),
     );
+    final user = state.value;
+    if (user != null) {
+      await ref
+          .read(databaseServiceProvider)
+          .setActiveWorkspaceId(user.factoryId);
+      _onSessionRestored();
+    }
   }
 }
 
@@ -574,11 +762,7 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
-      await ref.read(authRepositoryProvider).generateOtp(
-            userId: user.id,
-            purpose: 'email_change',
-            newValue: newEmail,
-          );
+      await ref.read(authRepositoryProvider).sendReauthenticationOtp();
       return null;
     } catch (e) {
       return e.toString();
@@ -589,20 +773,12 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
-      final result = await ref.read(authRepositoryProvider).verifyOtp(
-            userId: user.id,
-            code: code,
-            purpose: 'email_change',
-          );
-      if (result['success'] != true) {
-        return result['error'] as String? ?? 'OTP verification failed';
-      }
-      await ref
+      final confirmedEmail = await ref
           .read(authRepositoryProvider)
-          .updateAuthEmail(userId: user.id, newEmail: newEmail);
+          .updateAuthEmail(newEmail: newEmail, nonce: code);
       await ref
           .read(currentUserProvider.notifier)
-          .refreshUser(user.copyWith(email: newEmail));
+          .refreshUser(user.copyWith(email: confirmedEmail));
       return null;
     } catch (e) {
       return e.toString();
@@ -613,11 +789,7 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
-      await ref.read(authRepositoryProvider).generateOtp(
-            userId: user.id,
-            purpose: 'password_change',
-            newValue: newPassword,
-          );
+      await ref.read(authRepositoryProvider).sendReauthenticationOtp();
       return null;
     } catch (e) {
       return e.toString();
@@ -625,19 +797,15 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
   }
 
   Future<String?> verifyPasswordChangeOtp(
-      String code, String newPassword,) async {
+    String code,
+    String newPassword,
+  ) async {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
-      final result = await ref.read(authRepositoryProvider).verifyOtp(
-            userId: user.id,
-            code: code,
-            purpose: 'password_change',
-          );
-      if (result['success'] != true) {
-        return result['error'] as String? ?? 'OTP verification failed';
-      }
-      await ref.read(authRepositoryProvider).changePassword(newPassword);
+      await ref
+          .read(authRepositoryProvider)
+          .changePassword(newPassword, nonce: code);
       return null;
     } catch (e) {
       return e.toString();

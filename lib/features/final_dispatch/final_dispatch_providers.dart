@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/constants/stock_stages.dart';
+import '../../core/services/alert_producer_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 
 const _uuid = Uuid();
@@ -22,11 +25,12 @@ class DispatchItemInput {
 }
 
 class FinalDispatchRepository {
-  FinalDispatchRepository(this._db, this._sync, this._ledger);
+  FinalDispatchRepository(this._db, this._sync, this._ledger, this._alerts);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final AlertProducerService _alerts;
 
   /// Save a multi-part dispatch session
   Future<FinalDispatchResult> saveDispatchSession({
@@ -205,6 +209,7 @@ class FinalDispatchRepository {
     }
 
     await _sync.schedulePendingSync();
+    unawaited(_alerts.checkLowStock());
     return FinalDispatchResult(
       success: true,
       recordId: sessionId,
@@ -312,6 +317,7 @@ final finalDispatchRepositoryProvider =
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(alertProducerServiceProvider),
   );
 });
 

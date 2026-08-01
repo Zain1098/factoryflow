@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -22,6 +23,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
   String? _partId;
   String? _machineId;
   String? _rejectReason;
+  final _holdQtyCtrl = TextEditingController();
   final _rejectQtyCtrl = TextEditingController(text: '0');
   bool _isSaving = false;
   String? _error;
@@ -38,6 +40,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
   void dispose() {
     _tabController.dispose();
     _batchCtrl.dispose();
+    _holdQtyCtrl.dispose();
     _rejectQtyCtrl.dispose();
     super.dispose();
   }
@@ -59,19 +62,24 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
         return;
       }
 
+      final holdQty = double.tryParse(_holdQtyCtrl.text) ?? 0;
+      final rejectQty = double.tryParse(_rejectQtyCtrl.text) ?? 0;
       final result = await repo.save(
         batchNumber: batchVal,
         partId: _partId!,
         machineId: _machineId!,
-        bpRejectQty: double.tryParse(_rejectQtyCtrl.text) ?? 0,
-        rejectReason: _rejectReason!,
+        inspectedQty: holdQty,
+        bpRejectQty: rejectQty,
+        rejectReason: rejectQty > 0 ? _rejectReason : null,
         inspectorId: user?.id ?? 'unknown',
         remarks: null,
         recordedAt: _recordedAt,
       );
 
       if (result.success) {
-        setState(() => _success = 'BP Inspection saved!');
+        setState(() => _success =
+            'BP Inspection saved! Hold $holdQty PCS'
+            '${rejectQty > 0 ? ', reject $rejectQty PCS' : ' (all OK)'}',);
         ref.invalidate(bpInspectionListProvider);
         _reset();
       } else {
@@ -87,6 +95,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
   void _reset() {
     _formKey.currentState?.reset();
     _batchCtrl.clear();
+    _holdQtyCtrl.clear();
     _rejectQtyCtrl.text = '0';
     setState(() {
       _partId = null;
@@ -234,10 +243,46 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                 validator: (v) => v == null ? 'Machine is required' : null,
               ),
             ),
-            const SectionHeader('Rejection Details'),
+            const SectionHeader('Hold & Inspection'),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'BP inspection is optional — use it when quality needs to hold '
+                'parts. Otherwise finished production can go straight to FACO dispatch.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ),
+            NumberFormField(
+              label: 'Hold / Inspect Qty (PCS)',
+              controller: _holdQtyCtrl,
+              allowDecimal: false,
+              prefixIcon: const Icon(Icons.pause_circle_outline),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Required';
+                final n = double.tryParse(v);
+                if (n == null || n <= 0) return 'Hold qty must be > 0';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            NumberFormField(
+              label: 'Reject Qty (PCS)',
+              controller: _rejectQtyCtrl,
+              allowDecimal: false,
+              prefixIcon: const Icon(Icons.cancel_outlined),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Required';
+                final n = double.tryParse(v);
+                if (n == null || n < 0) return 'Enter valid quantity';
+                final hold = double.tryParse(_holdQtyCtrl.text) ?? 0;
+                if (n > hold) return 'Reject cannot exceed hold qty';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
             AppDropdown<String>(
               label: 'Reject Reason',
-              isRequired: true,
+              isRequired: false,
               prefixIcon: const Icon(Icons.report_problem_outlined),
               value: _rejectReason,
               items: kBpRejectReasons
@@ -249,18 +294,11 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                   )
                   .toList(),
               onChanged: (v) => setState(() => _rejectReason = v),
-              validator: (v) => v == null ? 'Reject reason is required' : null,
-            ),
-            const SizedBox(height: 12),
-            NumberFormField(
-              label: 'BP Reject Qty (PCS)',
-              controller: _rejectQtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.cancel_outlined),
               validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n < 0) return 'Enter valid quantity';
+                final reject = double.tryParse(_rejectQtyCtrl.text) ?? 0;
+                if (reject > 0 && v == null) {
+                  return 'Reject reason required when reject > 0';
+                }
                 return null;
               },
             ),
@@ -304,18 +342,20 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
               subtitle: Text(
-                  '${r['part_code'] ?? ''} · ${r['reject_reason_id'] ?? ''} · ${r['date']}'),
+                  '${r['part_code'] ?? ''} · hold ${(r['inspected_qty'] as num?)?.toInt() ?? 0}'
+                  '${r['reject_reason_id'] != null ? ' · ${r['reject_reason_id']}' : ''}'
+                  ' · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '${r['bp_reject_qty']} rej',
+                    '${(r['bp_reject_qty'] as num?)?.toInt() ?? 0} rej',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: Colors.red),
+                        fontWeight: FontWeight.bold, color: Colors.red,),
                   ),
                   Icon(
                     isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,

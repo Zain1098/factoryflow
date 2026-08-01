@@ -6,18 +6,22 @@ import '../../core/network/sync_service.dart';
 import '../../core/constants/stock_stages.dart';
 import '../../core/services/stock_ledger_service.dart';
 
+import '../../core/providers/master_data_providers.dart';
+
 const _uuid = Uuid();
 
-// BP Reject Reasons per PRD 15.2
-const kBpRejectReasons = [
-  'Crack',
-  'Dimension Out of Tolerance',
-  'Bend Angle Error',
-  'Surface Scratch',
-  'Burr/Sharp Edge',
-  'Deformation',
-  'Incomplete Forming',
+// Fallback reasons used only when DB has no configured reasons yet.
+const kBpRejectReasonsFallback = [
+  'Crack', 'Dimension Out of Tolerance', 'Bend Angle Error',
+  'Surface Scratch', 'Burr/Sharp Edge', 'Deformation', 'Incomplete Forming',
 ];
+
+/// Live BP reject reasons from DB, falling back to defaults.
+final bpRejectReasonsListProvider = FutureProvider<List<String>>((ref) async {
+  final rows = await ref.watch(bpRejectReasonsProvider.future);
+  if (rows.isEmpty) return kBpRejectReasonsFallback;
+  return rows.map((r) => r['reason'] as String).toList();
+});
 
 class BpInspectionRepository {
   BpInspectionRepository(this._db, this._sync, this._ledger);
@@ -30,8 +34,9 @@ class BpInspectionRepository {
     required String batchNumber,
     required String partId,
     required String machineId,
+    required double inspectedQty,
     required double bpRejectQty,
-    required String rejectReason,
+    String? rejectReason,
     required String inspectorId,
     String? remarks,
     DateTime? recordedAt,
@@ -43,10 +48,29 @@ class BpInspectionRepository {
         error: 'No active factory workspace is selected.',
       );
     }
+    if (inspectedQty <= 0) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'Hold / inspected quantity must be greater than zero.',
+      );
+    }
     if (bpRejectQty < 0) {
       return const BpInspectionResult(
         success: false,
         error: 'Reject quantity cannot be negative.',
+      );
+    }
+    if (bpRejectQty > inspectedQty) {
+      return BpInspectionResult(
+        success: false,
+        error:
+            'Reject qty ($bpRejectQty) cannot exceed hold qty ($inspectedQty).',
+      );
+    }
+    if (bpRejectQty > 0 && (rejectReason == null || rejectReason.trim().isEmpty)) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'Reject reason is required when reject quantity is greater than zero.',
       );
     }
     if (batchNumber.trim().isEmpty) {
@@ -69,14 +93,13 @@ class BpInspectionRepository {
       );
     }
 
-    // Validate: bpRejectQty <= BP stock available (PRD 4.4)
     final available =
         await _ledger.getAvailableStock(partId, StockStage.bpStock);
-    if (bpRejectQty > available) {
+    if (inspectedQty > available) {
       return BpInspectionResult(
         success: false,
         error:
-            'Reject qty ($bpRejectQty) exceeds available BP stock ($available)',
+            'Hold qty ($inspectedQty) exceeds available BP stock ($available)',
       );
     }
 
@@ -92,6 +115,7 @@ class BpInspectionRepository {
       'date': dateStr,
       'part_id': partId,
       'machine_id': machineId,
+      'inspected_qty': inspectedQty,
       'bp_reject_qty': bpRejectQty,
       'reject_reason_id': rejectReason,
       'inspector_id': inspectorId,
@@ -101,18 +125,17 @@ class BpInspectionRepository {
 
     try {
       await _db.runInTransaction(() async {
-        if (bpRejectQty > 0) {
-          final ledgerResult = await _ledger.bpRejectToRejected(
-            partId: partId,
-            qty: bpRejectQty,
-            refId: id,
-            triggerSync: false,
+        final ledgerResult = await _ledger.bpHoldResolve(
+          partId: partId,
+          inspectedQty: inspectedQty,
+          rejectQty: bpRejectQty,
+          refId: id,
+          triggerSync: false,
+        );
+        if (!ledgerResult.success) {
+          throw StockPostingFailure(
+            ledgerResult.error ?? 'Unable to update BP inspection stock.',
           );
-          if (!ledgerResult.success) {
-            throw StockPostingFailure(
-              ledgerResult.error ?? 'Unable to update BP reject stock.',
-            );
-          }
         }
 
         await _db.insertRecord('bp_inspections', record);
@@ -177,6 +200,10 @@ class BpInspectionRepository {
     );
     if (rows.isEmpty) return null;
     return Map<String, dynamic>.from(rows.single);
+  }
+
+  Future<double> availableBpStock(String partId) {
+    return _ledger.getAvailableStock(partId, StockStage.bpStock);
   }
 }
 

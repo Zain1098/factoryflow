@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum ProductionMode {
   multiStageSequential(
-      'multi_stage', 'Multi-Stage Machine Sequence (WIP -> Final)'),
+      'multi_stage', 'Multi-Stage Machine Sequence (WIP -> Final)',),
   directSingleStage('direct_single', 'Direct Single-Stage Production');
 
   const ProductionMode(this.code, this.label);
@@ -164,7 +164,7 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
       final raw = prefs.getString(_key);
       if (raw != null) {
         state = ProductionFlowConfig.fromJson(
-            jsonDecode(raw) as Map<String, dynamic>);
+            jsonDecode(raw) as Map<String, dynamic>,);
       }
     } catch (error) {
       _loadError = 'Production flow settings could not load: $error';

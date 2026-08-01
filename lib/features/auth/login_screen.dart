@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/network/sync_service.dart';
 import 'auth_providers.dart';
+import 'signup_verification_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -66,12 +67,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_isSignUp) {
-      await ref.read(currentUserProvider.notifier).signUp(
-            email: _emailCtrl.text.trim(),
-            password: _passwordCtrl.text,
-            profileName: _nameCtrl.text.trim(),
-            workspaceName: _workspaceCtrl.text.trim(),
-          );
+      final verificationRequired =
+          await ref.read(currentUserProvider.notifier).signUp(
+                email: _emailCtrl.text.trim(),
+                password: _passwordCtrl.text,
+                profileName: _nameCtrl.text.trim(),
+                workspaceName: _workspaceCtrl.text.trim(),
+              );
+      if (!mounted) return;
+      final signUpState = ref.read(currentUserProvider);
+      if (verificationRequired && !signUpState.hasError) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SignupVerificationScreen(
+              email: _emailCtrl.text.trim(),
+              profileName: _nameCtrl.text.trim(),
+              workspaceName: _workspaceCtrl.text.trim(),
+            ),
+          ),
+        );
+        return;
+      }
     } else {
       await ref.read(currentUserProvider.notifier).signIn(
             _emailCtrl.text.trim(),
@@ -142,12 +158,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (msg.contains('weak_password') || msg.contains('6 characters')) {
       return 'Password must be at least 6 characters.';
     }
-    if (msg.contains('does not exist') || msg.contains('permission denied') || msg.contains('function')) {
+    if (msg.contains('does not exist') ||
+        msg.contains('permission denied') ||
+        msg.contains('function')) {
       return 'Server setup incomplete — Supabase migrations not applied. Contact developer.';
     }
     // Show actual error in debug, generic for release
     if (kDebugMode) return msg;
-    return _isSignUp ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.';
+    return _isSignUp
+        ? 'Sign up failed. Please try again.'
+        : 'Sign in failed. Please try again.';
   }
 
   bool _validEmail(String e) =>
@@ -155,33 +175,42 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.error_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: Theme.of(context).colorScheme.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-      duration: const Duration(seconds: 4),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: const Color(0xFF2A9D8F),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline,
+                color: Colors.white, size: 18,),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF2A9D8F),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   // ── Build ──────────────────────────────────────────────────────────────
@@ -237,7 +266,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         if (_hasLocalSession && showOfflineMode)
                           const SizedBox(height: 16),
 
-                        _buildCard(theme, isDark, isLoading, connected && isOnline),
+                        _buildCard(
+                            theme, isDark, isLoading, connected && isOnline,),
                         const SizedBox(height: 12),
 
                         // Divider + Google button
@@ -259,7 +289,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               style: theme.textTheme.bodySmall,
                             ),
                             GestureDetector(
-                              onTap: () => setState(() => _isSignUp = !_isSignUp),
+                              onTap: () =>
+                                  setState(() => _isSignUp = !_isSignUp),
                               child: Text(
                                 _isSignUp ? 'Sign In' : 'Create Account',
                                 style: TextStyle(
@@ -314,7 +345,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
           height: 20,
           width: 20,
-          errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata, size: 24),
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.g_mobiledata, size: 24),
         ),
         label: const Text('Continue with Google'),
         style: OutlinedButton.styleFrom(
@@ -352,7 +384,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               ),
             ],
           ),
-          child: const Icon(Icons.factory_rounded, size: 42, color: Colors.white),
+          child:
+              const Icon(Icons.factory_rounded, size: 42, color: Colors.white),
         ),
         const SizedBox(height: 16),
         Text(
@@ -459,7 +492,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildCard(ThemeData theme, bool isDark, bool isLoading, bool connected) {
+  Widget _buildCard(
+      ThemeData theme, bool isDark, bool isLoading, bool connected,) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2329) : Colors.white,
@@ -515,7 +549,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 decoration: InputDecoration(
                   labelText: 'Your Name',
                   prefixIcon: const Icon(Icons.person_outline),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Name is required' : null,
@@ -528,10 +563,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 decoration: InputDecoration(
                   labelText: 'Company / Workspace Name',
                   prefixIcon: const Icon(Icons.business_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Workspace name is required' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Workspace name is required'
+                    : null,
               ),
               const SizedBox(height: 14),
             ],
@@ -546,7 +583,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 labelText: 'Email Address',
                 hintText: 'you@example.com',
                 prefixIcon: const Icon(Icons.email_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Email is required';
@@ -565,7 +603,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               decoration: InputDecoration(
                 labelText: 'Password',
                 prefixIcon: const Icon(Icons.lock_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscure
@@ -586,9 +625,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: (isLoading || _isResetting) ? null : _forgotPassword,
+                  onPressed:
+                      (isLoading || _isResetting) ? null : _forgotPassword,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: _isResetting
@@ -647,7 +688,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-Widget _buildFooter(ThemeData theme) {
+  Widget _buildFooter(ThemeData theme) {
     return Text(
       '© ${DateTime.now().year} FactoryFlow · Secure Manufacturing ERP',
       textAlign: TextAlign.center,

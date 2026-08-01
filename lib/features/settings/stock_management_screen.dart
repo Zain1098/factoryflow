@@ -128,7 +128,7 @@ class _PartStockCard extends ConsumerWidget {
                   child: Text(
                     part['code'] as String,
                     style: const TextStyle(
-                        fontSize: 10, fontWeight: FontWeight.bold),
+                        fontSize: 10, fontWeight: FontWeight.bold,),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -167,7 +167,7 @@ class _PartStockCard extends ConsumerWidget {
                 child: Text(
                   'No stock recorded',
                   style: TextStyle(
-                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      fontSize: 12, color: theme.colorScheme.onSurfaceVariant,),
                 ),
               ),
           ],
@@ -207,7 +207,7 @@ class _PartStockCard extends ConsumerWidget {
                     decoration: const InputDecoration(labelText: 'Stage'),
                     items: StockStage.values
                         .map((s) =>
-                            DropdownMenuItem(value: s, child: Text(s.label)))
+                            DropdownMenuItem(value: s, child: Text(s.label)),)
                         .toList(),
                     onChanged: (v) => setS(() => selectedStage = v!),
                   ),
@@ -253,7 +253,7 @@ class _PartStockCard extends ConsumerWidget {
                     const SizedBox(height: 8),
                     Text(errorMsg!,
                         style:
-                            const TextStyle(color: Colors.red, fontSize: 12)),
+                            const TextStyle(color: Colors.red, fontSize: 12),),
                   ],
                 ],
               ),
@@ -261,7 +261,7 @@ class _PartStockCard extends ConsumerWidget {
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel')),
+                  child: const Text('Cancel'),),
               FilledButton(
                 onPressed: () async {
                   final qty = double.tryParse(qtyCtrl.text.trim());
@@ -464,13 +464,13 @@ class _AdjustmentTile extends StatelessWidget {
             Text(
               item['remarks'] as String,
               style: TextStyle(
-                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant,),
             ),
           if (createdAt != null)
             Text(
               _formatDate(createdAt),
               style: TextStyle(
-                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  fontSize: 11, color: theme.colorScheme.onSurfaceVariant,),
             ),
         ],
       ),
@@ -495,7 +495,7 @@ class _AdjustmentTile extends StatelessWidget {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}  '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';

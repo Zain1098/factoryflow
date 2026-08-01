@@ -31,6 +31,8 @@ dependencies:
   printing: ^5.14.3
   # 13.x supports Flutter's AGP 9 built-in Kotlin migration.
   share_plus: ^13.3.0
+  package_info_plus: ^10.2.1
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../network/sync_service.dart';
+import '../services/alert_producer_service.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.child});
@@ -14,14 +15,46 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   DateTime? _lastBackPress;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(alertProducerServiceProvider).checkAll();
+    }
+  }
   Future<bool> _onWillPop() async {
     final location = GoRouterState.of(context).matchedLocation;
-    // If not on dashboard, go to dashboard instead of closing app
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop();
+      return false;
+    }
+
+    // Direct/deep links have no stack. Return entry forms to Entries and
+    // settings sub-pages to Settings; other top-level pages return Dashboard.
     if (location != '/dashboard') {
-      context.go('/dashboard');
+      if (_isEntryRoute(location) && location != '/entries') {
+        context.go('/entries');
+      } else if (_isSettingsRoute(location) && location != '/settings') {
+        context.go('/settings');
+      } else {
+        context.go('/dashboard');
+      }
       return false;
     }
     // On dashboard: double-tap back to exit
@@ -46,6 +79,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     final isOnline = ref.watch(isOnlineProvider);
     final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
 
+    // Always intercept so entry pages pop to Entries (or prior stack)
+    // instead of jumping straight to Dashboard when the shell has no stack.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -58,7 +93,8 @@ class _AppShellState extends ConsumerState<AppShell> {
               MaterialBanner(
                 backgroundColor:
                     Theme.of(context).colorScheme.surfaceContainerHighest,
-                leading: const Icon(Icons.cloud_off_outlined, color: Colors.orange),
+                leading:
+                    const Icon(Icons.cloud_off_outlined, color: Colors.orange),
                 content: Text(
                   pendingSync > 0
                       ? 'Offline — $pendingSync record(s) will sync when connected.'
@@ -70,32 +106,42 @@ class _AppShellState extends ConsumerState<AppShell> {
             Expanded(child: widget.child),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _calculateIndex(context),
-          onDestinationSelected: (index) => _onTap(context, index),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
-              label: 'Dashboard',
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: Theme.of(context).dividerColor,
+                width: 1,
+              ),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.edit_note_outlined),
-              selectedIcon: Icon(Icons.edit_note),
-              label: 'Entries',
-            ),
-            NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-            NavigationDestination(
-              icon: Icon(Icons.assessment_outlined),
-              selectedIcon: Icon(Icons.assessment),
-              label: 'Reports',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
+          ),
+          child: NavigationBar(
+            selectedIndex: _calculateIndex(context),
+            onDestinationSelected: (index) => _onTap(context, index),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.dashboard_outlined),
+                selectedIcon: Icon(Icons.dashboard),
+                label: 'Dashboard',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.edit_note_outlined),
+                selectedIcon: Icon(Icons.edit_note),
+                label: 'Entries',
+              ),
+              NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+              NavigationDestination(
+                icon: Icon(Icons.assessment_outlined),
+                selectedIcon: Icon(Icons.assessment),
+                label: 'Reports',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
+            ],
+          ),
         ),
       ),
     );

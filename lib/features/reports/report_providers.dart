@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/database_service.dart';
+import '../../core/providers/production_flow_provider.dart';
 
 // ─── Date Range Model ─────────────────────────────────────────────────────────
 
@@ -73,16 +74,22 @@ final dailyProductionReportProvider =
     FutureProvider.autoDispose<List<DailyProductionRow>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final flow = ref.watch(productionFlowProvider);
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) return [];
+  final finalMachineId = flow.isMultiStage && flow.requiredMachineIds.isNotEmpty
+      ? flow.requiredMachineIds.last
+      : null;
 
   final rows = db.db.select(
     '''
     SELECT
       p.date,
-      COALESCE(SUM(p.production_qty), 0) AS total_prod,
-      COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
-      COALESCE(SUM(p.good_qty), 0) AS good,
+       COALESCE(SUM(CASE WHEN (? IS NULL OR p.machine_id = ?)
+         THEN p.production_qty ELSE 0 END), 0) AS total_prod,
+       COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
+       COALESCE(SUM(CASE WHEN (? IS NULL OR p.machine_id = ?)
+         THEN p.good_qty ELSE 0 END), 0) AS good,
       COALESCE(t.target, 0) AS target
     FROM productions p
     LEFT JOIN (
@@ -95,7 +102,16 @@ final dailyProductionReportProvider =
     GROUP BY p.date
     ORDER BY p.date DESC
   ''',
-    [factoryId, factoryId, range.fromStr, range.toStr],
+    [
+      finalMachineId,
+      finalMachineId,
+      finalMachineId,
+      finalMachineId,
+      factoryId,
+      factoryId,
+      range.fromStr,
+      range.toStr,
+    ],
   );
 
   return rows.map((r) {
@@ -109,7 +125,7 @@ final dailyProductionReportProvider =
       bpReject: bp,
       goodQty: good,
       target: target,
-      efficiency: target > 0 ? (prod / target * 100).clamp(0, 999) : 0,
+      efficiency: target > 0 ? (good / target * 100).clamp(0, 999) : 0,
       rejectPct: prod > 0 ? (bp / prod * 100) : 0,
     );
   }).toList();

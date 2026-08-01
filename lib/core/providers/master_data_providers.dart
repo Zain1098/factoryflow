@@ -65,6 +65,29 @@ final driversProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(databaseServiceProvider).getDrivers();
 });
 
+final shiftsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveShifts();
+});
+
+final bpRejectReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveBpRejectReasons();
+});
+
+final apRejectReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveApRejectReasons();
+});
+
+final rtvReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveRtvReasons();
+});
+
 // ─── Master Data Repository ───────────────────────────────────────────────────
 
 class MasterDataRepository {
@@ -397,14 +420,9 @@ class MasterDataRepository {
       final client = Supabase.instance.client;
       final factoryId = _db.activeWorkspaceId;
       const tables = [
-        'parts',
-        'machines',
-        'suppliers',
-        'vendors',
-        'customers',
-        'operators',
-        'vehicles',
-        'drivers',
+        'parts', 'machines', 'suppliers', 'vendors', 'customers',
+        'operators', 'vehicles', 'drivers',
+        'shifts', 'bp_reject_reasons', 'ap_reject_reasons', 'rtv_reasons',
       ];
       for (final table in tables) {
         final rows = await client
@@ -416,7 +434,7 @@ class MasterDataRepository {
           await _db.insertRecord(table, _convertBool(row));
         }
       }
-      _bump(); // refresh all providers after remote sync
+      _bump();
     } catch (_) {
       // Offline — use local cache
     }

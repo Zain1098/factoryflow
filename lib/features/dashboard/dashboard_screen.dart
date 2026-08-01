@@ -30,7 +30,7 @@ class DashboardScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('FactoryFlow',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),),
             if (user != null)
               Text(
                 '${user.name} · ${user.role.value}',
@@ -140,7 +140,7 @@ class DashboardScreen extends ConsumerWidget {
       child: Row(
         children: [
           const Icon(Icons.rocket_launch_outlined,
-              color: Colors.blue, size: 28),
+              color: Colors.blue, size: 28,),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -149,7 +149,7 @@ class DashboardScreen extends ConsumerWidget {
                 const Text(
                   'Welcome to FactoryFlow!',
                   style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.blue),
+                      fontWeight: FontWeight.bold, color: Colors.blue,),
                 ),
                 const SizedBox(height: 2),
                 const Text(
@@ -318,7 +318,7 @@ class DashboardScreen extends ConsumerWidget {
                 Text(
                   '${data.machinesRunning} / ${data.totalMachines} Running',
                   style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
+                      fontSize: 12, fontWeight: FontWeight.bold,),
                 ),
               ],
             ),
@@ -354,12 +354,12 @@ class DashboardScreen extends ConsumerWidget {
                             Text(
                               m.name,
                               style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 12),
+                                  fontWeight: FontWeight.bold, fontSize: 12,),
                             ),
                             Text(
                               '${m.status} · ${_fmt(m.todayQty)} pcs',
                               style: const TextStyle(
-                                  fontSize: 10, color: Colors.grey),
+                                  fontSize: 10, color: Colors.grey,),
                             ),
                           ],
                         ),
@@ -413,7 +413,7 @@ class DashboardScreen extends ConsumerWidget {
                       Text(
                         _fmt(d.qty),
                         style: const TextStyle(
-                            fontSize: 9, fontWeight: FontWeight.bold),
+                            fontSize: 9, fontWeight: FontWeight.bold,),
                       ),
                       const SizedBox(height: 4),
                       Container(
@@ -451,26 +451,28 @@ class DashboardScreen extends ConsumerWidget {
   Widget _buildStockGrid(BuildContext context, DashboardData data) {
     final stocks = [
       _StockEntry('Raw Material', data.rawMaterial, Icons.inventory_2_outlined,
-          Colors.brown),
+          Colors.brown,),
       _StockEntry('Bending WIP', data.bendingWip, Icons.rotate_right,
-          Colors.amber.shade800),
+          Colors.amber.shade800,),
       _StockEntry('Notching WIP', data.notchingWip, Icons.content_cut,
-          Colors.orange.shade800),
+          Colors.orange.shade800,),
       _StockEntry('End Forming WIP', data.endFormingWip,
-          Icons.change_circle_outlined, Colors.deepOrange.shade800),
+          Icons.change_circle_outlined, Colors.deepOrange.shade800,),
       _StockEntry('Production Rejected', data.productionRejected,
-          Icons.cancel_outlined, Colors.red.shade700),
+          Icons.cancel_outlined, Colors.red.shade700,),
       _StockEntry(
-          'BP Stock', data.bpStock, Icons.check_circle_outline, Colors.blue),
+          'BP Stock', data.bpStock, Icons.check_circle_outline, Colors.blue,),
       _StockEntry('BP Rejected', data.bpRejected, Icons.cancel_outlined,
-          Colors.red.shade700),
+          Colors.red.shade700,),
+      _StockEntry('At Faco (Plating)', data.atFaco,
+          Icons.local_shipping_outlined, Colors.purple,),
+      _StockEntry('Pending AP Inspection', data.pendingAp,
+          Icons.hourglass_top_outlined, Colors.indigo,),
       _StockEntry(
-          'AP Approved', data.approvedAp, Icons.verified_outlined, Colors.teal),
+          'AP Approved', data.approvedAp, Icons.verified_outlined, Colors.teal,),
       _StockEntry('AP Rejected', data.apRejected, Icons.warning_amber_outlined,
-          Colors.deepOrange),
-      _StockEntry('RTV', data.rtvStock, Icons.undo, Colors.red),
-      _StockEntry('Finished Goods', data.approvedAp, Icons.inventory,
-          Colors.green.shade800),
+          Colors.deepOrange,),
+      _StockEntry('RTV Outstanding', data.rtvStock, Icons.undo, Colors.red),
     ];
 
     return GridView.builder(
@@ -508,7 +510,7 @@ class DashboardScreen extends ConsumerWidget {
                         style: const TextStyle(
                             fontSize: 11,
                             color: Colors.grey,
-                            fontWeight: FontWeight.w600),
+                            fontWeight: FontWeight.w600,),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -518,7 +520,7 @@ class DashboardScreen extends ConsumerWidget {
                 Text(
                   '${_fmt(s.qty)} PCS',
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16),
+                      fontWeight: FontWeight.bold, fontSize: 16,),
                 ),
               ],
             ),
@@ -531,13 +533,13 @@ class DashboardScreen extends ConsumerWidget {
   Widget _buildTodayGrid(BuildContext context, DashboardData data) {
     final items = [
       _StockEntry("Production", data.todayProduction,
-          Icons.precision_manufacturing, Colors.teal),
+          Icons.precision_manufacturing, Colors.teal,),
       _StockEntry(
-          "BP Reject", data.todayBpReject, Icons.cancel_outlined, Colors.red),
+          "BP Reject", data.todayBpReject, Icons.cancel_outlined, Colors.red,),
       _StockEntry("AP Reject", data.todayApReject, Icons.remove_circle_outline,
-          Colors.deepOrange),
+          Colors.deepOrange,),
       _StockEntry(
-          "Dispatched", data.todayDispatch, Icons.send_outlined, Colors.indigo),
+          "Dispatched", data.todayDispatch, Icons.send_outlined, Colors.indigo,),
     ];
 
     return GridView.builder(
@@ -575,7 +577,7 @@ class DashboardScreen extends ConsumerWidget {
                         style: const TextStyle(
                             fontSize: 11,
                             color: Colors.grey,
-                            fontWeight: FontWeight.w600),
+                            fontWeight: FontWeight.w600,),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -585,7 +587,7 @@ class DashboardScreen extends ConsumerWidget {
                 Text(
                   '${_fmt(s.qty)} PCS',
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16),
+                      fontWeight: FontWeight.bold, fontSize: 16,),
                 ),
               ],
             ),
@@ -608,16 +610,32 @@ class DashboardScreen extends ConsumerWidget {
         KpiTile(
           label: 'At Faco (Plating Vendor)',
           value: '${_fmt(data.atFaco)} PCS',
-          icon: Icons.pending_outlined,
+          icon: Icons.local_shipping_outlined,
           isAlert: data.atFaco > 500.0,
         ),
         const SizedBox(height: 8),
         KpiTile(
-          label: 'RTV Reinspection Stock',
+          label: 'Pending AP Inspection',
+          value: '${_fmt(data.pendingAp)} PCS',
+          icon: Icons.hourglass_top_outlined,
+          isAlert: data.pendingAp > 200.0,
+        ),
+        const SizedBox(height: 8),
+        KpiTile(
+          label: 'RTV Outstanding',
           value: '${_fmt(data.rtvStock)} PCS',
           icon: Icons.undo,
           isAlert: data.rtvStock > 0.0,
         ),
+        if (data.pendingApprovals > 0) ...[
+          const SizedBox(height: 8),
+          KpiTile(
+            label: 'Pending Correction Approvals',
+            value: '${data.pendingApprovals}',
+            icon: Icons.pending_actions_outlined,
+            isAlert: true,
+          ),
+        ],
       ],
     );
   }
@@ -625,13 +643,13 @@ class DashboardScreen extends ConsumerWidget {
   Widget _buildQuickActions(BuildContext context) {
     final actions = [
       const _QuickAction('Production', Icons.precision_manufacturing,
-          '/production', Colors.teal),
+          '/production', Colors.teal,),
       const _QuickAction('Material\nReceive', Icons.inventory_2,
-          '/material-receive', Colors.brown),
+          '/material-receive', Colors.brown,),
       const _QuickAction(
-          'BP\nInspection', Icons.fact_check, '/bp-inspection', Colors.blue),
+          'BP\nInspection', Icons.fact_check, '/bp-inspection', Colors.blue,),
       const _QuickAction('Dispatch\nFaco', Icons.local_shipping,
-          '/dispatch-faco', Colors.orange),
+          '/dispatch-faco', Colors.orange,),
     ];
 
     return SizedBox(
@@ -643,7 +661,7 @@ class DashboardScreen extends ConsumerWidget {
         itemBuilder: (context, i) {
           final a = actions[i];
           return InkWell(
-            onTap: () => context.go(a.route),
+            onTap: () => context.push(a.route),
             borderRadius: BorderRadius.circular(16),
             child: Container(
               width: 95,

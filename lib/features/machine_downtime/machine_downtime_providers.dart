@@ -1,16 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/services/alert_producer_service.dart';
 
 const _uuid = Uuid();
 
 class MachineDowntimeRepository {
-  MachineDowntimeRepository(this._db, this._sync);
+  MachineDowntimeRepository(this._db, this._sync, this._alerts);
 
   final DatabaseService _db;
   final SyncService _sync;
+  final AlertProducerService _alerts;
 
   Future<DowntimeResult> save({
     required String machineId,
@@ -36,7 +40,7 @@ class MachineDowntimeRepository {
       final end = _parseTime(endTime);
       if (end != null && start != null && !end.isAfter(start)) {
         return const DowntimeResult(
-            success: false, error: 'End time must be after start time');
+            success: false, error: 'End time must be after start time',);
       }
     }
 
@@ -87,6 +91,7 @@ class MachineDowntimeRepository {
     }
 
     await _sync.schedulePendingSync();
+    unawaited(_alerts.checkOpenDowntime());
     return DowntimeResult(success: true, recordId: id);
   }
 
@@ -124,6 +129,7 @@ final machineDowntimeRepositoryProvider =
   return MachineDowntimeRepository(
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
+    ref.watch(alertProducerServiceProvider),
   );
 });
 

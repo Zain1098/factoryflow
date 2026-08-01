@@ -22,6 +22,7 @@ class DatabaseService {
     _db = database;
     _db!.execute('PRAGMA foreign_keys=ON');
     _createTables();
+    _setSchemaVersion(_currentSchemaVersion);
     _initialized = true;
   }
 
@@ -31,6 +32,8 @@ class DatabaseService {
   bool _initialized = false;
   bool _transactionInProgress = false;
 
+  static const int _currentSchemaVersion = 2;
+
   Future<void> initialize() async {
     if (_initialized) return;
     final dir = await getApplicationDocumentsDirectory();
@@ -39,7 +42,34 @@ class DatabaseService {
     _db!.execute('PRAGMA journal_mode=WAL');
     _db!.execute('PRAGMA foreign_keys=ON');
     _createTables();
+    await _runVersionedMigrations();
     _initialized = true;
+  }
+
+  int get localSchemaVersion {
+    final rows = db.select(
+      "SELECT value FROM app_settings WHERE key = 'schema_version' LIMIT 1",
+    );
+    if (rows.isEmpty) return 0;
+    return int.tryParse(rows.first['value']?.toString() ?? '0') ?? 0;
+  }
+
+  void _setSchemaVersion(int version) {
+    db.execute(
+      'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+      ['schema_version', version.toString()],
+    );
+  }
+
+  Future<void> _runVersionedMigrations() async {
+    final current = localSchemaVersion;
+    if (current >= _currentSchemaVersion) return;
+
+    // v1 → v2: ensure all new tables from v3.1-dev exist
+    if (current < 2) {
+      // Already handled by _applyCompatibilityMigrations — just stamp version
+      _setSchemaVersion(2);
+    }
   }
 
   Database get db {
@@ -114,6 +144,49 @@ class DatabaseService {
         id TEXT PRIMARY KEY, factory_id TEXT, number_plate TEXT, active INTEGER DEFAULT 1)''',
       '''CREATE TABLE IF NOT EXISTS drivers (
         id TEXT PRIMARY KEY, factory_id TEXT, name TEXT, active INTEGER DEFAULT 1)''',
+      '''CREATE TABLE IF NOT EXISTS shifts (
+        id TEXT PRIMARY KEY, factory_id TEXT, name TEXT NOT NULL,
+        start_time TEXT, end_time TEXT,
+        active INTEGER DEFAULT 1,
+        sync_status TEXT DEFAULT 'pending')''',
+      'CREATE INDEX IF NOT EXISTS idx_shifts_factory ON shifts(factory_id)',
+      '''CREATE TABLE IF NOT EXISTS bp_reject_reasons (
+        id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL,
+        active INTEGER DEFAULT 1,
+        sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS ap_reject_reasons (
+        id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL,
+        active INTEGER DEFAULT 1,
+        sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS rtv_reasons (
+        id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL,
+        active INTEGER DEFAULT 1,
+        sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS draft_forms (
+        id TEXT PRIMARY KEY, factory_id TEXT, module TEXT NOT NULL,
+        form_data_json TEXT NOT NULL, created_by TEXT,
+        created_at TEXT, updated_at TEXT)''',
+      'CREATE INDEX IF NOT EXISTS idx_drafts_factory_module ON draft_forms(factory_id, module)',
+      '''CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id TEXT PRIMARY KEY, factory_id TEXT,
+        entity_type TEXT, entity_id TEXT,
+        local_payload_json TEXT, server_reason TEXT,
+        server_state_json TEXT, suggested_action TEXT,
+        status TEXT DEFAULT 'pending',
+        reviewer TEXT, resolved_at TEXT,
+        created_at TEXT)''',
+      'CREATE INDEX IF NOT EXISTS idx_conflicts_factory ON sync_conflicts(factory_id, status)',
+      '''CREATE TABLE IF NOT EXISTS physical_counts (
+        id TEXT PRIMARY KEY, factory_id TEXT,
+        part_id TEXT, stage TEXT,
+        counted_qty REAL, system_qty REAL,
+        variance REAL,
+        counted_by TEXT, counted_at TEXT,
+        status TEXT DEFAULT 'pending',
+        approved_by TEXT, approved_at TEXT,
+        remarks TEXT,
+        sync_status TEXT DEFAULT 'pending')''',
+      'CREATE INDEX IF NOT EXISTS idx_physical_counts_factory ON physical_counts(factory_id, status)',
       '''CREATE TABLE IF NOT EXISTS target_master (
         id TEXT PRIMARY KEY, factory_id TEXT, part_id TEXT,
         day_of_week INTEGER, target_qty INTEGER, effective_from TEXT)''',
@@ -143,7 +216,8 @@ class DatabaseService {
         created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS bp_inspections (
         id TEXT PRIMARY KEY, factory_id TEXT, batch_number TEXT, date TEXT,
-        part_id TEXT, machine_id TEXT, bp_reject_qty REAL, reject_reason_id TEXT,
+        part_id TEXT, machine_id TEXT, inspected_qty REAL DEFAULT 0,
+        bp_reject_qty REAL, reject_reason_id TEXT,
         inspector_id TEXT, photo_url TEXT, remarks TEXT,
         sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS dispatch_to_facos (
@@ -273,6 +347,257 @@ class DatabaseService {
     _applyCompatibilityMigrations();
   }
 
+  /// Seeds default shifts and reject reasons if none exist for this factory.
+  /// Called once after table creation so fresh installs have usable defaults.
+  Future<void> seedDefaultMasterData() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return;
+
+    // Shifts
+    final shiftCount = db.select(
+      'SELECT COUNT(*) as cnt FROM shifts WHERE factory_id = ?',
+      [factoryId],
+    ).first['cnt'] as int;
+    if (shiftCount == 0) {
+      for (final s in [
+        {'id': const Uuid().v4(), 'name': 'A', 'start_time': '06:00', 'end_time': '14:00'},
+        {'id': const Uuid().v4(), 'name': 'B', 'start_time': '14:00', 'end_time': '22:00'},
+        {'id': const Uuid().v4(), 'name': 'C', 'start_time': '22:00', 'end_time': '06:00'},
+      ]) {
+        db.execute(
+          'INSERT OR IGNORE INTO shifts (id, factory_id, name, start_time, end_time, active, sync_status) VALUES (?,?,?,?,?,1,\'pending\')',
+          [s['id'], factoryId, s['name'], s['start_time'], s['end_time']],
+        );
+      }
+    }
+
+    // BP Reject Reasons
+    final bpCount = db.select(
+      'SELECT COUNT(*) as cnt FROM bp_reject_reasons WHERE factory_id = ?',
+      [factoryId],
+    ).first['cnt'] as int;
+    if (bpCount == 0) {
+      for (final r in [
+        'Crack', 'Dimension Out of Tolerance', 'Bend Angle Error',
+        'Surface Scratch', 'Burr/Sharp Edge', 'Deformation', 'Incomplete Forming',
+      ]) {
+        db.execute(
+          'INSERT OR IGNORE INTO bp_reject_reasons (id, factory_id, reason, active, sync_status) VALUES (?,?,?,1,\'pending\')',
+          [const Uuid().v4(), factoryId, r],
+        );
+      }
+    }
+
+    // AP Reject Reasons
+    final apCount = db.select(
+      'SELECT COUNT(*) as cnt FROM ap_reject_reasons WHERE factory_id = ?',
+      [factoryId],
+    ).first['cnt'] as int;
+    if (apCount == 0) {
+      for (final r in [
+        'Plating Peel-off', 'Uneven Coating', 'Rust/Corrosion Spot',
+        'Discoloration', 'Plating Thickness Out of Spec', 'Handling Damage',
+      ]) {
+        db.execute(
+          'INSERT OR IGNORE INTO ap_reject_reasons (id, factory_id, reason, active, sync_status) VALUES (?,?,?,1,\'pending\')',
+          [const Uuid().v4(), factoryId, r],
+        );
+      }
+    }
+
+    // RTV Reasons
+    final rtvCount = db.select(
+      'SELECT COUNT(*) as cnt FROM rtv_reasons WHERE factory_id = ?',
+      [factoryId],
+    ).first['cnt'] as int;
+    if (rtvCount == 0) {
+      for (final r in [
+        'Plating Quality Reject', 'Vendor Processing Delay',
+        'Damaged in Transit', 'Wrong Quantity Received',
+      ]) {
+        db.execute(
+          'INSERT OR IGNORE INTO rtv_reasons (id, factory_id, reason, active, sync_status) VALUES (?,?,?,1,\'pending\')',
+          [const Uuid().v4(), factoryId, r],
+        );
+      }
+    }
+  }
+
+  // ── Shifts ────────────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getActiveShifts() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final result = db.select(
+      'SELECT * FROM shifts WHERE factory_id = ? AND active = 1 ORDER BY name',
+      [factoryId],
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  // ── Reject Reasons ────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> getActiveBpRejectReasons() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final result = db.select(
+      'SELECT * FROM bp_reject_reasons WHERE factory_id = ? AND active = 1 ORDER BY reason',
+      [factoryId],
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> getActiveApRejectReasons() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final result = db.select(
+      'SELECT * FROM ap_reject_reasons WHERE factory_id = ? AND active = 1 ORDER BY reason',
+      [factoryId],
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> getActiveRtvReasons() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final result = db.select(
+      'SELECT * FROM rtv_reasons WHERE factory_id = ? AND active = 1 ORDER BY reason',
+      [factoryId],
+    );
+    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  // ── Draft Forms ───────────────────────────────────────────────────────────
+
+  Future<void> saveDraft({
+    required String id,
+    required String module,
+    required Map<String, dynamic> formData,
+    required String createdBy,
+  }) async {
+    final factoryId = activeWorkspaceId;
+    final now = DateTime.now().toIso8601String();
+    db.execute(
+      'INSERT OR REPLACE INTO draft_forms '
+      '(id, factory_id, module, form_data_json, created_by, created_at, updated_at) '
+      'VALUES (?,?,?,?,?,?,?)',
+      [id, factoryId, module, jsonEncode(formData), createdBy, now, now],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getDraft(String id) async {
+    final rows = db.select(
+      'SELECT * FROM draft_forms WHERE id = ? AND factory_id = ?',
+      [id, activeWorkspaceId],
+    );
+    if (rows.isEmpty) return null;
+    final row = _rowToMap(rows.first);
+    row['form_data'] = jsonDecode(row['form_data_json'] as String);
+    return row;
+  }
+
+  Future<List<Map<String, dynamic>>> getDraftsForModule(String module) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final rows = db.select(
+      'SELECT * FROM draft_forms WHERE factory_id = ? AND module = ? ORDER BY updated_at DESC',
+      [factoryId, module],
+    );
+    return rows.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  void deleteDraft(String id) {
+    db.execute('DELETE FROM draft_forms WHERE id = ? AND factory_id = ?', [id, activeWorkspaceId]);
+  }
+
+  // ── Sync Conflicts ────────────────────────────────────────────────────────
+
+  Future<void> recordSyncConflict({
+    required String entityType,
+    required String entityId,
+    required Map<String, dynamic> localPayload,
+    required String serverReason,
+    Map<String, dynamic>? serverState,
+    String? suggestedAction,
+  }) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return;
+    db.execute(
+      'INSERT OR REPLACE INTO sync_conflicts '
+      '(id, factory_id, entity_type, entity_id, local_payload_json, server_reason, '
+      'server_state_json, suggested_action, status, created_at) '
+      'VALUES (?,?,?,?,?,?,?,?,\'pending\',?)',
+      [
+        const Uuid().v4(),
+        factoryId,
+        entityType,
+        entityId,
+        jsonEncode(localPayload),
+        serverReason,
+        serverState != null ? jsonEncode(serverState) : null,
+        suggestedAction,
+        DateTime.now().toIso8601String(),
+      ],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingConflicts() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final rows = db.select(
+      "SELECT * FROM sync_conflicts WHERE factory_id = ? AND status = 'pending' ORDER BY created_at DESC",
+      [factoryId],
+    );
+    return rows.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<void> resolveConflict(String id, String resolution, String reviewer) async {
+    db.execute(
+      'UPDATE sync_conflicts SET status = ?, reviewer = ?, resolved_at = ? WHERE id = ?',
+      [resolution, reviewer, DateTime.now().toIso8601String(), id],
+    );
+  }
+
+  // ── Physical Counts ───────────────────────────────────────────────────────
+
+  Future<void> savePhysicalCount({
+    required String partId,
+    required String stage,
+    required double countedQty,
+    required double systemQty,
+    required String countedBy,
+    String? remarks,
+  }) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return;
+    final variance = countedQty - systemQty;
+    db.execute(
+      'INSERT INTO physical_counts '
+      '(id, factory_id, part_id, stage, counted_qty, system_qty, variance, '
+      'counted_by, counted_at, status, remarks, sync_status) '
+      'VALUES (?,?,?,?,?,?,?,?,?,\'pending\',?,\'pending\')',
+      [
+        const Uuid().v4(), factoryId, partId, stage,
+        countedQty, systemQty, variance, countedBy,
+        DateTime.now().toIso8601String(), remarks,
+      ],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingPhysicalCounts() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final rows = db.select(
+      "SELECT pc.*, p.code as part_code, p.name as part_name "
+      "FROM physical_counts pc "
+      "LEFT JOIN parts p ON p.id = pc.part_id AND p.factory_id = pc.factory_id "
+      "WHERE pc.factory_id = ? AND pc.status = 'pending' "
+      "ORDER BY pc.counted_at DESC",
+      [factoryId],
+    );
+    return rows.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+  }
+
   /// Adds non-destructive columns required by newer application versions.
   void _applyCompatibilityMigrations() {
     final columns = db.select('PRAGMA table_info(sync_queue)');
@@ -296,7 +621,7 @@ class DatabaseService {
     }
     if (!mrNames.contains('shortfall')) {
       db.execute(
-          'ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0');
+          'ALTER TABLE material_receives ADD COLUMN shortfall REAL DEFAULT 0',);
     }
 
     // productions: add good_qty if missing (older DBs)
@@ -306,14 +631,25 @@ class DatabaseService {
       db.execute('ALTER TABLE productions ADD COLUMN good_qty REAL');
       // backfill
       db.execute(
-          'UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL');
+          'UPDATE productions SET good_qty = production_qty - COALESCE(bp_reject_qty, 0) WHERE good_qty IS NULL',);
     }
 
     final apCols = db.select('PRAGMA table_info(ap_inspections)');
     final apNames = apCols.map((r) => r['name'] as String).toSet();
     if (!apNames.contains('rtv_qty')) {
       db.execute(
-          'ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0');
+          'ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0',);
+    }
+
+    final bpCols = db.select('PRAGMA table_info(bp_inspections)');
+    final bpNames = bpCols.map((r) => r['name'] as String).toSet();
+    if (!bpNames.contains('inspected_qty')) {
+      db.execute(
+          'ALTER TABLE bp_inspections ADD COLUMN inspected_qty REAL DEFAULT 0',);
+      db.execute(
+        'UPDATE bp_inspections SET inspected_qty = COALESCE(bp_reject_qty, 0) '
+        'WHERE inspected_qty IS NULL OR inspected_qty = 0',
+      );
     }
 
     final dispatchItemCols = db.select('PRAGMA table_info(dispatch_items)');
@@ -324,6 +660,65 @@ class DatabaseService {
         'ALTER TABLE dispatch_items ADD COLUMN batch_number TEXT',
       );
     }
+
+    // Ensure new tables exist on older installs that pre-date this migration.
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS shifts ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, name TEXT NOT NULL, '
+      'start_time TEXT, end_time TEXT, active INTEGER DEFAULT 1, '
+      'sync_status TEXT DEFAULT \'pending\')',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_shifts_factory ON shifts(factory_id)',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS bp_reject_reasons ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL, '
+      'active INTEGER DEFAULT 1, sync_status TEXT DEFAULT \'pending\')',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS ap_reject_reasons ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL, '
+      'active INTEGER DEFAULT 1, sync_status TEXT DEFAULT \'pending\')',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS rtv_reasons ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, reason TEXT NOT NULL, '
+      'active INTEGER DEFAULT 1, sync_status TEXT DEFAULT \'pending\')',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS draft_forms ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, module TEXT NOT NULL, '
+      'form_data_json TEXT NOT NULL, created_by TEXT, '
+      'created_at TEXT, updated_at TEXT)',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_drafts_factory_module '
+      'ON draft_forms(factory_id, module)',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS sync_conflicts ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, entity_type TEXT, entity_id TEXT, '
+      'local_payload_json TEXT, server_reason TEXT, server_state_json TEXT, '
+      'suggested_action TEXT, status TEXT DEFAULT \'pending\', '
+      'reviewer TEXT, resolved_at TEXT, created_at TEXT)',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_conflicts_factory '
+      'ON sync_conflicts(factory_id, status)',
+    );
+    db.execute(
+      'CREATE TABLE IF NOT EXISTS physical_counts ('
+      'id TEXT PRIMARY KEY, factory_id TEXT, part_id TEXT, stage TEXT, '
+      'counted_qty REAL, system_qty REAL, variance REAL, '
+      'counted_by TEXT, counted_at TEXT, status TEXT DEFAULT \'pending\', '
+      'approved_by TEXT, approved_at TEXT, remarks TEXT, '
+      'sync_status TEXT DEFAULT \'pending\')',
+    );
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_physical_counts_factory '
+      'ON physical_counts(factory_id, status)',
+    );
   }
 
   Future<void> setActiveWorkspaceId(String workspaceId) async {
@@ -331,6 +726,7 @@ class DatabaseService {
       'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
       ['active_workspace_id', workspaceId],
     );
+    await seedDefaultMasterData();
   }
 
   Future<String> getOrCreateDeviceId() async {
@@ -485,8 +881,16 @@ class DatabaseService {
     return map;
   }
 
-  /// Today's production summary in a single query.
-  Future<Map<String, double>> getTodayProductionSummary(String todayStr) async {
+  /// Today's production summary.
+  ///
+  /// In a sequential production flow the same physical piece is processed by
+  /// several machines. Finished production must therefore be counted only at
+  /// the configured final machine; summing every machine would count the same
+  /// piece multiple times. Rejects remain an all-stage operational total.
+  Future<Map<String, double>> getTodayProductionSummary(
+    String todayStr, {
+    String? finalMachineId,
+  }) async {
     final factoryId = activeWorkspaceId;
     if (factoryId.isEmpty) {
       return {
@@ -497,10 +901,11 @@ class DatabaseService {
       };
     }
     final prod = db.select(
-      'SELECT COALESCE(SUM(production_qty),0) AS prod, '
+      'SELECT COALESCE(SUM(CASE '
+      'WHEN (? IS NULL OR machine_id = ?) THEN good_qty ELSE 0 END),0) AS prod, '
       'COALESCE(SUM(bp_reject_qty),0) AS bp_rej '
       'FROM productions WHERE factory_id = ? AND date = ?',
-      [factoryId, todayStr],
+      [finalMachineId, finalMachineId, factoryId, todayStr],
     );
     final ap = db.select(
       'SELECT COALESCE(SUM(rejected_qty),0) AS ap_rej '
@@ -576,7 +981,7 @@ class DatabaseService {
         partId,
         dayOfWeek,
         targetQty,
-        DateTime.now().toIso8601String().substring(0, 10)
+        DateTime.now().toIso8601String().substring(0, 10),
       ],
     );
   }
@@ -970,7 +1375,7 @@ class DatabaseService {
   // ── Purchase Orders ───────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
-      String partId) async {
+      String partId,) async {
     final factoryId = activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final result = db.select(
@@ -986,7 +1391,7 @@ class DatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
-      {int limit = 50}) async {
+      {int limit = 50,}) async {
     final factoryId = activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final result = db.select(

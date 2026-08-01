@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -10,6 +11,7 @@ import '../../core/models/app_user.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/providers/batch_config_provider.dart';
 import '../../core/providers/production_flow_provider.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/services/biometric_service.dart';
 import '../../core/services/data_management_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -17,7 +19,20 @@ import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
 import '../corrections/corrections_screen.dart';
+import '../corrections/conflict_review_screen.dart';
 import 'stock_management_screen.dart';
+
+// ── App version provider ──────────────────────────────────────────────────────
+
+final _appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    // ignore: depend_on_referenced_packages
+    final info = await PackageInfo.fromPlatform();
+    return '${info.version}+${info.buildNumber}';
+  } catch (_) {
+    return AppConstants.appVersion;
+  }
+});
 
 // ── Biometric toggle provider ─────────────────────────────────────────────────────
 
@@ -93,7 +108,7 @@ class _NotifPrefsNotifier extends Notifier<_NotifPrefs> {
   }
 
   Future<void> toggle(bool Function(_NotifPrefs) getter,
-      _NotifPrefs Function(bool) updater, bool val) async {
+      _NotifPrefs Function(bool) updater, bool val,) async {
     await _save(updater(val));
   }
 
@@ -188,7 +203,7 @@ class SettingsScreen extends ConsumerWidget {
                 gradient: LinearGradient(
                   colors: [
                     theme.colorScheme.primaryContainer,
-                    theme.colorScheme.secondaryContainer
+                    theme.colorScheme.secondaryContainer,
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -200,7 +215,7 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute<void>(
-                        builder: (_) => const AccountSettingsScreen())),
+                        builder: (_) => const AccountSettingsScreen(),),),
                 child: Row(
                   children: [
                     _buildAvatar(context, user),
@@ -211,15 +226,15 @@ class SettingsScreen extends ConsumerWidget {
                         children: [
                           Text(user.name,
                               style: theme.textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                                  ?.copyWith(fontWeight: FontWeight.bold),),
                           const SizedBox(height: 2),
                           Text(user.email,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant)),
+                                  color: theme.colorScheme.onSurfaceVariant,),),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
+                                horizontal: 8, vertical: 2,),
                             decoration: BoxDecoration(
                               color: theme.colorScheme.primary
                                   .withValues(alpha: 0.15),
@@ -231,14 +246,14 @@ class SettingsScreen extends ConsumerWidget {
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: theme.colorScheme.primary,
-                                  letterSpacing: 1),
+                                  letterSpacing: 1,),
                             ),
                           ),
                         ],
                       ),
                     ),
                     Icon(Icons.chevron_right,
-                        color: theme.colorScheme.onSurfaceVariant),
+                        color: theme.colorScheme.onSurfaceVariant,),
                   ],
                 ),
               ),
@@ -255,7 +270,7 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                      builder: (_) => const _ProductionTargetsPage())),
+                      builder: (_) => const _ProductionTargetsPage(),),),
             ),
             ListTile(
               leading: const Icon(Icons.account_tree_outlined),
@@ -265,32 +280,32 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                      builder: (_) => const _ProductionFlowPage())),
+                      builder: (_) => const _ProductionFlowPage(),),),
             ),
             const Divider(),
 
             // ── MASTER DATA ──────────────────────────────────────────────────
             const _SectionLabel('Master Data'),
             _masterTile(context, Icons.category_outlined, 'Parts',
-                'Add, edit or remove parts', const _PartsPage()),
+                'Add, edit or remove parts', const _PartsPage(),),
             _masterTile(
                 context,
                 Icons.precision_manufacturing_outlined,
                 'Machines',
                 'Add, reorder & set machine sequence',
-                const _MachinesPage()),
+                const _MachinesPage(),),
             _masterTile(context, Icons.people_outline, 'Operators',
-                'Add or remove operators', const _OperatorsPage()),
+                'Add or remove operators', const _OperatorsPage(),),
             _masterTile(context, Icons.local_shipping_outlined, 'Suppliers',
-                'Material suppliers', const _SuppliersPage()),
+                'Material suppliers', const _SuppliersPage(),),
             _masterTile(context, Icons.store_outlined, 'Vendors (FACO)',
-                'Plating vendors', const _VendorsPage()),
+                'Plating vendors', const _VendorsPage(),),
             _masterTile(context, Icons.business_outlined, 'Customers',
-                'Final dispatch customers', const _CustomersPage()),
+                'Final dispatch customers', const _CustomersPage(),),
             _masterTile(context, Icons.person_outlined, 'Drivers',
-                'Add or remove drivers', const _DriversPage()),
+                'Add or remove drivers', const _DriversPage(),),
             _masterTile(context, Icons.directions_car_outlined, 'Vehicles',
-                'Number plates', const _VehiclesPage()),
+                'Number plates', const _VehiclesPage(),),
             const Divider(),
           ],
 
@@ -300,25 +315,25 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Theme'),
             subtitle: Text(
-                themeMode.name[0].toUpperCase() + themeMode.name.substring(1)),
+                themeMode.name[0].toUpperCase() + themeMode.name.substring(1),),
             trailing: SegmentedButton<ThemeMode>(
               segments: const [
                 ButtonSegment(
                     value: ThemeMode.light,
-                    icon: Icon(Icons.light_mode, size: 18)),
+                    icon: Icon(Icons.light_mode, size: 18),),
                 ButtonSegment(
                     value: ThemeMode.system,
-                    icon: Icon(Icons.brightness_auto, size: 18)),
+                    icon: Icon(Icons.brightness_auto, size: 18),),
                 ButtonSegment(
                     value: ThemeMode.dark,
-                    icon: Icon(Icons.dark_mode, size: 18)),
+                    icon: Icon(Icons.dark_mode, size: 18),),
               ],
               selected: {themeMode},
               onSelectionChanged: (s) =>
                   ref.read(themeModeProvider.notifier).setThemeMode(s.first),
               style: const ButtonStyle(
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact),
+                  visualDensity: VisualDensity.compact,),
             ),
           ),
           SwitchListTile(
@@ -342,7 +357,7 @@ class SettingsScreen extends ConsumerWidget {
                     title: const Text('Biometric Lock'),
                     subtitle: Text(available
                         ? 'Fingerprint / face unlock'
-                        : 'Not available on this device'),
+                        : 'Not available on this device',),
                     value: biometricAsync.value ?? false,
                     onChanged: available
                         ? (val) async {
@@ -375,13 +390,13 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                    builder: (_) => const _NotificationsPage())),
+                    builder: (_) => const _NotificationsPage(),),),
           ),
           const Divider(),
 
           // ── SYSTEM ───────────────────────────────────────────────────────
           const _SectionLabel('System'),
-          if (canApproveCorrections)
+          if (canApproveCorrections) ...[
             ListTile(
               leading: const Icon(Icons.gavel_outlined),
               title: const Text('Correction Requests'),
@@ -390,8 +405,19 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                      builder: (_) => const CorrectionsScreen())),
+                      builder: (_) => const CorrectionsScreen(),),),
             ),
+            ListTile(
+              leading: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              title: const Text('Sync Conflicts'),
+              subtitle: const Text('Review and resolve failed sync records'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                      builder: (_) => const ConflictReviewScreen(),),),
+            ),
+          ],
           if (canManageFactory)
             ListTile(
               leading: const Icon(Icons.inventory_2_outlined),
@@ -413,7 +439,7 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                    builder: (_) => const _DatabaseSyncStatusPage())),
+                    builder: (_) => const _DatabaseSyncStatusPage(),),),
           ),
           if (canManageFactory)
             ListTile(
@@ -425,14 +451,14 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                      builder: (_) => const _EraseDataPage())),
+                      builder: (_) => const _EraseDataPage(),),),
             ),
           if (user != null)
             ListTile(
               leading:
                   const Icon(Icons.no_accounts_outlined, color: Colors.red),
               title: const Text('Delete My Account',
-                  style: TextStyle(color: Colors.red)),
+                  style: TextStyle(color: Colors.red),),
               subtitle: const Text('Remove access and clear local data'),
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
@@ -440,10 +466,16 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── ABOUT ────────────────────────────────────────────────────────
           const _SectionLabel('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('ProFlow Manufacturing ERP'),
-            subtitle: Text('FactoryFlow v1.0.0'),
+          Consumer(
+            builder: (context, ref, _) {
+              final version = ref.watch(_appVersionProvider).value
+                  ?? AppConstants.appVersion;
+              return ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('ProFlow Manufacturing ERP'),
+                subtitle: Text('FactoryFlow v$version'),
+              );
+            },
           ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
@@ -616,12 +648,12 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
                       onPressed: () => _showEditDialog(
-                          op['id'] as String, op['name'] as String),
+                          op['id'] as String, op['name'] as String,),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () => _confirmDelete(
-                          op['id'] as String, op['name'] as String),
+                          op['id'] as String, op['name'] as String,),
                     ),
                   ],
                 ),
@@ -868,7 +900,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
                   child: Text(
                     p['code'] as String,
                     style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.bold),
+                        fontSize: 11, fontWeight: FontWeight.bold,),
                   ),
                 ),
                 title: Text(p['name'] as String),
@@ -887,7 +919,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () => _confirmDelete(
-                          p['id'] as String, p['name'] as String),
+                          p['id'] as String, p['name'] as String,),
                     ),
                   ],
                 ),
@@ -900,7 +932,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
   }
 
   Future<void> _showEditDialog(
-      String? id, String? currentCode, String? currentName) async {
+      String? id, String? currentCode, String? currentName,) async {
     String? resultCode;
     String? resultName;
     await showDialog<void>(
@@ -911,8 +943,9 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty)
+              if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) {
                 return;
+              }
               resultCode = codeCtrl.text.trim();
               resultName = nameCtrl.text.trim();
               Navigator.pop(ctx);
@@ -1034,12 +1067,12 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                   child: Text(
                     m['machine_code'] as String? ?? '?',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 12),
+                        fontWeight: FontWeight.bold, fontSize: 12,),
                   ),
                 ),
                 title: Text(m['name'] as String),
                 subtitle: Text(
-                    'Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}'),
+                    'Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}',),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1055,7 +1088,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () => _confirmDelete(
-                          m['id'] as String, m['name'] as String),
+                          m['id'] as String, m['name'] as String,),
                     ),
                     const Icon(Icons.drag_handle, color: Colors.grey),
                   ],
@@ -1087,8 +1120,9 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty)
+              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty) {
                 return;
+              }
               resultName = nameCtrl.text.trim();
               resultCode = codeCtrl.text.trim().toUpperCase();
               resultSeq = int.tryParse(seqCtrl.text.trim()) ?? 1;
@@ -1272,7 +1306,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
+                    child: const Text('Cancel'),),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1524,7 +1558,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
+                    child: const Text('Cancel'),),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1598,7 +1632,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
               final plate = v['number_plate'] as String? ?? '—';
               return ListTile(
                 leading: const CircleAvatar(
-                    child: Icon(Icons.directions_car_outlined, size: 18)),
+                    child: Icon(Icons.directions_car_outlined, size: 18),),
                 title: Text(plate),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1654,7 +1688,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
+                    child: const Text('Cancel'),),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1804,7 +1838,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                   Row(
                     children: [
                       const Icon(Icons.storage_rounded,
-                          color: Colors.blue, size: 28),
+                          color: Colors.blue, size: 28,),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1826,7 +1860,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                            horizontal: 10, vertical: 4,),
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
@@ -1835,13 +1869,13 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.check_circle,
-                                size: 14, color: Colors.green),
+                                size: 14, color: Colors.green,),
                             SizedBox(width: 4),
                             Text('Active & Saved',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.green,
-                                    fontWeight: FontWeight.bold)),
+                                    fontWeight: FontWeight.bold,),),
                           ],
                         ),
                       ),
@@ -1894,7 +1928,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                               style: TextStyle(
                                   fontSize: 12,
                                   color:
-                                      isOnline ? Colors.indigo : Colors.grey),
+                                      isOnline ? Colors.indigo : Colors.grey,),
                             ),
                           ],
                         ),
@@ -2056,36 +2090,38 @@ class _ProductionFlowPage extends ConsumerWidget {
               value: ProductionMode.multiStageSequential,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null)
+                if (m != null) {
                   ref
                       .read(productionFlowProvider.notifier)
                       .setProductionMode(m);
+                }
               },
               title: const Text('Multi-Stage Sequential Flow (Recommended)'),
               subtitle: const Text(
-                  'Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.'),
+                  'Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.',),
             ),
             RadioListTile<ProductionMode>(
               value: ProductionMode.directSingleStage,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null)
+                if (m != null) {
                   ref
                       .read(productionFlowProvider.notifier)
                       .setProductionMode(m);
+                }
               },
               title: const Text('Direct Single-Stage Mode'),
               subtitle: const Text(
-                  'Every machine entry immediately counts as completed final production.'),
+                  'Every machine entry immediately counts as completed final production.',),
             ),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.block_outlined, color: Colors.orange),
               title: const Text(
-                  'Require Final Machine Completion for Vendor Dispatch'),
+                  'Require Final Machine Completion for Vendor Dispatch',),
               subtitle: const Text(
-                  'Prevent vendor dispatch for batches that have not completed the final sequence machine.'),
+                  'Prevent vendor dispatch for batches that have not completed the final sequence machine.',),
               value: flow.requireFinalMachineForDispatch,
               onChanged: (v) => ref
                   .read(productionFlowProvider.notifier)
@@ -2126,7 +2162,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                                     style: const TextStyle(
                                         fontSize: 10,
                                         color: Colors.white,
-                                        fontWeight: FontWeight.bold),
+                                        fontWeight: FontWeight.bold,),
                                   ),
                                 )
                               : null,
@@ -2174,13 +2210,13 @@ class _ProductionFlowPage extends ConsumerWidget {
                 child: Row(
                   children: [
                     const Icon(Icons.check_circle_outline,
-                        color: Colors.green, size: 18),
+                        color: Colors.green, size: 18,),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
                         style: const TextStyle(
-                            color: Colors.green, fontWeight: FontWeight.w600),
+                            color: Colors.green, fontWeight: FontWeight.w600,),
                       ),
                     ),
                   ],
@@ -2490,7 +2526,7 @@ class _ProductionTargetsPageState
     }
     final id = existing?['id'] as String? ?? const Uuid().v4();
     db.upsertTarget(
-        id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty);
+        id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty,);
     _targetMap.putIfAbsent(_selectedPartId!, () => {});
     _targetMap[_selectedPartId!]![day] = {'id': id, 'qty': qty};
   }
@@ -2504,7 +2540,7 @@ class _ProductionTargetsPageState
     if (firstVal == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Enter a target for at least one day first.')),
+            content: Text('Enter a target for at least one day first.'),),
       );
       return;
     }
@@ -2521,8 +2557,9 @@ class _ProductionTargetsPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (_loading)
+    if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     if (_parts.isEmpty) {
       return Scaffold(
@@ -2596,7 +2633,7 @@ class _ProductionTargetsPageState
                   child: Row(
                     children: [
                       Icon(Icons.info_outline,
-                          size: 16, color: theme.colorScheme.primary),
+                          size: 16, color: theme.colorScheme.primary,),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -2604,7 +2641,7 @@ class _ProductionTargetsPageState
                           'Tap "Apply to All Days" to copy one value to all 7 days instantly.',
                           style: TextStyle(
                               fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant),
+                              color: theme.colorScheme.onSurfaceVariant,),
                         ),
                       ),
                     ],
@@ -2683,7 +2720,7 @@ class _ProductionTargetsPageState
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
+                                    horizontal: 8, vertical: 3,),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(4),
@@ -2692,7 +2729,7 @@ class _ProductionTargetsPageState
                                     style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.green,
-                                        fontWeight: FontWeight.bold)),
+                                        fontWeight: FontWeight.bold,),),
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -2707,7 +2744,7 @@ class _ProductionTargetsPageState
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
+                                    horizontal: 8, vertical: 3,),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.10),
                                   borderRadius: BorderRadius.circular(4),
@@ -2716,7 +2753,7 @@ class _ProductionTargetsPageState
                                     style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.red,
-                                        fontWeight: FontWeight.bold)),
+                                        fontWeight: FontWeight.bold,),),
                               ),
                             ),
                           ],
@@ -2732,12 +2769,12 @@ class _ProductionTargetsPageState
                   children: [
                     Text('Weekly Total Target',
                         style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
+                            ?.copyWith(fontWeight: FontWeight.bold),),
                     Text('$totalWeekTarget PCS',
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: theme.colorScheme.primary,
-                            fontSize: 16)),
+                            fontSize: 16,),),
                   ],
                 ),
                 const SizedBox(height: 32),

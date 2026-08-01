@@ -1,5 +1,56 @@
 # Documentation Changelog
 
+## v3.2-dev - 2026-08-01
+- Enabled `atomicProductionSyncEnabled = true` — server ledger baseline
+  reconciled per doc 18; atomic production sync is now active.
+- Added versioned local schema migration system: `schema_version` tracked in
+  `app_settings`; current version stamped as `2` on fresh install and upgrade.
+- Added Supabase migration `20260801000001_dispatch_sessions_and_conflict_review`
+  aligning server schema with local `dispatch_sessions`/`dispatch_items` model
+  and adding `sync_conflicts` table with RLS.
+- Built `ConflictReviewScreen` — tabbed Pending/Resolved view with Admin
+  Mark-Resolved and Cancel actions; accessible from Settings → System.
+- Created `AlertProducerService` with four producers: low AP stock, RTV
+  pending, target miss (< 80%), and open machine downtime.
+- Wired alert producers into `MaterialReceiveRepository`,
+  `FinalDispatchRepository`, `RtvRepository`, and `MachineDowntimeRepository`
+  via fire-and-forget `unawaited` calls after successful saves.
+- `AppShell` now implements `WidgetsBindingObserver` and calls
+  `AlertProducerService.checkAll()` on every app resume.
+- Added `package_info_plus: ^8.1.3` dependency; Settings About tile now reads
+  version from pubspec at runtime via `_appVersionProvider` with
+  `AppConstants.appVersion` as fallback.
+
+- Added missing DB tables: `shifts`, `bp_reject_reasons`, `ap_reject_reasons`,
+  `rtv_reasons`, `draft_forms`, `sync_conflicts`, `physical_counts` — both
+  local SQLite (via `_createTables` + `_applyCompatibilityMigrations`) and
+  Supabase (migration `20260731000001_shifts_reasons_conflicts_drafts.sql`).
+- `setActiveWorkspaceId` now calls `seedDefaultMasterData` so fresh installs
+  automatically get A/B/C shifts and all PRD 15.2 reject reasons without
+  requiring manual SQL seeding.
+- Added `shiftsProvider`, `bpRejectReasonsProvider`, `apRejectReasonsProvider`,
+  `rtvReasonsProvider` Riverpod providers in `master_data_providers.dart`.
+- `syncMasterDataFromSupabase` now pulls shifts and all three reason tables
+  from Supabase alongside existing master tables.
+- Production shift selector (`_buildShiftSelector`) now reads from DB shifts
+  table; falls back to hardcoded A/B/C only when DB has no rows.
+- BP/AP/RTV providers replaced hardcoded `kBpRejectReasons` / `kApRejectReasons`
+  / `kRtvReasons` constants with live DB providers (`bpRejectReasonsListProvider`,
+  `apRejectReasonsListProvider`, `rtvReasonsListProvider`) that fall back to
+  defaults when DB is empty.
+- Dashboard stock grid: removed duplicate "Finished Goods" card (was showing
+  same value as AP Approved); added correct "At Faco (Plating)" and
+  "Pending AP Inspection" cards with proper icons.
+- Dashboard KPI list: added "Pending AP Inspection" tile and "Pending Correction
+  Approvals" tile; fixed RTV label to "RTV Outstanding".
+- Sync conflicts now recorded in `sync_conflicts` table (with entity type, local
+  payload, server reason, suggested action) instead of only marking
+  `sync_status = 'conflict'` on the source row.
+- `eraseEverything` updated to include all new tables and previously missing
+  tables (`dispatch_sessions`, `dispatch_items`, `ap_rejected_actions`,
+  `sync_conflicts`, `draft_forms`).
+- Supabase migration adds RLS, grants, and default seed data for all new tables.
+
 ## v3.0-dev - 2026-07-30
 - Audited the installed Settings flow on the connected TECNO device and traced
   every visible option through its provider, local database, sync queue, and
