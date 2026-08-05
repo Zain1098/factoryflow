@@ -26,6 +26,24 @@ const _kSessionCreatedKey = 'ff_session_created';
 const _kSessionProviderKey = 'ff_auth_provider';
 const _kSessionMaxAge = Duration(days: 14);
 
+String _safeAuthMessage(Object error, {required String fallback}) {
+  final message = error.toString().toLowerCase();
+  if (message.contains('otp_expired') ||
+      message.contains('token has expired') ||
+      message.contains('invalid or expired')) {
+    return 'This code has expired or was already used. Request a new code and enter the newest one.';
+  }
+  if (message.contains('nonce') || message.contains('reauthentication')) {
+    return 'The security code is invalid or expired. Request a new code and try again.';
+  }
+  if (message.contains('rate_limit') ||
+      message.contains('over_email_send_rate_limit') ||
+      message.contains('429')) {
+    return 'Too many email requests. Please wait a few minutes before trying again.';
+  }
+  return fallback;
+}
+
 // ─── Supabase guard ───────────────────────────────────────────────────────────
 
 bool get _supabaseReady {
@@ -47,11 +65,13 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
   return Supabase.instance.client.auth.onAuthStateChange;
 });
 
-final passwordRecoveryPendingProvider = NotifierProvider<_BoolNotifier, bool>(_BoolNotifier.new);
+final passwordRecoveryPendingProvider =
+    NotifierProvider<_BoolNotifier, bool>(_BoolNotifier.new);
 
 class _BoolNotifier extends Notifier<bool> {
   @override
   bool build() => false;
+  void setPending(bool value) => state = value;
 }
 
 // ─── Google Sign-In ───────────────────────────────────────────────────────────
@@ -69,17 +89,21 @@ Future<void> initGoogleSignIn() async {
 
 // ─── Secure local session storage ────────────────────────────────────────────
 
-const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
+const _secureStorage = FlutterSecureStorage();
 
 Future<void> _saveLocalSession(AppUser user) async {
   await _secureStorage.write(
-      key: _kSessionKey, value: jsonEncode(user.toJson()),);
+    key: _kSessionKey,
+    value: jsonEncode(user.toJson()),
+  );
   await _secureStorage.write(
-      key: _kSessionCreatedKey, value: DateTime.now().toIso8601String(),);
+    key: _kSessionCreatedKey,
+    value: DateTime.now().toIso8601String(),
+  );
   await _secureStorage.write(
-      key: _kSessionProviderKey, value: user.authProvider,);
+    key: _kSessionProviderKey,
+    value: user.authProvider,
+  );
 }
 
 Future<AppUser?> _loadLocalSession() async {
@@ -121,7 +145,6 @@ class AuthRepository {
 
   User? get currentAuthUser => _client?.auth.currentUser;
 
-  /// Email/password sign-in.
   Future<AppUser?> signIn({
     required String email,
     required String password,
@@ -129,7 +152,8 @@ class AuthRepository {
     final client = _client;
     if (client == null) {
       throw Exception(
-          'Server not configured. Use offline login or contact admin.',);
+        'Server not configured. Use offline login or contact admin.',
+      );
     }
     final response = await client.auth.signInWithPassword(
       email: email,
@@ -137,7 +161,17 @@ class AuthRepository {
     );
     final userId = response.user?.id;
     if (userId == null) return null;
-    final user = await _fetchAppUser(client, userId);
+    var user = await _fetchAppUser(client, userId);
+    // Auth can succeed for accounts created before workspace provisioning was
+    // enabled (or when provisioning was interrupted). Repair that account
+    // before returning null, otherwise the login screen cannot open the app.
+    user ??= await _provisionMissingAppUser(
+      client,
+      userId: userId,
+      profileName: response.user?.userMetadata?['profile_name'] as String? ??
+          response.user?.email?.split('@').first ??
+          email.split('@').first,
+    );
     if (user != null && !user.active) {
       await client.auth.signOut();
       await _clearLocalSession();
@@ -149,16 +183,11 @@ class AuthRepository {
     return signedInUser;
   }
 
-  /// Google Sign-In.
-  /// Web: uses Supabase OAuth redirect (google_sign_in doesn't support web).
-  /// Mobile: uses google_sign_in package + signInWithIdToken.
   Future<AppUser?> signInWithGoogle() async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
 
     if (kIsWeb) {
-      // Triggers browser redirect — Supabase handles the OAuth callback.
-      // The auth state stream will fire on return; caller gets null here.
       await client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: Uri.base.origin,
@@ -166,7 +195,6 @@ class AuthRepository {
       return null;
     }
 
-    // Mobile path
     try {
       final googleUser = await _googleSignIn.authenticate();
       final googleAuth = googleUser.authentication;
@@ -225,10 +253,8 @@ class AuthRepository {
     }
   }
 
-  /// Returns cached local session — no network needed.
   Future<AppUser?> getLocalSession() => _loadLocalSession();
 
-  /// Try to refresh from Supabase; fall back to local session silently.
   Future<AppUser?> getCurrentAppUser() async {
     final local = await _loadLocalSession();
     final client = _client;
@@ -237,21 +263,41 @@ class AuthRepository {
         final authUser = client.auth.currentUser!;
         var remote = await _fetchAppUser(client, authUser.id);
         final provider = authUser.appMetadata['provider'];
-        if (remote == null && provider == 'google') {
+        if (remote == null) {
           final metadata = authUser.userMetadata ?? const <String, dynamic>{};
-          await client.rpc('handle_google_auth_user', params: {
-            'p_user_id': authUser.id,
-            'p_email': authUser.email ?? '',
-            'p_name': metadata['full_name'] ??
-                metadata['name'] ??
-                authUser.email?.split('@').first ??
-                'User',
-            'p_avatar_url': metadata['avatar_url'] ??
-                metadata['picture'] ??
-                '',
-            'p_workspace_name': 'My Workspace',
-          },);
+          if (provider == 'google') {
+            await client.rpc(
+              'handle_google_auth_user',
+              params: {
+                'p_user_id': authUser.id,
+                'p_email': authUser.email ?? '',
+                'p_name': metadata['full_name'] ??
+                    metadata['name'] ??
+                    authUser.email?.split('@').first ??
+                    'User',
+                'p_avatar_url':
+                    metadata['avatar_url'] ?? metadata['picture'] ?? '',
+                'p_workspace_name': 'My Workspace',
+              },
+            );
+          } else {
+            await _provisionMissingAppUser(
+              client,
+              userId: authUser.id,
+              profileName: metadata['profile_name'] as String? ??
+                  metadata['name'] as String? ??
+                  authUser.email?.split('@').first ??
+                  'User',
+            );
+          }
           remote = await _fetchAppUser(client, authUser.id);
+        }
+        if (remote != null && !remote.active) {
+          await _clearLocalSession();
+          try {
+            await client.auth.signOut(scope: SignOutScope.local);
+          } catch (_) {}
+          return null;
         }
         if (remote != null) {
           final restored = remote.copyWith(
@@ -262,10 +308,12 @@ class AuthRepository {
           await _saveLocalSession(restored);
           return restored;
         }
-      } catch (_) {
-        // Offline startup keeps the last verified local session usable.
-      }
+      } catch (_) {}
     }
+    // Never reuse a cached profile belonging to a different authenticated
+    // account (common on shared factory devices after account switching).
+    final remoteId = client?.auth.currentUser?.id;
+    if (remoteId != null && local?.id != remoteId) return null;
     return local;
   }
 
@@ -301,8 +349,6 @@ class AuthRepository {
     await db.setActiveWorkspaceId(user.factoryId);
   }
 
-  /// Sign up: creates auth user, immediately signs in to get a valid JWT,
-  /// then calls the RPC (which needs auth.uid() to be set).
   Future<AppUser?> signUp({
     required String email,
     required String password,
@@ -313,7 +359,6 @@ class AuthRepository {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
 
-    // Step 1: Create auth user
     AuthResponse response;
     try {
       response = await client.auth.signUp(
@@ -331,13 +376,13 @@ class AuthRepository {
     if (userId == null) {
       throw Exception('Sign-up failed: email may already be registered.');
     }
-
-    // Step 2: Sign in only if signUp didn't return a session.
-    if (response.session == null) {
-      return null;
+    if (response.user?.identities?.isEmpty ?? false) {
+      throw Exception(
+        'This email is already registered. Please sign in or use reset password.',
+      );
     }
+    if (response.session == null) return null;
 
-    // Step 3: Call RPC — auth.uid() is now valid
     Map result;
     try {
       result = await client.rpc(
@@ -352,8 +397,6 @@ class AuthRepository {
     }
 
     final workspaceIdStr = result['workspace_id'] as String;
-
-    // Step 4: Persist locally
     await db.upsertWorkspace(
       id: workspaceIdStr,
       name: workspaceName,
@@ -399,10 +442,13 @@ class AuthRepository {
       throw Exception('Email verification did not create a valid session.');
     }
 
-    final result = await client.rpc('create_user_workspace', params: {
-      'p_profile_name': profileName,
-      'p_workspace_name': workspaceName,
-    },);
+    final result = await client.rpc(
+      'create_user_workspace',
+      params: {
+        'p_profile_name': profileName,
+        'p_workspace_name': workspaceName,
+      },
+    );
     final workspaceId = (result as Map)['workspace_id'] as String;
     await db.upsertWorkspace(
       id: workspaceId,
@@ -436,22 +482,88 @@ class AuthRepository {
     await client.auth.resend(email: email, type: OtpType.signup);
   }
 
-  Future<void> sendPasswordResetEmail(String email) async {
+  // ── Forgot password (OTP-based) ───────────────────────────────────────────
+
+  Future<void> sendPasswordResetOtp(String email) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    await client.auth.resetPasswordForEmail(
-      email,
-      redirectTo: 'com.proflow.factoryflow://login-callback',
-    );
+    await client.auth.resetPasswordForEmail(email, redirectTo: null);
   }
 
-  /// Sends Supabase Auth's real reauthentication OTP to the signed-in user's
-  /// verified email. No OTP is generated or returned to the mobile client.
-  Future<void> sendReauthenticationOtp() async {
+  Future<void> verifyPasswordResetOtp({
+    required String email,
+    required String token,
+  }) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    final response = await client.auth.verifyOTP(
+      email: email,
+      token: token,
+      type: OtpType.recovery,
+    );
+    final recoverySession = response.session;
+    final refreshToken = recoverySession?.refreshToken;
+    if (recoverySession == null ||
+        refreshToken == null ||
+        refreshToken.isEmpty) {
+      throw Exception('Invalid or expired OTP code.');
+    }
+    // Ensure the recovery JWT returned by verifyOTP is the active client
+    // session before the next screen calls updateUser().
+    await client.auth.setSession(refreshToken);
+  }
+
+  Future<void> completePasswordReset(String newPassword) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    if (client.auth.currentSession == null) {
+      throw Exception('Recovery session expired. Request a new code.');
+    }
+    await client.auth.updateUser(UserAttributes(password: newPassword));
+    // The recovery session is short-lived and must not become a persistent
+    // authenticated session on a shared factory device.
+    try {
+      await client.auth.signOut(scope: SignOutScope.local);
+    } finally {
+      await _clearLocalSession();
+    }
+  }
+
+  // ── Account settings — email/password change (reauthentication OTP) ──────
+
+  /// Sends reauthentication OTP to signed-in user's current email.
+  Future<void> sendReauthOtp() async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
     await client.auth.reauthenticate();
   }
+
+  /// Verifies reauth OTP then updates email.
+  Future<String> verifyAndUpdateEmail({
+    required String nonce,
+    required String newEmail,
+  }) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    final response = await client.auth.updateUser(
+      UserAttributes(email: newEmail, nonce: nonce),
+    );
+    return response.user?.email ?? newEmail;
+  }
+
+  /// Verifies reauth OTP then updates password.
+  Future<void> verifyAndUpdatePassword({
+    required String nonce,
+    required String newPassword,
+  }) async {
+    final client = _client;
+    if (client == null) throw Exception('Server not configured.');
+    await client.auth.updateUser(
+      UserAttributes(password: newPassword, nonce: nonce),
+    );
+  }
+
+  // ── Profile ───────────────────────────────────────────────────────────────
 
   Future<void> updateProfile({
     required String userId,
@@ -467,27 +579,6 @@ class AuthRepository {
         'p_name': name,
         'p_avatar_url': avatarUrl,
       },
-    );
-  }
-
-  Future<String> updateAuthEmail({
-    required String newEmail,
-    required String nonce,
-  }) async {
-    final client = _client;
-    if (client == null) throw Exception('Server not configured.');
-    final response = await client.auth.updateUser(
-      UserAttributes(email: newEmail, nonce: nonce),
-    );
-    return response.user?.email ?? newEmail;
-  }
-
-  Future<void> changePassword(String newPassword,
-      {required String nonce,}) async {
-    final client = _client;
-    if (client == null) throw Exception('Server not configured.');
-    await client.auth.updateUser(
-      UserAttributes(password: newPassword, nonce: nonce),
     );
   }
 
@@ -520,6 +611,23 @@ class AuthRepository {
     return AppUser.fromJson(data);
   }
 
+  Future<AppUser?> _provisionMissingAppUser(
+    SupabaseClient client, {
+    required String userId,
+    required String profileName,
+  }) async {
+    final result = await client.rpc(
+      'create_user_workspace',
+      params: {
+        'p_profile_name': profileName.trim().isEmpty ? 'User' : profileName,
+        'p_workspace_name': 'My Workspace',
+      },
+    );
+    final workspaceId = (result as Map)['workspace_id'] as String?;
+    if (workspaceId == null || workspaceId.isEmpty) return null;
+    return _fetchAppUser(client, userId);
+  }
+
   Future<void> signOut() async {
     await _clearLocalSession();
     try {
@@ -544,27 +652,27 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
     ref.listen(authStateProvider, (_, next) {
       final authState = next.value;
       if (authState == null) return;
-      if (authState.event == AuthChangeEvent.passwordRecovery) {
-        ref.read(passwordRecoveryPendingProvider.notifier).state = true;
-      }
       if (authState.event == AuthChangeEvent.signedIn ||
           authState.event == AuthChangeEvent.tokenRefreshed ||
           authState.event == AuthChangeEvent.userUpdated) {
         unawaited(refresh());
       } else if (authState.event == AuthChangeEvent.signedOut) {
-        // Keep the 14-day local session when Supabase signs out (expired
-        // refresh token / offline). Only clear after explicit signOut().
         unawaited(_restoreLocalSessionAfterRemoteSignOut());
       }
     });
-    final user =
-        await ref.read(authRepositoryProvider).getCurrentAppUser();
+    final user = await ref.read(authRepositoryProvider).getCurrentAppUser();
     if (user != null) _onSessionRestored();
     return user;
   }
 
   Future<void> _restoreLocalSessionAfterRemoteSignOut() async {
     final local = await ref.read(authRepositoryProvider).getLocalSession();
+    // A password-recovery sign-out can be delivered after a user has already
+    // completed a new password sign-in. Never let that stale event clear the
+    // freshly authenticated session and redirect the user back to Login.
+    final hasNewRemoteSession =
+        ref.read(supabaseClientProvider)?.auth.currentSession != null;
+    if (hasNewRemoteSession) return;
     if (local != null) {
       state = AsyncData(local);
       _onSessionRestored();
@@ -601,8 +709,6 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
         _onLoginSuccess();
         return user;
       }
-      // Web OAuth redirects away; keep prior session until callback lands.
-      // Mobile returning null is an error — surface as no profile.
       return kIsWeb ? previous : user;
     });
   }
@@ -758,57 +864,70 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
     }
   }
 
+  /// Step 1: Send reauth OTP to current email
   Future<String?> sendEmailChangeOtp(String newEmail) async {
-    final user = ref.read(currentUserProvider).value;
-    if (user == null) return 'Not logged in';
+    if (ref.read(currentUserProvider).value == null) return 'Not logged in';
     try {
-      await ref.read(authRepositoryProvider).sendReauthenticationOtp();
+      await ref.read(authRepositoryProvider).sendReauthOtp();
       return null;
     } catch (e) {
-      return e.toString();
+      return _safeAuthMessage(
+        e,
+        fallback: 'Could not send a security code. Please try again.',
+      );
     }
   }
 
+  /// Step 2: Verify OTP then update email
   Future<String?> verifyEmailChangeOtp(String code, String newEmail) async {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
       final confirmedEmail = await ref
           .read(authRepositoryProvider)
-          .updateAuthEmail(newEmail: newEmail, nonce: code);
+          .verifyAndUpdateEmail(nonce: code, newEmail: newEmail);
       await ref
           .read(currentUserProvider.notifier)
           .refreshUser(user.copyWith(email: confirmedEmail));
       return null;
     } catch (e) {
-      return e.toString();
+      return _safeAuthMessage(
+        e,
+        fallback: 'Could not update your email. Please try again.',
+      );
     }
   }
 
+  /// Step 1: Send reauth OTP to current email
   Future<String?> sendPasswordChangeOtp(String newPassword) async {
-    final user = ref.read(currentUserProvider).value;
-    if (user == null) return 'Not logged in';
+    if (ref.read(currentUserProvider).value == null) return 'Not logged in';
     try {
-      await ref.read(authRepositoryProvider).sendReauthenticationOtp();
+      await ref.read(authRepositoryProvider).sendReauthOtp();
       return null;
     } catch (e) {
-      return e.toString();
+      return _safeAuthMessage(
+        e,
+        fallback: 'Could not send a security code. Please try again.',
+      );
     }
   }
 
+  /// Step 2: Verify OTP then update password
   Future<String?> verifyPasswordChangeOtp(
     String code,
     String newPassword,
   ) async {
-    final user = ref.read(currentUserProvider).value;
-    if (user == null) return 'Not logged in';
+    if (ref.read(currentUserProvider).value == null) return 'Not logged in';
     try {
       await ref
           .read(authRepositoryProvider)
-          .changePassword(newPassword, nonce: code);
+          .verifyAndUpdatePassword(nonce: code, newPassword: newPassword);
       return null;
     } catch (e) {
-      return e.toString();
+      return _safeAuthMessage(
+        e,
+        fallback: 'Could not update your password. Please try again.',
+      );
     }
   }
 }

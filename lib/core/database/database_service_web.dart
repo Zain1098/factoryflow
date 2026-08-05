@@ -98,6 +98,60 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getDrivers() async =>
       List<Map<String, dynamic>>.from(_tables['drivers'] ?? []);
 
+  Future<List<Map<String, dynamic>>> getActiveShifts() async =>
+      List<Map<String, dynamic>>.from(_tables['shifts'] ?? []);
+
+  Future<List<Map<String, dynamic>>> getActiveBpRejectReasons() async =>
+      List<Map<String, dynamic>>.from(_tables['bp_reject_reasons'] ?? []);
+
+  Future<List<Map<String, dynamic>>> getActiveApRejectReasons() async =>
+      List<Map<String, dynamic>>.from(_tables['ap_reject_reasons'] ?? []);
+
+  Future<List<Map<String, dynamic>>> getActiveRtvReasons() async =>
+      List<Map<String, dynamic>>.from(_tables['rtv_reasons'] ?? []);
+
+  List<Map<String, dynamic>> getTargets() =>
+      List<Map<String, dynamic>>.from(_tables['target_master'] ?? []);
+
+  void upsertTarget({
+    required String id,
+    required String partId,
+    required int dayOfWeek,
+    required int targetQty,
+  }) {
+    _tables.putIfAbsent('target_master', () => []);
+    final list = _tables['target_master']!;
+    final idx = list.indexWhere((r) => r['id'] == id);
+    final row = {
+      'id': id,
+      'factory_id': activeWorkspaceId,
+      'part_id': partId,
+      'day_of_week': dayOfWeek,
+      'target_qty': targetQty,
+    };
+    if (idx >= 0) {
+      list[idx] = row;
+    } else {
+      list.add(row);
+    }
+  }
+
+  void deleteTarget(String id) {
+    _tables['target_master']?.removeWhere((r) => r['id'] == id);
+  }
+
+  Future<void> recordSyncConflict({
+    required String entityType,
+    required String entityId,
+    required Map<String, dynamic> localPayload,
+    required String serverReason,
+    Map<String, dynamic>? serverState,
+    String? suggestedAction,
+  }) async {}
+
+  Future<void> resolveConflict(
+      String id, String resolution, String reviewer,) async {}
+
   // ── Workspace methods ────────────────────────────────────────────────────
 
   Future<void> setActiveWorkspaceId(String workspaceId) async {

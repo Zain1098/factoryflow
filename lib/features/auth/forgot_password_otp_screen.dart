@@ -3,32 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'auth_providers.dart';
 
-class SignupVerificationScreen extends ConsumerStatefulWidget {
-  const SignupVerificationScreen({
+class ForgotPasswordOtpScreen extends ConsumerStatefulWidget {
+  const ForgotPasswordOtpScreen({
     super.key,
     required this.email,
-    required this.profileName,
-    required this.workspaceName,
   });
 
   final String email;
-  final String profileName;
-  final String workspaceName;
 
   @override
-  ConsumerState<SignupVerificationScreen> createState() =>
-      _SignupVerificationScreenState();
+  ConsumerState<ForgotPasswordOtpScreen> createState() =>
+      _ForgotPasswordOtpScreenState();
 }
 
-class _SignupVerificationScreenState
-    extends ConsumerState<SignupVerificationScreen> {
+class _ForgotPasswordOtpScreenState
+    extends ConsumerState<ForgotPasswordOtpScreen> {
   final _otpController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
   bool _verifying = false;
   bool _resending = false;
-  int _cooldownSeconds = 0;
+  bool _obscure = true;
+  int _cooldownSeconds = 60;
   Timer? _timer;
   String? _error;
 
@@ -42,6 +42,8 @@ class _SignupVerificationScreenState
   void dispose() {
     _timer?.cancel();
     _otpController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
     super.dispose();
   }
 
@@ -59,40 +61,65 @@ class _SignupVerificationScreenState
     });
   }
 
-  Future<void> _verify() async {
+  Future<void> _resetPassword() async {
     final token = _otpController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmController.text;
+
     if (!RegExp(r'^\d{6,10}$').hasMatch(token)) {
       setState(
         () => _error = 'Enter the 6 to 10 digit code sent to your email.',
       );
       return;
     }
+    if (password.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters long.');
+      return;
+    }
+    if (password != confirm) {
+      setState(() => _error = 'Passwords do not match.');
+      return;
+    }
+
     setState(() {
       _verifying = true;
       _error = null;
     });
-    await ref.read(currentUserProvider.notifier).verifySignUpOtp(
-          email: widget.email,
-          token: token,
-          profileName: widget.profileName,
-          workspaceName: widget.workspaceName,
-        );
-    if (!mounted) return;
-    final state = ref.read(currentUserProvider);
-    if (state.hasError || state.value == null) {
-      final rawError = state.error?.toString() ?? '';
-      String userError = 'Verification failed. Check the code and try again.';
-      if (rawError.contains('invalid') || rawError.contains('expired')) {
-        userError =
-            'Invalid or expired code. Please enter the code again or resend.';
+
+    try {
+      await ref.read(authRepositoryProvider).verifyPasswordResetOtp(
+            email: widget.email,
+            token: token,
+          );
+      await ref.read(authRepositoryProvider).completePasswordReset(password);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset successfully. Please sign in.'),
+        ),
+      );
+      if (mounted) context.go('/login');
+    } catch (e) {
+      if (mounted) {
+        final errStr = e.toString();
+        String userError = 'Password reset failed.';
+        if (errStr.contains('same_password')) {
+          userError =
+              'Your new password must be different from the previous password.';
+        } else if (errStr.contains('invalid') ||
+            errStr.contains('expired') ||
+            errStr.contains('otp')) {
+          userError =
+              'Invalid or expired OTP code. Please check the code and try again.';
+        } else {
+          userError = errStr.replaceAll('Exception: ', '');
+        }
+        setState(() {
+          _verifying = false;
+          _error = userError;
+        });
       }
-      setState(() {
-        _verifying = false;
-        _error = userError;
-      });
-      return;
     }
-    Navigator.of(context).pop();
   }
 
   Future<void> _resend() async {
@@ -102,25 +129,23 @@ class _SignupVerificationScreenState
       _error = null;
     });
     try {
-      await ref.read(authRepositoryProvider).resendSignUpOtp(widget.email);
+      await ref.read(authRepositoryProvider).sendPasswordResetOtp(widget.email);
       if (mounted) {
         _startCooldownTimer(60);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('A new verification code was sent to your email.'),
+            content: Text('A new OTP code was sent to your email.'),
           ),
         );
       }
     } catch (error) {
       if (mounted) {
         final errStr = error.toString();
-        if (errStr.contains('rate_limit') ||
-            errStr.contains('429') ||
-            errStr.contains('Email rate limit')) {
+        if (errStr.contains('rate_limit') || errStr.contains('429')) {
           _error =
-              'Email limit reached (3 per hour for test SMTP). Please wait a few minutes or check your inbox/spam folder.';
+              'Rate limit reached. Please wait a few minutes before resending.';
         } else {
-          _error = 'Could not send verification code: $error';
+          _error = 'Could not resend OTP: $error';
         }
       }
     } finally {
@@ -132,7 +157,7 @@ class _SignupVerificationScreenState
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify your email')),
+      appBar: AppBar(title: const Text('Reset Password OTP')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(24),
@@ -141,14 +166,14 @@ class _SignupVerificationScreenState
               radius: 34,
               backgroundColor: theme.colorScheme.primaryContainer,
               child: Icon(
-                Icons.mark_email_read_outlined,
+                Icons.lock_reset_outlined,
                 size: 34,
                 color: theme.colorScheme.onPrimaryContainer,
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              'Check your inbox & spam folder',
+              'Enter OTP & New Password',
               textAlign: TextAlign.center,
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w700,
@@ -156,7 +181,7 @@ class _SignupVerificationScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'Enter the verification code sent to ${widget.email}.\nYour company workspace will be created automatically upon verification.',
+              'Enter the verification code sent to ${widget.email} and create your new password.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -171,7 +196,6 @@ class _SignupVerificationScreenState
               textAlign: TextAlign.center,
               maxLength: 10,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onSubmitted: (_) => _verify(),
               style: theme.textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.w700,
                 letterSpacing: 8,
@@ -183,8 +207,37 @@ class _SignupVerificationScreenState
                 prefixIcon: Icon(Icons.password_outlined),
               ),
             ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscure,
+              enabled: !_verifying,
+              decoration: InputDecoration(
+                labelText: 'New password (min 8 chars)',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _confirmController,
+              obscureText: _obscure,
+              enabled: !_verifying,
+              onSubmitted: (_) => _resetPassword(),
+              decoration: const InputDecoration(
+                labelText: 'Confirm new password',
+                prefixIcon: Icon(Icons.verified_user_outlined),
+              ),
+            ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -199,16 +252,17 @@ class _SignupVerificationScreenState
                 ),
               ),
             ],
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _verifying ? null : _verify,
+              onPressed: _verifying ? null : _resetPassword,
               icon: _verifying
                   ? const SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.verified_user_outlined),
-              label: Text(_verifying ? 'Verifying...' : 'Verify and continue'),
+                  : const Icon(Icons.check_circle_outline),
+              label:
+                  Text(_verifying ? 'Resetting Password...' : 'Reset Password'),
             ),
             const SizedBox(height: 10),
             TextButton(
@@ -219,8 +273,8 @@ class _SignupVerificationScreenState
                 _resending
                     ? 'Sending...'
                     : _cooldownSeconds > 0
-                        ? 'Resend code in ${_cooldownSeconds}s'
-                        : 'Resend code',
+                        ? 'Resend OTP in ${_cooldownSeconds}s'
+                        : 'Resend OTP',
               ),
             ),
           ],

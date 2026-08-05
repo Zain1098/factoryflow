@@ -2,6 +2,7 @@ import 'package:factoryflow/core/constants/stock_stages.dart';
 import 'package:factoryflow/core/constants/user_roles.dart';
 import 'package:factoryflow/core/database/database_service_native.dart';
 import 'package:factoryflow/core/network/sync_service.dart';
+import 'package:factoryflow/core/services/alert_producer_service.dart';
 import 'package:factoryflow/core/services/stock_ledger_service.dart';
 import 'package:factoryflow/features/ap_inspection/ap_inspection_providers.dart';
 import 'package:factoryflow/features/final_dispatch/final_dispatch_providers.dart';
@@ -16,6 +17,7 @@ void main() {
   late DatabaseService databaseService;
   late SyncService syncService;
   late StockLedgerService ledgerService;
+  late AlertProducerService alertProducerService;
 
   setUp(() async {
     sqliteDatabase = sqlite3.openInMemory();
@@ -26,6 +28,7 @@ void main() {
       onlineCheck: () async => false,
     );
     ledgerService = StockLedgerService(databaseService, syncService);
+    alertProducerService = AlertProducerService(databaseService);
   });
 
   tearDown(() {
@@ -62,7 +65,7 @@ void main() {
       END
     ''');
     final repository =
-        MaterialReceiveRepository(databaseService, syncService, ledgerService);
+        MaterialReceiveRepository(databaseService, syncService, ledgerService, alertProducerService);
 
     final result = await repository.save(
       partId: 'part-a',
@@ -271,7 +274,7 @@ void main() {
       qty: 10,
     );
     final repository =
-        RtvRepository(databaseService, syncService, ledgerService);
+        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
 
     final saved = await repository.save(
       batchNumber: 'BATCH-A',
@@ -334,7 +337,7 @@ void main() {
       qty: 10,
     );
     final repository =
-        RtvRepository(databaseService, syncService, ledgerService);
+        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
     final sent = await repository.save(
       batchNumber: 'BATCH-A',
       partId: 'part-a',
@@ -404,7 +407,7 @@ void main() {
       qty: 5,
     );
     final repository =
-        RtvRepository(databaseService, syncService, ledgerService);
+        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
 
     final returned = await repository.saveReinspection(
       rtvId: 'rtv-cycle-3',
@@ -469,7 +472,7 @@ void main() {
       'sync_status': 'synced',
     });
     final repository =
-        FinalDispatchRepository(databaseService, syncService, ledgerService);
+        FinalDispatchRepository(databaseService, syncService, ledgerService, alertProducerService);
 
     final blocked = await repository.saveDispatchSession(
       customerId: 'customer-a',

@@ -6,6 +6,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/network/sync_service.dart';
 import 'auth_providers.dart';
 import 'signup_verification_screen.dart';
+import 'reset_password_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -24,7 +25,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   bool _obscure = true;
   bool _isResetting = false;
   bool _isSignUp = false;
-
   late final AnimationController _anim;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -121,8 +121,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     }
     setState(() => _isResetting = true);
     try {
-      await ref.read(authRepositoryProvider).sendPasswordResetEmail(email);
-      if (mounted) _showSuccess('Reset email sent to $email');
+      await ref.read(authRepositoryProvider).sendPasswordResetOtp(email);
+      if (!mounted) return;
+      // Navigate to OTP + new password screen
+      final success = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => ResetPasswordScreen(email: email),
+        ),
+      );
+      if (mounted && success == true) {
+        _showSuccess('Password updated! Please sign in.');
+      }
     } catch (e) {
       if (mounted) _showError(_friendlyError(e));
     } finally {
@@ -135,6 +144,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   String _friendlyError(Object? e) {
     final msg = e?.toString() ?? '';
     debugPrint('🔴 AUTH ERROR: $msg'); // always log to terminal
+    if (msg.contains('over_email_send_rate_limit') ||
+        msg.contains('rate_limit') ||
+        msg.contains('Email rate limit') ||
+        msg.contains('429')) {
+      return 'Email rate limit reached (3 per hour for default SMTP). Please wait a few minutes or check your spam folder.';
+    }
     if (msg.contains('Invalid login') || msg.contains('invalid_credentials')) {
       return 'Incorrect email or password.';
     }
@@ -199,8 +214,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_outline,
-                color: Colors.white, size: 18,),
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Expanded(child: Text(msg)),
           ],
@@ -267,7 +285,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           const SizedBox(height: 16),
 
                         _buildCard(
-                            theme, isDark, isLoading, connected && isOnline,),
+                          theme,
+                          isDark,
+                          isLoading,
+                          connected && isOnline,
+                        ),
                         const SizedBox(height: 12),
 
                         // Divider + Google button
@@ -493,7 +515,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildCard(
-      ThemeData theme, bool isDark, bool isLoading, bool connected,) {
+    ThemeData theme,
+    bool isDark,
+    bool isLoading,
+    bool connected,
+  ) {
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E2329) : Colors.white,
@@ -550,7 +576,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   labelText: 'Your Name',
                   prefixIcon: const Icon(Icons.person_outline),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Name is required' : null,
@@ -564,7 +591,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   labelText: 'Company / Workspace Name',
                   prefixIcon: const Icon(Icons.business_outlined),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 validator: (v) => (v == null || v.trim().isEmpty)
                     ? 'Workspace name is required'

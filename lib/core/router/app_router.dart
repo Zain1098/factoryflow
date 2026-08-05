@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../constants/user_roles.dart';
 import '../../features/auth/auth_providers.dart';
 import '../../features/auth/login_screen.dart';
-import '../../features/auth/reset_password_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/material_receive/material_receive_screen.dart';
 import '../../features/production/production_page.dart';
@@ -39,19 +38,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = userAsync.value != null;
       final isLoading = userAsync.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
-      final isRecoveryRoute = state.matchedLocation == '/reset-password';
-      final recoveryPending = ref.read(passwordRecoveryPendingProvider);
-
-      if (recoveryPending && !isRecoveryRoute) return '/reset-password';
-      if (isRecoveryRoute && !recoveryPending) {
-        return isLoggedIn ? '/dashboard' : '/login';
-      }
 
       // Don't redirect while loading initial session
       if (isLoading) return null;
 
       // Not logged in → go to login
-      if (!isLoggedIn && !isLoginRoute && !isRecoveryRoute) return '/login';
+      if (!isLoggedIn && !isLoginRoute) return '/login';
 
       // Logged in → skip login screen
       if (isLoggedIn && isLoginRoute) return '/dashboard';
@@ -72,10 +64,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-      GoRoute(
-        path: '/reset-password',
-        builder: (_, __) => const ResetPasswordScreen(),
-      ),
+
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
