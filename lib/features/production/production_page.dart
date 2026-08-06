@@ -616,14 +616,37 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
           )
         else
           ..._sessionEntries.map(
-            (entry) => Card(
-              child: ListTile(
-                title: Text(entry.machineName),
-                subtitle: Text(
-                    '${entry.operatorName} · Input ${entry.productionQty.toInt()} · OK ${entry.goodQty.toInt()}',),
-                trailing: Text('${entry.rejectQty.toInt()} reject'),
-              ),
-            ),
+            (entry) {
+              final entryIndex = _sessionEntries.indexOf(entry);
+              return Card(
+                child: ListTile(
+                  title: Text(entry.machineName),
+                  subtitle: Text(
+                      '${entry.operatorName} · Input ${entry.productionQty.toInt()} · OK ${entry.goodQty.toInt()}',),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${entry.rejectQty.toInt()} reject'),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Edit machine entry',
+                        onPressed: () => _showAddEntryModal(
+                          existingEntry: entry,
+                          index: entryIndex,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Remove machine entry',
+                        onPressed: () => setState(
+                          () => _sessionEntries.removeAt(entryIndex),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         const SizedBox(height: 12),
         FilledButton.icon(
@@ -1440,12 +1463,25 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
         seqMachines.any((machine) => machine['id'] == existingEntry.machineId);
 
     // Determine default machine selection
+    final lastSessionMachineId = _sessionEntries.isNotEmpty
+        ? _sessionEntries.last.machineId
+        : null;
+    final nextSessionMachineId = lastSessionMachineId == null
+        ? null
+        : flow.getNextMachineId(lastSessionMachineId);
+    final firstUnusedMachineId = seqMachines
+        .map((machine) => machine['id'] as String)
+        .firstWhere(
+          (machineId) =>
+              !_sessionEntries.any((entry) => entry.machineId == machineId),
+          orElse: () => seqMachines.first['id'] as String,
+        );
     String localMachineId = existingMachineAvailable
         ? existingEntry.machineId
         : (_wipDoneMachineIds.isNotEmpty
             ? (flow.getNextMachineId(_wipDoneMachineIds.last) ??
-                seqMachines.first['id'] as String)
-            : seqMachines.first['id'] as String);
+                firstUnusedMachineId)
+            : (nextSessionMachineId ?? firstUnusedMachineId));
 
     // Calculate maximum allowed production qty based on previous stage
     double? maxAllowedProdQty;
@@ -1455,6 +1491,20 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       maxAllowedProdQty = _sessionEntries[index - 1].goodQty;
     } else if (index == null && _sessionEntries.isNotEmpty) {
       maxAllowedProdQty = _sessionEntries.last.goodQty;
+    }
+
+    // A first-stage entry must also be bounded by currently available raw
+    // material. This prevents an apparently valid quantity (for example 450)
+    // from failing only after the operator presses Save.
+    if (maxAllowedProdQty == null && _partId != null) {
+      try {
+        maxAllowedProdQty = await ref.read(
+          productionRawMaterialProvider(_partId!).future,
+        );
+      } catch (_) {
+        // The save path performs the authoritative stock check. Keep the
+        // modal usable if the read-only preview is temporarily unavailable.
+      }
     }
 
     final prodCtrl = TextEditingController(
@@ -1828,6 +1878,22 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                 SnackBar(
                                   content: Text(
                                     'Production Qty (${enteredProd.toInt()}) exceeds previous stage good Qty (${maxAllowedProdQty.toInt()} PCS).',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            final duplicateMachine = _sessionEntries.any(
+                              (entry) =>
+                                  entry.machineId == localMachineId &&
+                                  entry != existingEntry,
+                            );
+                            if (duplicateMachine) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'This machine is already added for this batch. Select the next machine stage.',
                                   ),
                                 ),
                               );

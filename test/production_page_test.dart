@@ -170,4 +170,35 @@ void main() {
     expect(button.onPressed, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('added machine entry can be edited from the active page',
+      (tester) async {
+    await pumpProductionPage(
+      tester,
+      rawMaterialQty: 500,
+      loadParts: () async => [
+        {
+          'id': 'part-v21',
+          'code': 'V21',
+          'name': 'Valve Part',
+          'uom': 'PCS',
+          'active': 1,
+        },
+      ],
+    );
+
+    await tester.tap(find.text('Select finished part'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('V21'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Add machine entry'), 250);
+    await tester.tap(find.text('Add machine entry'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Machine Entry to List'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Edit machine entry'), findsOneWidget);
+    expect(find.byTooltip('Remove machine entry'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
