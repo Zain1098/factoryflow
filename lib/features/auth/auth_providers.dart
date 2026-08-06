@@ -24,6 +24,7 @@ final supabaseConnectedProvider = Provider<bool>((ref) => false);
 const _kSessionKey = 'ff_local_session';
 const _kSessionCreatedKey = 'ff_session_created';
 const _kSessionProviderKey = 'ff_auth_provider';
+const _kPendingSignupKey = 'ff_pending_signup';
 const _kSessionMaxAge = Duration(days: 14);
 
 String _safeAuthMessage(Object error, {required String fallback}) {
@@ -136,6 +137,39 @@ Future<void> _clearLocalSession() async {
   await _secureStorage.deleteAll();
 }
 
+Future<void> _savePendingSignup({
+  required String email,
+  required String profileName,
+  required String workspaceName,
+}) async {
+  await _secureStorage.write(
+    key: _kPendingSignupKey,
+    value: jsonEncode({
+      'email': email.trim().toLowerCase(),
+      'profile_name': profileName.trim(),
+      'workspace_name': workspaceName.trim(),
+    }),
+  );
+}
+
+Future<Map<String, String>?> _loadPendingSignup(String? email) async {
+  try {
+    final raw = await _secureStorage.read(key: _kPendingSignupKey);
+    if (raw == null || email == null) return null;
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    if (data['email'] != email.trim().toLowerCase()) return null;
+    return {
+      'profile_name': data['profile_name'] as String? ?? '',
+      'workspace_name': data['workspace_name'] as String? ?? '',
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _clearPendingSignup() =>
+    _secureStorage.delete(key: _kPendingSignupKey);
+
 // ─── Auth Repository ──────────────────────────────────────────────────────────
 
 class AuthRepository {
@@ -240,6 +274,11 @@ class AuthRepository {
 
       final appUser = await _fetchAppUser(client, userId);
       if (appUser != null) {
+        if (!appUser.active) {
+          await _clearLocalSession();
+          await client.auth.signOut(scope: SignOutScope.local);
+          throw Exception('This account is no longer active.');
+        }
         final signedInUser = appUser.copyWith(
           authProvider: 'google',
           avatarUrl: googleUser.photoUrl ?? appUser.avatarUrl,
@@ -300,6 +339,23 @@ class AuthRepository {
           return null;
         }
         if (remote != null) {
+          final authEmail = authUser.email?.trim().toLowerCase();
+          if (authEmail != null &&
+              authEmail.isNotEmpty &&
+              authEmail != remote.email.trim().toLowerCase()) {
+            try {
+              await client.rpc(
+                'sync_user_email',
+                params: {
+                  'p_user_id': authUser.id,
+                  'p_new_email': authEmail,
+                },
+              );
+              remote = remote.copyWith(email: authEmail);
+            } catch (_) {
+              // Profile sync should not block a valid Auth session.
+            }
+          }
           final restored = remote.copyWith(
             authProvider: provider == 'google' ? 'google' : 'email',
             sessionCreatedAt: local?.sessionCreatedAt,
@@ -381,6 +437,11 @@ class AuthRepository {
         'This email is already registered. Please sign in or use reset password.',
       );
     }
+    await _savePendingSignup(
+      email: email,
+      profileName: profileName,
+      workspaceName: workspaceName,
+    );
     if (response.session == null) return null;
 
     Map result;
@@ -411,6 +472,7 @@ class AuthRepository {
       syncStatus: 'synced',
     );
     await db.setActiveWorkspaceId(workspaceIdStr);
+    await _clearPendingSignup();
 
     final user = AppUser(
       id: userId,
@@ -464,6 +526,7 @@ class AuthRepository {
       syncStatus: 'synced',
     );
     await db.setActiveWorkspaceId(workspaceId);
+    await _clearPendingSignup();
 
     final user = AppUser(
       id: userId,
@@ -545,10 +608,12 @@ class AuthRepository {
   }) async {
     final client = _client;
     if (client == null) throw Exception('Server not configured.');
-    final response = await client.auth.updateUser(
+    await client.auth.updateUser(
       UserAttributes(email: newEmail, nonce: nonce),
     );
-    return response.user?.email ?? newEmail;
+    // With double confirmation enabled, public.users must not be changed
+    // until Supabase Auth reports the new email as confirmed.
+    return newEmail;
   }
 
   /// Verifies reauth OTP then updates password.
@@ -591,8 +656,8 @@ class AuthRepository {
     try {
       final file = io.File(filePath);
       final bytes = await file.readAsBytes();
-      final ext = filePath.split('.').last;
-      final storagePath = 'avatars/$userId.$ext';
+      final ext = filePath.split('.').last.toLowerCase();
+      final storagePath = '$userId/avatar.$ext';
       await client.storage.from('avatars').uploadBinary(
             storagePath,
             bytes,
@@ -616,16 +681,25 @@ class AuthRepository {
     required String userId,
     required String profileName,
   }) async {
+    final pending = await _loadPendingSignup(client.auth.currentUser?.email);
+    final pendingProfile = pending?['profile_name'];
+    final pendingWorkspace = pending?['workspace_name'];
     final result = await client.rpc(
       'create_user_workspace',
       params: {
-        'p_profile_name': profileName.trim().isEmpty ? 'User' : profileName,
-        'p_workspace_name': 'My Workspace',
+        'p_profile_name': (pendingProfile ?? profileName).trim().isEmpty
+            ? 'User'
+            : (pendingProfile ?? profileName).trim(),
+        'p_workspace_name': (pendingWorkspace ?? 'My Workspace').trim().isEmpty
+            ? 'My Workspace'
+            : (pendingWorkspace ?? 'My Workspace').trim(),
       },
     );
     final workspaceId = (result as Map)['workspace_id'] as String?;
     if (workspaceId == null || workspaceId.isEmpty) return null;
-    return _fetchAppUser(client, userId);
+    final user = await _fetchAppUser(client, userId);
+    if (user != null) await _clearPendingSignup();
+    return user;
   }
 
   Future<void> signOut() async {
@@ -883,12 +957,9 @@ class AccountSettingsNotifier extends AsyncNotifier<void> {
     final user = ref.read(currentUserProvider).value;
     if (user == null) return 'Not logged in';
     try {
-      final confirmedEmail = await ref
+      await ref
           .read(authRepositoryProvider)
           .verifyAndUpdateEmail(nonce: code, newEmail: newEmail);
-      await ref
-          .read(currentUserProvider.notifier)
-          .refreshUser(user.copyWith(email: confirmedEmail));
       return null;
     } catch (e) {
       return _safeAuthMessage(

@@ -22,6 +22,32 @@ import '../corrections/corrections_screen.dart';
 import '../corrections/conflict_review_screen.dart';
 import 'stock_management_screen.dart';
 
+Future<bool> _runSettingsAction(
+  BuildContext context,
+  Future<void> Function() action, {
+  String successMessage = 'Saved on this device. Cloud sync will retry automatically.',
+}) async {
+  try {
+    await action();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(successMessage)));
+    }
+    return true;
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Could not save this change. Check workspace and try again.'),
+          backgroundColor: Colors.red,
+        ));
+    }
+    return false;
+  }
+}
+
 // ── App version provider ──────────────────────────────────────────────────────
 
 final _appVersionProvider = FutureProvider<String>((ref) async {
@@ -181,7 +207,21 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    final user = ref.watch(currentUserProvider).value;
+    final userState = ref.watch(currentUserProvider);
+    if (userState.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (userState.hasError) {
+      return const Scaffold(
+        body: EmptyState(
+          message: 'Profile could not load. Please reopen Settings.',
+          icon: Icons.account_circle_outlined,
+        ),
+      );
+    }
+    final user = userState.value;
     final showBatchNumber = ref.watch(batchConfigProvider);
     final theme = Theme.of(context);
     final canManageFactory = user?.role.canManageMasters ?? false;
@@ -624,7 +664,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       body: operators.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -711,9 +751,9 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertOperator(resultName!);
+      await _runSettingsAction(context, () => repo.insertOperator(resultName!));
     } else {
-      await repo.updateOperator(id, resultName!);
+      await _runSettingsAction(context, () => repo.updateOperator(id, resultName!));
     }
   }
 
@@ -726,7 +766,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateOperator(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateOperator(id), successMessage: 'Operator removed from this device.');
   }
 }
 
@@ -749,7 +789,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       body: suppliers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -840,9 +880,9 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertSupplier(resultName!);
+      await _runSettingsAction(context, () => repo.insertSupplier(resultName!));
     } else {
-      await repo.updateSupplier(id, resultName!);
+      await _runSettingsAction(context, () => repo.updateSupplier(id, resultName!));
     }
   }
 
@@ -855,7 +895,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateSupplier(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateSupplier(id), successMessage: 'Supplier removed from this device.');
   }
 }
 
@@ -880,7 +920,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       body: parts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -997,9 +1037,9 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     if (resultCode == null || resultName == null) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertPart(code: resultCode!, name: resultName!);
+      await _runSettingsAction(context, () => repo.insertPart(code: resultCode!, name: resultName!));
     } else {
-      await repo.updatePart(id, code: resultCode!, name: resultName!);
+      await _runSettingsAction(context, () => repo.updatePart(id, code: resultCode!, name: resultName!));
     }
   }
 
@@ -1012,7 +1052,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivatePart(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivatePart(id), successMessage: 'Part removed from this device.');
   }
 }
 
@@ -1037,7 +1077,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       body: machines.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1053,9 +1093,11 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
               final item = reordered.removeAt(oldIndex);
               reordered.insert(newIndex, item);
               final repo = ref.read(masterDataRepositoryProvider);
-              for (var i = 0; i < reordered.length; i++) {
-                await repo.reorderMachine(reordered[i]['id'] as String, i + 1);
-              }
+              await _runSettingsAction(context, () async {
+                for (var i = 0; i < reordered.length; i++) {
+                  await repo.reorderMachine(reordered[i]['id'] as String, i + 1);
+                }
+              }, successMessage: 'Machine order saved on this device.');
             },
             itemBuilder: (context, i) {
               final m = list[i];
@@ -1187,13 +1229,13 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
 
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertMachine(
+      await _runSettingsAction(context, () => repo.insertMachine(
         name: resultName!,
         machineCode: resultCode!,
         sequenceOrder: resultSeq ?? 1,
-      );
+      ));
     } else {
-      await repo.updateMachine(id, name: resultName!, machineCode: resultCode!);
+      await _runSettingsAction(context, () => repo.updateMachine(id, name: resultName!, machineCode: resultCode!));
     }
   }
 
@@ -1206,7 +1248,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateMachine(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateMachine(id), successMessage: 'Machine removed from this device.');
   }
 }
 
@@ -1231,7 +1273,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       body: vendors.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1325,9 +1367,9 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
     // Insert using masterDataRepository — vendors table already exists in DB
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repository.insertVendorByName(resultName!);
+      await _runSettingsAction(context, () => repository.insertVendorByName(resultName!));
     } else {
-      await repository.updateVendor(id, resultName!);
+      await _runSettingsAction(context, () => repository.updateVendor(id, resultName!));
     }
   }
 
@@ -1340,7 +1382,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateVendor(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateVendor(id), successMessage: 'Vendor removed from this device.');
   }
 }
 
@@ -1366,7 +1408,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
       body: customers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => EmptyState(
-          message: 'Customers could not load: $error',
+          message: 'Unable to load customers. Try again.',
           icon: Icons.error_outline,
         ),
         data: (items) {
@@ -1454,9 +1496,9 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
     if (result == null) return;
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repository.insertCustomer(result);
+      await _runSettingsAction(context, () => repository.insertCustomer(result));
     } else {
-      await repository.updateCustomer(id, result);
+      await _runSettingsAction(context, () => repository.updateCustomer(id, result));
     }
   }
 
@@ -1470,7 +1512,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateCustomer(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateCustomer(id), successMessage: 'Customer removed from this device.');
   }
 }
 
@@ -1493,7 +1535,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       body: drivers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1576,9 +1618,9 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertDriver(resultName!);
+      await _runSettingsAction(context, () => repo.insertDriver(resultName!));
     } else {
-      await repo.updateDriver(id, resultName!);
+      await _runSettingsAction(context, () => repo.updateDriver(id, resultName!));
     }
   }
 
@@ -1591,7 +1633,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateDriver(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateDriver(id), successMessage: 'Driver removed from this device.');
   }
 }
 
@@ -1616,7 +1658,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       body: vehicles.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) =>
-            EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            const EmptyState(message: 'Unable to load this section. Try again.', icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1706,9 +1748,9 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
     if (resultPlate == null || resultPlate!.isEmpty) return;
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repository.insertVehicle(resultPlate!);
+      await _runSettingsAction(context, () => repository.insertVehicle(resultPlate!));
     } else {
-      await repository.updateVehicle(id, resultPlate!);
+      await _runSettingsAction(context, () => repository.updateVehicle(id, resultPlate!));
     }
   }
 
@@ -1721,7 +1763,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateVehicle(id);
+    await _runSettingsAction(context, () => ref.read(masterDataRepositoryProvider).deactivateVehicle(id), successMessage: 'Vehicle removed from this device.');
   }
 }
 
@@ -1808,12 +1850,22 @@ Future<void> _confirmDeleteAccount(
 
 // ─── Database & Sync Status Page ──────────────────────────────────────────────
 
-class _DatabaseSyncStatusPage extends ConsumerWidget {
+class _DatabaseSyncStatusPage extends ConsumerStatefulWidget {
   const _DatabaseSyncStatusPage();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pendingCount = ref.watch(pendingSyncCountProvider).value ?? 0;
+  ConsumerState<_DatabaseSyncStatusPage> createState() =>
+      _DatabaseSyncStatusPageState();
+}
+
+class _DatabaseSyncStatusPageState
+    extends ConsumerState<_DatabaseSyncStatusPage> {
+  bool _syncing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingState = ref.watch(pendingSyncCountProvider);
+    final pendingCount = pendingState.value;
     final isOnline = ref.watch(isOnlineProvider);
     final theme = Theme.of(context);
 
@@ -1851,7 +1903,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                             ),
                             const SizedBox(height: 2),
                             const Text(
-                              'Engine: SQLite (Native High Speed)',
+                              'Engine: Local device storage',
                               style:
                                   TextStyle(fontSize: 12, color: Colors.grey),
                             ),
@@ -1883,7 +1935,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Data Guarantee: All machines, parts, and production logs are IMMEDIATELY saved in your device SQLite database. Your data is 100% safe even when offline.',
+                    'Changes are saved locally first, so you can keep working offline. Cloud sync will retry when the account and connection are ready.',
                     style: TextStyle(fontSize: 13, height: 1.4),
                   ),
                 ],
@@ -1942,15 +1994,15 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                       const Text('Pending Sync Items in Queue:'),
                       Chip(
                         label: Text(
-                          '$pendingCount records',
+                          pendingCount == null ? 'Checking…' : '$pendingCount pending',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: pendingCount > 0
+                            color: (pendingCount ?? 0) > 0
                                 ? Colors.orange.shade800
                                 : Colors.green.shade800,
                           ),
                         ),
-                        backgroundColor: pendingCount > 0
+                        backgroundColor: (pendingCount ?? 0) > 0
                             ? Colors.orange.withValues(alpha: 0.15)
                             : Colors.green.withValues(alpha: 0.15),
                       ),
@@ -2002,9 +2054,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Why did "Sync Failed" appear earlier?\n'
-                    'Cloud sync runs in the background when cloud account is connected. '
-                    'If cloud sync is unreachable, local SQLite storage keeps all your machine & setting entries safe on this device!',
+                    'If sync fails, your local change stays on this device. Reconnect the account or internet, then use “Sync pending now”. Conflicts need an admin review.',
                     style: TextStyle(fontSize: 12, height: 1.4),
                   ),
                 ),
@@ -2138,7 +2188,7 @@ class _ProductionFlowPage extends ConsumerWidget {
             ),
             machines.when(
               loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => const Text('Machines could not load. Try again.'),
               data: (list) {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

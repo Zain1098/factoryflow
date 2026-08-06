@@ -1,5 +1,47 @@
 # Settings Audit and Hardening - 2026-07-30
 
+## Update - 2026-08-06: Settings sync repair
+
+The settings/sync failure path was repaired after a code scan found that
+background sync exceptions could escape into the Flutter error surface, manual
+sync could report success while records had failed, and the pending queue was
+not consistently scoped to the active workspace.
+
+### Implemented in the app
+
+- Native and web queues now keep only the latest pending update for a local
+  record, reducing duplicate replay after long offline sessions.
+- Pending queue reads and counts are filtered by the active workspace. A queue
+  item whose workspace no longer matches is recorded as a conflict instead of
+  being sent under the current account.
+- Supabase insert, update, and delete operations now request the affected row
+  and reject empty results. Deletes include the workspace filter.
+- Background and reconnect sync failures are contained and logged instead of
+  bubbling into a settings/error page.
+- Missing workspace IDs now produce a recoverable save message rather than a
+  silent queue drop.
+- Web preview mode now maintains a functional in-memory sync queue instead of
+  reporting a permanently empty queue.
+- Settings master-data actions show a compact local-save/remove confirmation
+  or a user-friendly retry message. Raw Supabase/SQL exception text is no
+  longer shown in the main master-data screens.
+- Production-flow preference writes roll back in-memory state when the local
+  preference write fails.
+- Sync status copy now describes local-first behavior without claiming that
+  every platform uses native SQLite.
+
+### Verification boundary
+
+`git diff --check` passed. Dart formatting and targeted Flutter analysis were
+attempted on 2026-08-06 but timed out because of the existing Dart/Flutter
+process hang on this laptop. No analyzer or device-runtime pass is claimed
+until a fresh Flutter process completes those checks.
+
+Remote Supabase migration history, RLS behavior, Edge Function deployment,
+and a real online/offline device CRUD flow still require post-push validation.
+The app changes are local code changes until that remote/device verification is
+completed.
+
 ## Scope
 
 Combined functional, UX, permission, offline, and data-safety review of the

@@ -67,3 +67,22 @@ a real factory rollout.
    change.
 5. Confirm that raw server errors and tokens never appear in the app UI or
    logs shown to end users.
+
+## Account deletion and audit deployment
+
+Account deletion keeps the old `public.users`, `backup_records`, and
+`account_audit_log` rows for the admin panel, then removes only the matching
+Supabase Auth user so the email can be registered again. The Auth removal is
+implemented in the server-only `delete-account` Edge Function; never put a
+Supabase secret/service-role key in Flutter or `.env` values shipped to users.
+
+Deploy after applying the latest migration:
+
+```bash
+supabase functions deploy delete-account
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-server-only-key
+```
+
+The function refuses to delete an Auth user unless `public.users.active` is
+already false. Profile, email, activation, and deletion changes are recorded
+by the `account_audit_log` trigger.

@@ -1075,6 +1075,15 @@ class DatabaseService {
     required String operation,
     required Map<String, dynamic> payload,
   }) async {
+    // Keep only the latest pending update for the same local row. This avoids
+    // replaying every keystroke/toggle after a long offline session.
+    if (operation == 'update') {
+      db.execute(
+        "DELETE FROM sync_queue WHERE table_name = ? AND record_id = ? "
+        "AND operation = 'update' AND status = 'pending'",
+        [tableName, recordId],
+      );
+    }
     db.execute(
       'INSERT INTO sync_queue (table_name, record_id, operation, payload, created_at) '
       'VALUES (?, ?, ?, ?, ?)',
@@ -1092,17 +1101,40 @@ class DatabaseService {
     final result = db.select(
       "SELECT * FROM sync_queue WHERE status = 'pending' "
       'AND (next_retry_at IS NULL OR next_retry_at <= ?) '
-      'ORDER BY created_at LIMIT 50',
+      'ORDER BY created_at',
       [DateTime.now().toIso8601String()],
     );
-    return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
+    final workspaceId = activeWorkspaceId.trim();
+    if (workspaceId.isEmpty) return const [];
+    return result
+        .map(_rowToMap)
+        .where((row) {
+          try {
+            final payload = jsonDecode(row['payload'] as String);
+            return payload is Map && payload['factory_id'] == workspaceId;
+          } catch (_) {
+            return false;
+          }
+        })
+        .take(50)
+        .toList()
+        .cast<Map<String, dynamic>>();
   }
 
   Future<int> countPendingSync() async {
-    final result = db.select(
-      "SELECT COUNT(*) as cnt FROM sync_queue WHERE status = 'pending'",
+    final rows = db.select(
+      "SELECT payload FROM sync_queue WHERE status = 'pending'",
     );
-    return result.first['cnt'] as int;
+    final workspaceId = activeWorkspaceId.trim();
+    if (workspaceId.isEmpty) return 0;
+    return rows.where((row) {
+      try {
+        final payload = jsonDecode(row['payload'] as String);
+        return payload is Map && payload['factory_id'] == workspaceId;
+      } catch (_) {
+        return false;
+      }
+    }).length;
   }
 
   Future<void> updateSyncStatus(

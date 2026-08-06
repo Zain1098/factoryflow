@@ -176,9 +176,17 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
   }
 
   Future<void> save(ProductionFlowConfig config) async {
+    final previous = state;
     state = config;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(config.toJson()));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_key, jsonEncode(config.toJson()));
+      _loadError = null;
+    } catch (error) {
+      state = previous;
+      _loadError = 'Production flow settings could not be saved.';
+      throw StateError(_loadError!);
+    }
   }
 
   Future<void> setEnabled(bool v) => save(state.copyWith(enabled: v));

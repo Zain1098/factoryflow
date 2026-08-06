@@ -199,5 +199,10 @@ class DataManagementService {
         // Remote deactivation can be retried from admin tooling later.
       }
     }
+    // Auth deletion must happen server-side. The Edge Function verifies that
+    // public.users.active is false before removing auth.users.
+    await Supabase.instance.client.functions
+        .invoke('delete-account')
+        .timeout(const Duration(seconds: 20));
   }
 }

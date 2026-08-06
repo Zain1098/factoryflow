@@ -17,6 +17,8 @@ class DatabaseService {
 
   // In-memory tables
   final Map<String, List<Map<String, dynamic>>> _tables = {};
+  final List<Map<String, dynamic>> _syncQueue = [];
+  int _nextSyncId = 1;
   bool _initialized = false;
 
   // Expose a fake "db" object so call sites that use db.select() still compile
@@ -234,18 +236,77 @@ class DatabaseService {
     required String recordId,
     required String operation,
     required Map<String, dynamic> payload,
-  }) async {}
+  }) async {
+    if (operation == 'update') {
+      _syncQueue.removeWhere((item) =>
+          item['table_name'] == tableName &&
+          item['record_id'] == recordId &&
+          item['operation'] == 'update' &&
+          item['status'] == 'pending');
+    }
+    _syncQueue.add({
+      'id': _nextSyncId++,
+      'table_name': tableName,
+      'record_id': recordId,
+      'operation': operation,
+      'payload': jsonEncode(payload),
+      'attempts': 0,
+      'status': 'pending',
+      'created_at': DateTime.now().toIso8601String(),
+      'next_retry_at': null,
+    });
+  }
 
-  Future<List<Map<String, dynamic>>> getPendingSyncItems() async => [];
-  Future<int> countPendingSync() async => 0;
+  Future<List<Map<String, dynamic>>> getPendingSyncItems() async {
+    final workspaceId = activeWorkspaceId.trim();
+    if (workspaceId.isEmpty) return const [];
+    return _syncQueue
+        .where((item) {
+          if (item['status'] != 'pending') return false;
+          final retryAt = item['next_retry_at']?.toString();
+          if (retryAt != null && retryAt.compareTo(DateTime.now().toIso8601String()) > 0) {
+            return false;
+          }
+          final payload = jsonDecode(item['payload'] as String);
+          return payload is Map && payload['factory_id'] == workspaceId;
+        })
+        .take(50)
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  Future<int> countPendingSync() async =>
+      (await getPendingSyncItems()).length;
   Future<void> updateSyncStatus(
     int id,
     String status, {
     int? attempts,
     String? nextRetryAt,
-  }) async {}
-  Future<void> markRecordSynced(String table, String id) async {}
-  Future<void> markRecordConflict(String table, String id) async {}
+  }) async {
+    final item = _syncQueue.cast<Map<String, dynamic>>().firstWhere(
+          (row) => row['id'] == id,
+          orElse: () => <String, dynamic>{},
+        );
+    if (item.isEmpty) return;
+    item['status'] = status;
+    if (attempts != null) item['attempts'] = attempts;
+    item['last_attempt_at'] = DateTime.now().toIso8601String();
+    item['next_retry_at'] = nextRetryAt;
+  }
+  Future<void> markRecordSynced(String table, String id) async {
+    _setSyncStatus(table, id, 'synced');
+  }
+  Future<void> markRecordConflict(String table, String id) async {
+    _setSyncStatus(table, id, 'conflict');
+  }
+
+  void _setSyncStatus(String table, String id, String status) {
+    final row = (_tables[table] ?? []).cast<Map<String, dynamic>>().firstWhere(
+          (item) => item['id'] == id,
+          orElse: () => <String, dynamic>{},
+        );
+    if (row.isNotEmpty) row['sync_status'] = status;
+  }
 
   Future<List<Map<String, dynamic>>> getProductionLedgerEntries(
     String productionId,

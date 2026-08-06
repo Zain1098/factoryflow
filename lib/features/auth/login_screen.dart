@@ -66,10 +66,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final email = _emailCtrl.text.trim().toLowerCase();
     if (_isSignUp) {
       final verificationRequired =
           await ref.read(currentUserProvider.notifier).signUp(
-                email: _emailCtrl.text.trim(),
+                email: email,
                 password: _passwordCtrl.text,
                 profileName: _nameCtrl.text.trim(),
                 workspaceName: _workspaceCtrl.text.trim(),
@@ -80,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => SignupVerificationScreen(
-              email: _emailCtrl.text.trim(),
+              email: email,
               profileName: _nameCtrl.text.trim(),
               workspaceName: _workspaceCtrl.text.trim(),
             ),
@@ -90,7 +91,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       }
     } else {
       await ref.read(currentUserProvider.notifier).signIn(
-            _emailCtrl.text.trim(),
+            email,
             _passwordCtrl.text,
           );
     }
@@ -114,7 +115,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _forgotPassword() async {
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
     if (email.isEmpty || !_validEmail(email)) {
       _showError('Enter a valid email first, then tap Forgot Password.');
       return;
@@ -296,7 +297,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         if (!_isSignUp) ...[
                           _buildDividerWithText(theme, 'or'),
                           const SizedBox(height: 12),
-                          _buildGoogleButton(theme, isLoading),
+                          _buildGoogleButton(theme, isLoading, connected),
                         ],
                         const SizedBox(height: 12),
 
@@ -358,11 +359,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildGoogleButton(ThemeData theme, bool isLoading) {
+  Widget _buildGoogleButton(
+    ThemeData theme,
+    bool isLoading,
+    bool connected,
+  ) {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: isLoading ? null : _signInWithGoogle,
+        onPressed: isLoading || !connected ? null : _signInWithGoogle,
         icon: Image.network(
           'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
           height: 20,
@@ -644,7 +649,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6) return 'Minimum 6 characters';
+                if (_isSignUp && v.length < 8) {
+                  return 'Use at least 8 characters for a new account';
+                }
                 return null;
               },
             ),
@@ -679,7 +686,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             const SizedBox(height: 8),
 
             FilledButton(
-              onPressed: isLoading ? null : _submit,
+              onPressed: isLoading || (_isSignUp && !connected)
+                  ? null
+                  : _submit,
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(
@@ -699,7 +708,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          _isSignUp ? 'Create Account' : 'Sign In',
+                          _isSignUp && !connected
+                              ? 'Internet required for signup'
+                              : _isSignUp
+                                  ? 'Create Account'
+                                  : 'Sign In',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

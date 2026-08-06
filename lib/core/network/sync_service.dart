@@ -18,9 +18,13 @@ final syncServiceProvider = Provider<SyncService>((ref) {
 /// Polls pending sync count every 30 s — only when provider is alive.
 final pendingSyncCountProvider = StreamProvider<int>((ref) {
   final db = ref.watch(databaseServiceProvider);
-  return Stream.periodic(const Duration(seconds: 15), (_) => 0)
-      .asyncExpand((_) => Stream.fromFuture(db.countPendingSync()))
-      .asBroadcastStream();
+  return (() async* {
+    yield await db.countPendingSync();
+    while (true) {
+      await Future<void>.delayed(const Duration(seconds: 15));
+      yield await db.countPendingSync();
+    }
+  })().asBroadcastStream();
 });
 
 /// Emits current connectivity immediately, then streams changes.
@@ -34,7 +38,7 @@ final connectivityProvider =
 /// Simple bool: true = at least one non-none interface available.
 final isOnlineProvider = Provider<bool>((ref) {
   final conn = ref.watch(connectivityProvider).value;
-  if (conn == null) return true; // assume online until proven otherwise
+  if (conn == null) return false; // do not trigger cloud writes before probe
   return !conn.contains(ConnectivityResult.none);
 });
 
@@ -67,15 +71,15 @@ class SyncService {
     if (_syncTimer != null) return;
     _syncTimer = Timer.periodic(
       const Duration(seconds: 30),
-      (_) => syncPending(),
+      (_) => unawaited(syncPending().then<void>((_) {}, onError: (_) {})),
     );
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen((results) {
       if (!results.contains(ConnectivityResult.none)) {
-        unawaited(syncPending());
+        unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
       }
     });
-    unawaited(syncPending());
+    unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
   }
 
   void stopPeriodicSync() {
@@ -136,6 +140,21 @@ class SyncService {
           var payload =
               jsonDecode(item['payload'] as String) as Map<String, dynamic>;
 
+          final activeWorkspaceId = _db.activeWorkspaceId.trim();
+          final payloadWorkspaceId = payload['factory_id']?.toString().trim() ?? '';
+          if (activeWorkspaceId.isEmpty || payloadWorkspaceId != activeWorkspaceId) {
+            await _db.updateSyncStatus(id, 'conflict', attempts: attempts);
+            await _logSyncHistory(
+              tableName: tableName,
+              recordId: recordId,
+              operation: operation,
+              status: 'conflict',
+              errorMessage: 'Workspace changed before this item was synced.',
+            );
+            conflicts++;
+            continue;
+          }
+
           // Strip generated columns so Supabase doesn't reject the upsert
           payload = Map.from(payload)
             ..removeWhere((k, _) => _generatedColumns.contains(k))
@@ -189,10 +208,12 @@ class SyncService {
           }
 
           if (operation == 'insert') {
-            await client
+            final rows = await client
                 .from(tableName)
                 .upsert(payload)
+                .select('id')
                 .timeout(const Duration(seconds: 12));
+            if (rows.isEmpty) throw StateError('Cloud insert was not accepted.');
           } else if (operation == 'update') {
             final factoryId = payload['factory_id']?.toString() ?? '';
             if (tableName == 'rtvs') {
@@ -225,19 +246,29 @@ class SyncService {
               final updatePayload = Map<String, dynamic>.from(payload)
                 ..remove('id')
                 ..remove('factory_id');
-              await client
+              final rows = await client
                   .from(tableName)
                   .update(updatePayload)
                   .eq('id', recordId)
                   .eq('factory_id', factoryId)
+                  .select('id')
                   .timeout(const Duration(seconds: 12));
+              if (rows.isEmpty) {
+                throw StateError('Cloud update was rejected or record was not found.');
+              }
             }
           } else if (operation == 'delete') {
-            await client
+            final factoryId = payload['factory_id']?.toString() ?? '';
+            final rows = await client
                 .from(tableName)
                 .delete()
                 .eq('id', recordId)
+                .eq('factory_id', factoryId)
+                .select('id')
                 .timeout(const Duration(seconds: 12));
+            if (rows.isEmpty) {
+              throw StateError('Cloud delete was rejected or record was not found.');
+            }
           } else if (operation == 'ledger') {
             final result = await client.rpc(
               'write_stock_ledger_entry',
@@ -352,7 +383,14 @@ class SyncService {
       // Only swallow if Supabase is not configured at all
       if (!e.toString().contains('not initialized') &&
           !e.toString().contains('No Supabase')) {
-        rethrow;
+        await _logSyncHistory(
+          tableName: 'sync_queue',
+          recordId: '',
+          operation: 'batch',
+          status: 'failed',
+          errorMessage: _sanitizeSyncError(e),
+        );
+        failed++;
       }
     } finally {
       _isSyncing = false;
@@ -403,9 +441,10 @@ class SyncService {
     required Map<String, dynamic> payload,
     bool triggerSync = true,
   }) async {
-    // Guard: don't queue if workspace not set (would fail RLS on Supabase)
     final factoryId = payload['factory_id']?.toString() ?? '';
-    if (factoryId.isEmpty) return;
+    if (factoryId.isEmpty) {
+      throw StateError('Select a company workspace before saving settings.');
+    }
     await _db.enqueueSync(
       tableName: tableName,
       recordId: recordId,
@@ -422,7 +461,9 @@ class SyncService {
     bool triggerSync = true,
   }) async {
     final factoryId = payload['factory_id']?.toString() ?? '';
-    if (factoryId.isEmpty) return;
+    if (factoryId.isEmpty) {
+      throw StateError('Select a company workspace before saving settings.');
+    }
     await _db.enqueueSync(
       tableName: tableName,
       recordId: recordId,
@@ -439,7 +480,9 @@ class SyncService {
     bool triggerSync = true,
   }) async {
     final factoryId = payload['factory_id']?.toString() ?? '';
-    if (factoryId.isEmpty) return;
+    if (factoryId.isEmpty) {
+      throw StateError('Select a company workspace before saving data.');
+    }
     await _db.enqueueSync(
       tableName: 'stock_ledger',
       recordId: recordId,
@@ -457,7 +500,9 @@ class SyncService {
     bool triggerSync = true,
   }) async {
     final factoryId = payload['factory_id']?.toString() ?? '';
-    if (factoryId.isEmpty) return;
+    if (factoryId.isEmpty) {
+      throw StateError('Select a company workspace before saving production.');
+    }
     await _db.enqueueSync(
       tableName: 'productions',
       recordId: recordId,
@@ -470,7 +515,9 @@ class SyncService {
   /// Starts a best-effort sync after the caller's local transaction commits.
   Future<void> schedulePendingSync() async {
     try {
-      if (await isOnline()) unawaited(syncPending());
+      if (await isOnline()) {
+        unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
+      }
     } catch (_) {
       // Local posting is already durable. Connectivity failures remain pending
       // and the periodic/reconnect worker will retry them later.
@@ -492,6 +539,7 @@ class SyncResult {
     this.conflicts = 0,
     this.offline = false,
     this.skipped = false,
+    this.errorMessage,
   });
 
   final int synced;
@@ -499,4 +547,5 @@ class SyncResult {
   final int conflicts;
   final bool offline;
   final bool skipped;
+  final String? errorMessage;
 }
