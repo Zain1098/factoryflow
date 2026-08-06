@@ -356,7 +356,7 @@ class AuthRepository {
               // Profile sync should not block a valid Auth session.
             }
           }
-          final restored = remote.copyWith(
+          final restored = remote!.copyWith(
             authProvider: provider == 'google' ? 'google' : 'email',
             sessionCreatedAt: local?.sessionCreatedAt,
           );

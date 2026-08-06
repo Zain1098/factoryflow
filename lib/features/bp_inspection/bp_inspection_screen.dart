@@ -107,7 +107,6 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
 
   @override
   Widget build(BuildContext context) {
-    final rejectReasons = ref.watch(bpRejectReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('BP Inspection'),
@@ -127,6 +126,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
   }
 
   Widget _buildForm() {
+    final rejectReasons = ref.watch(bpRejectReasonsListProvider);
     final parts = ref.watch(partsProvider);
     final machines = ref.watch(machinesProvider);
     final batches = ref.watch(recentBatchesProvider);

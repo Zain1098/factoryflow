@@ -134,7 +134,6 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
 
   @override
   Widget build(BuildContext context) {
-    final rtvReasons = ref.watch(rtvReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Return to Vendor'),
@@ -161,6 +160,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
   }
 
   Widget _buildForm() {
+    final rtvReasons = ref.watch(rtvReasonsListProvider);
     final vendors = ref.watch(vendorsProvider);
     final candidates = ref.watch(rtvCandidatesProvider);
 

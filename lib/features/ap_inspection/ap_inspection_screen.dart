@@ -184,7 +184,6 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
 
   @override
   Widget build(BuildContext context) {
-    final rejectReasons = ref.watch(apRejectReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('AP Inspection'),
@@ -205,6 +204,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
   }
 
   Widget _buildForm() {
+    final rejectReasons = ref.watch(apRejectReasonsListProvider);
     final theme = Theme.of(context);
     final apStockAsync = ref.watch(pendingApStockProvider);
 
