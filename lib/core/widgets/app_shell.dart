@@ -136,51 +136,13 @@ class _AppShellState extends ConsumerState<AppShell>
               Expanded(child: widget.child),
             ],
           ),
-          bottomNavigationBar: Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Theme.of(context).dividerColor),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(22),
-              child: NavigationBar(
-                selectedIndex: _calculateIndex(context),
-                onDestinationSelected: (index) => _onTap(context, index),
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.dashboard_outlined),
-                    selectedIcon: Icon(Icons.dashboard),
-                    label: 'Dashboard',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.edit_note_outlined),
-                    selectedIcon: Icon(Icons.edit_note),
-                    label: 'Entries',
-                  ),
-                  NavigationDestination(
-                      icon: Icon(Icons.search), label: 'Search'),
-                  NavigationDestination(
-                    icon: Icon(Icons.assessment_outlined),
-                    selectedIcon: Icon(Icons.assessment),
-                    label: 'Reports',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.settings_outlined),
-                    selectedIcon: Icon(Icons.settings),
-                    label: 'Settings',
-                  ),
-                ],
-              ),
-            ),
+          bottomNavigationBar: _FloatingBottomNavigation(
+            selectedIndex: _calculateIndex(context),
+            onSelected: (index) => _onTap(context, index),
+          ),
+          floatingActionButton: _SyncStatusButton(
+            isOnline: isOnline,
+            pendingCount: pendingSync,
           ),
         ),
       ),
@@ -189,10 +151,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   int _calculateIndex(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    if (location.startsWith('/dashboard')) return 0;
-    if (_isEntryRoute(location)) return 1;
-    if (location.startsWith('/search')) return 2;
-    if (location.startsWith('/reports')) return 3;
+    if (_isEntryRoute(location)) return 0;
+    if (location.startsWith('/reports')) return 1;
+    if (location.startsWith('/dashboard')) return 2;
+    if (location.startsWith('/search')) return 3;
     if (_isSettingsRoute(location)) return 4;
     return 0;
   }
@@ -225,15 +187,336 @@ class _AppShellState extends ConsumerState<AppShell>
   void _onTap(BuildContext context, int index) {
     switch (index) {
       case 0:
-        context.go('/dashboard');
-      case 1:
         context.go('/entries');
-      case 2:
-        context.go('/search');
-      case 3:
+        return;
+      case 1:
         context.go('/reports');
+        return;
+      case 2:
+        context.go('/dashboard');
+        return;
+      case 3:
+        context.go('/search');
+        return;
       case 4:
         context.go('/settings');
+        return;
     }
+  }
+}
+
+/// Compact, app-wide access to automatic cloud sync. Detailed pages are only
+/// needed where an administrator must resolve an actual conflict.
+class _SyncStatusButton extends ConsumerWidget {
+  const _SyncStatusButton({
+    required this.isOnline,
+    required this.pendingCount,
+  });
+
+  final bool isOnline;
+  final int pendingCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final color = !isOnline
+        ? Colors.orange
+        : pendingCount > 0
+            ? Colors.indigo
+            : Colors.green;
+    final icon = !isOnline
+        ? Icons.cloud_off_outlined
+        : pendingCount > 0
+            ? Icons.cloud_sync_outlined
+            : Icons.cloud_done_outlined;
+    final label = !isOnline
+        ? 'Offline'
+        : pendingCount > 0
+            ? '$pendingCount pending'
+            : 'Synced';
+
+    return Semantics(
+      button: true,
+      label: 'Cloud sync status: $label',
+      child: Tooltip(
+        message: 'Cloud sync: $label',
+        child: FloatingActionButton.extended(
+          heroTag: 'cloud-sync-status',
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          foregroundColor: color,
+          elevation: 3,
+          onPressed: () => _showSyncSheet(context, ref),
+          icon: Icon(icon),
+          label: Text(label),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSyncSheet(BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        var syncing = false;
+        return StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Cloud Sync', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                Text(
+                  !isOnline
+                      ? 'Offline. Changes are safely saved on this device and will sync automatically after reconnecting.'
+                      : pendingCount > 0
+                          ? '$pendingCount record(s) are waiting to sync automatically.'
+                          : 'All saved records are synced to the cloud.',
+                ),
+                if (pendingCount > 0) ...[
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: !isOnline || syncing
+                          ? null
+                          : () async {
+                              setSheetState(() => syncing = true);
+                              final result = await ref
+                                  .read(syncServiceProvider)
+                                  .syncPending();
+                              if (!context.mounted) return;
+                              setSheetState(() => syncing = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(result.synced > 0
+                                      ? '${result.synced} record(s) synced.'
+                                      : result.offline
+                                          ? 'Still offline. Sync will retry automatically.'
+                                          : 'Sync is already up to date.'),
+                                ),
+                              );
+                            },
+                      icon: syncing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync),
+                      label: Text(syncing ? 'Syncing...' : 'Sync now'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A compact five-destination bar with the dashboard lifted above its center.
+/// Route selection remains in [AppShell], so forms and nested pages retain
+/// their existing navigation behaviour.
+class _FloatingBottomNavigation extends StatelessWidget {
+  const _FloatingBottomNavigation({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final surface = scheme.surface;
+
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SizedBox(
+        height: 86,
+        child: Stack(
+          alignment: Alignment.topCenter,
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              top: 22,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: theme.dividerColor),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.07),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _BottomNavIconButton(
+                        label: 'Entries',
+                        icon: Icons.edit_note_outlined,
+                        selectedIcon: Icons.edit_note,
+                        selected: selectedIndex == 0,
+                        onTap: () => onSelected(0),
+                      ),
+                    ),
+                    Expanded(
+                      child: _BottomNavIconButton(
+                        label: 'Reports',
+                        icon: Icons.assessment_outlined,
+                        selectedIcon: Icons.assessment,
+                        selected: selectedIndex == 1,
+                        onTap: () => onSelected(1),
+                      ),
+                    ),
+                    const SizedBox(width: 76),
+                    Expanded(
+                      child: _BottomNavIconButton(
+                        label: 'Search',
+                        icon: Icons.search_outlined,
+                        selectedIcon: Icons.search,
+                        selected: selectedIndex == 3,
+                        onTap: () => onSelected(3),
+                      ),
+                    ),
+                    Expanded(
+                      child: _BottomNavIconButton(
+                        label: 'Settings',
+                        icon: Icons.settings_outlined,
+                        selectedIcon: Icons.settings,
+                        selected: selectedIndex == 4,
+                        onTap: () => onSelected(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _DashboardNavButton(
+              selected: selectedIndex == 2,
+              onTap: () => onSelected(2),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomNavIconButton extends StatelessWidget {
+  const _BottomNavIconButton({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(20),
+            child: Center(
+              child: AnimatedScale(
+                scale: selected ? 1.08 : 1,
+                duration: const Duration(milliseconds: 160),
+                child: Icon(selected ? selectedIcon : icon, color: color),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardNavButton extends StatelessWidget {
+  const _DashboardNavButton({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Dashboard',
+      child: Tooltip(
+        message: 'Dashboard',
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkResponse(
+            onTap: onTap,
+            radius: 42,
+            containedInkWell: true,
+            customBorder: const CircleBorder(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF4A2FE7),
+                    Color(0xFF135CF0),
+                    Color(0xFF28B8FF),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF246CF5)
+                        .withValues(alpha: selected ? 0.45 : 0.28),
+                    blurRadius: selected ? 18 : 13,
+                    spreadRadius: selected ? 2 : 0,
+                    offset: const Offset(0, 7),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.home_rounded,
+                color: Colors.white,
+                size: 31,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

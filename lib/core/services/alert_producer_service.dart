@@ -1,19 +1,35 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database_service.dart';
+import '../providers/production_flow_provider.dart';
 import '../services/notification_service.dart';
 
 final alertProducerServiceProvider = Provider<AlertProducerService>((ref) {
-  return AlertProducerService(ref.watch(databaseServiceProvider));
+  // Target alerts must use the same completed-production definition as the
+  // dashboard. Waiting here avoids treating a saved multi-stage setup as the
+  // default single-stage setup during app startup.
+  return AlertProducerService(
+    ref.watch(databaseServiceProvider),
+    productionFlow: () => ref.read(productionFlowProvider),
+    ensureProductionFlowLoaded: () =>
+        ref.read(productionFlowProvider.notifier).ensureLoaded(),
+  );
 });
 
 /// Checks business conditions and fires local notifications when thresholds
 /// are crossed. Called after stock-changing transactions and on app resume.
 /// Never blocks the calling transaction — all failures are swallowed.
 class AlertProducerService {
-  AlertProducerService(this._db);
+  AlertProducerService(
+    this._db, {
+    ProductionFlowConfig Function()? productionFlow,
+    Future<void> Function()? ensureProductionFlowLoaded,
+  })  : _productionFlow = productionFlow,
+        _ensureProductionFlowLoaded = ensureProductionFlowLoaded;
 
   final DatabaseService _db;
+  final ProductionFlowConfig Function()? _productionFlow;
+  final Future<void> Function()? _ensureProductionFlowLoaded;
 
   static const double _lowStockThreshold = 50;
 
@@ -21,14 +37,18 @@ class AlertProducerService {
     await Future.wait([
       _checkLowStock(),
       _checkRtvPending(),
-      _checkTargetMiss(),
+      checkTargetMiss(),
       _checkOpenDowntime(),
     ]);
   }
 
   Future<void> checkLowStock() => _checkLowStock();
   Future<void> checkRtvPending() => _checkRtvPending();
-  Future<void> checkTargetMiss() => _checkTargetMiss();
+  Future<void> checkTargetMiss() async {
+    final ensureFlowLoaded = _ensureProductionFlowLoaded;
+    if (ensureFlowLoaded != null) await ensureFlowLoaded();
+    await _checkTargetMiss();
+  }
   Future<void> checkOpenDowntime() => _checkOpenDowntime();
 
   Future<void> _checkLowStock() async {
@@ -89,12 +109,18 @@ class AlertProducerService {
       );
       final target = (targetRow.first['total'] as num?)?.toDouble() ?? 0;
       if (target <= 0) return;
-      final prodRow = _db.db.select(
-        'SELECT COALESCE(SUM(good_qty),0) AS total FROM productions '
-        'WHERE factory_id = ? AND date = ?',
-        [factoryId, todayStr],
+      final flow = _productionFlow?.call();
+      final finalMachineId = flow != null &&
+              flow.isMultiStage &&
+              flow.requiredMachineIds.isNotEmpty
+          ? flow.requiredMachineIds.last
+          : null;
+      final summary = await _db.getTodayProductionSummary(
+        todayStr,
+        finalMachineId: finalMachineId,
+        countAllStageOutput: flow?.countsAllStageOutput ?? false,
       );
-      final produced = (prodRow.first['total'] as num?)?.toDouble() ?? 0;
+      final produced = summary['production'] ?? 0;
       if (produced < target * 0.8) {
         await NotificationService.instance.showAlert(
           id: 5,

@@ -167,10 +167,12 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Reset Password'),
-        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        title: Text(_step == 1 ? 'Forgot password' : 'Reset password'),
         leading: _step == 2
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -181,19 +183,79 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
               )
             : null,
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              _buildStepIndicator(theme),
-              const SizedBox(height: 32),
-              _buildCard(theme, isDark),
-            ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark
+                ? [
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primary.withValues(alpha: 0.32),
+                    theme.colorScheme.surface,
+                  ]
+                : [
+                    theme.colorScheme.primary.withValues(alpha: 0.14),
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
+                  ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 72, 20, 24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  children: [
+                    _buildBrandHeader(theme),
+                    const SizedBox(height: 24),
+                    _buildStepIndicator(theme),
+                    const SizedBox(height: 28),
+                    _buildCard(theme, isDark),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildBrandHeader(ThemeData theme) {
+    return Column(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary,
+                theme.colorScheme.secondary,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.primary.withValues(alpha: 0.30),
+                blurRadius: 16,
+                offset: const Offset(0, 7),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.factory_rounded, color: Colors.white),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'FactoryFlow',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 
@@ -432,18 +494,18 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
 
   BoxDecoration _cardDecoration(ThemeData theme, bool isDark) {
     return BoxDecoration(
-      color: isDark ? const Color(0xFF1E2329) : Colors.white,
-      borderRadius: BorderRadius.circular(20),
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(28),
       border: Border.all(
         color: isDark
             ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFF3D5A80).withValues(alpha: 0.1),
+            : theme.colorScheme.primary.withValues(alpha: 0.14),
       ),
       boxShadow: [
         BoxShadow(
           color: isDark
               ? Colors.black.withValues(alpha: 0.3)
-              : const Color(0xFF3D5A80).withValues(alpha: 0.07),
+              : theme.colorScheme.primary.withValues(alpha: 0.10),
           blurRadius: 24,
           offset: const Offset(0, 8),
         ),

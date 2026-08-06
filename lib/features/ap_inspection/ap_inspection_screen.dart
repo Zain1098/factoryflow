@@ -36,9 +36,9 @@ class _ApPartEntry {
   double get checked => double.tryParse(checkedCtrl.text) ?? 0;
   double get rejected => double.tryParse(rejectedCtrl.text) ?? 0;
   double get rtvQty => double.tryParse(rtvQtyCtrl.text) ?? 0;
-  double get approved => (checked - rejected).clamp(0, double.infinity);
+  double get approved => (checked - rejected - rtvQty).clamp(0, double.infinity);
   bool get isBalanced =>
-      (approved + rejected - checked).abs() < 0.001 && rtvQty <= rejected;
+      (approved + rejected + rtvQty - checked).abs() < 0.001;
   bool get exceedsAvailable => checked > availableQty;
 
   void dispose() {
@@ -119,7 +119,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
       if (!e.isBalanced) {
         setState(
           () => _error =
-              '${e.partCode}: OK + Rejected must equal Checked, and RTV cannot exceed Rejected',
+              '${e.partCode}: OK + RTV + Final Reject must equal Checked',
         );
         return;
       }
@@ -191,7 +191,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           controller: _tabController,
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline), text: 'New Entry'),
-            Tab(icon: Icon(Icons.warning_amber_outlined), text: 'AP Rejected'),
+            Tab(icon: Icon(Icons.history_outlined), text: 'Final Rejects'),
             Tab(icon: Icon(Icons.history), text: 'History'),
           ],
         ),
@@ -512,7 +512,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: NumberFormField(
-                    label: 'AP Rejected',
+                    label: 'Final Reject (no stock)',
                     controller: e.rejectedCtrl,
                     allowDecimal: false,
                     prefixIcon: const Icon(Icons.cancel_outlined, size: 18),
@@ -522,7 +522,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
             ),
             const SizedBox(height: 10),
             NumberFormField(
-              label: 'RTV from Rejected Qty',
+              label: 'RTV Hold Qty',
               controller: e.rtvQtyCtrl,
               allowDecimal: false,
               prefixIcon: const Icon(Icons.undo, size: 18),

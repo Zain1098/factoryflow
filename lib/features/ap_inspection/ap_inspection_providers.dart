@@ -55,21 +55,13 @@ class ApInspectionRepository {
         error: 'Inspection quantities must be valid positive values.',
       );
     }
-    if ((approvedQty + rejectedQty - qtyChecked).abs() > 0.001) {
+    if ((approvedQty + rejectedQty + rtvQty - qtyChecked).abs() > 0.001) {
       return ApInspectionResult(
         success: false,
         error:
-            'Approved ($approvedQty) + Rejected ($rejectedQty) must equal Checked ($qtyChecked)',
+            'OK ($approvedQty) + RTV ($rtvQty) + Final Reject ($rejectedQty) must equal Checked ($qtyChecked)',
       );
     }
-    if (rtvQty > rejectedQty) {
-      return ApInspectionResult(
-        success: false,
-        error:
-            'RTV quantity ($rtvQty) cannot exceed rejected quantity ($rejectedQty)',
-      );
-    }
-
     final available =
         await _ledger.getAvailableStock(partId, StockStage.pendingAp);
     if (qtyChecked > available) {

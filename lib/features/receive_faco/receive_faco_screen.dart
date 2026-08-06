@@ -48,16 +48,39 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   }
 
   Future<void> _onPartChanged(String? partId) async {
-    setState(() { _partId = partId; _dispatchRefId = null; _pendingDispatches = []; });
+    setState(() {
+      _partId = partId;
+      _dispatchRefId = null;
+      _batchCtrl.clear();
+      _pendingDispatches = [];
+    });
     if (partId != null) {
-      final dispatches = await ref.read(receiveFacoRepositoryProvider).getPendingDispatches(partId);
+      final dispatches = await ref
+          .read(receiveFacoRepositoryProvider)
+          .getPendingDispatches(partId);
       setState(() => _pendingDispatches = dispatches);
     }
   }
 
+  void _onDispatchChanged(String? dispatchId) {
+    if (dispatchId == null) return;
+    final dispatch = _pendingDispatches.firstWhere(
+      (item) => item['id'] == dispatchId,
+    );
+    setState(() {
+      _dispatchRefId = dispatchId;
+      _batchCtrl.text = dispatch['batch_number'] as String? ?? '';
+    });
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isSaving = true; _error = null; _success = null; _lastShortage = false; });
+    setState(() {
+      _isSaving = true;
+      _error = null;
+      _success = null;
+      _lastShortage = false;
+    });
 
     try {
       final user = ref.read(currentUserProvider).value;
@@ -67,8 +90,10 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
         partId: _partId!,
         qtyReceived: double.parse(_qtyCtrl.text),
         dispatchRefId: _dispatchRefId,
-        supplierChallan: _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
-        remarks: _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
+        supplierChallan:
+            _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
+        remarks:
+            _remarksCtrl.text.trim().isEmpty ? null : _remarksCtrl.text.trim(),
         createdBy: user?.id ?? 'unknown',
         recordedAt: _recordedAt,
       );
@@ -97,7 +122,9 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     _challanCtrl.clear();
     _remarksCtrl.clear();
     setState(() {
-      _partId = null; _dispatchRefId = null; _pendingDispatches = [];
+      _partId = null;
+      _dispatchRefId = null;
+      _pendingDispatches = [];
       _recordedAt = DateTime.now();
     });
   }
@@ -139,15 +166,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
             ),
             const SizedBox(height: 16),
 
-            const SectionHeader('Batch & Part'),
-
-            AppFormField(
-              label: 'Batch Number',
-              controller: _batchCtrl,
-              prefixIcon: const Icon(Icons.qr_code_2),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Batch number required' : null,
-            ),
-            const SizedBox(height: 12),
+            const SectionHeader('Select Faco Dispatch'),
 
             parts.when(
               loading: () => const LinearProgressIndicator(),
@@ -157,27 +176,61 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                 isRequired: true,
                 prefixIcon: const Icon(Icons.category_outlined),
                 value: _partId,
-                items: list.map((p) => DropdownMenuItem(
-                  value: p['id'] as String,
-                  child: Text('${p['code']} – ${p['name']}'),
-                ),).toList(),
+                items: list
+                    .map(
+                      (p) => DropdownMenuItem(
+                        value: p['id'] as String,
+                        child: Text('${p['code']} – ${p['name']}'),
+                      ),
+                    )
+                    .toList(),
                 onChanged: _onPartChanged,
                 validator: (v) => v == null ? 'Part is required' : null,
               ),
             ),
             const SizedBox(height: 12),
 
-            // Link to dispatch reference
+            // A receipt must always be linked to the original Faco dispatch.
+            if (_partId != null && _pendingDispatches.isEmpty) ...[
+              const Text(
+                'No pending Faco dispatch is available for this part.',
+                style: TextStyle(color: Colors.orange),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (_pendingDispatches.isNotEmpty) ...[
               AppDropdown<String>(
-                label: 'Link to Dispatch (optional)',
+                label: 'Faco Dispatch',
+                isRequired: true,
                 prefixIcon: const Icon(Icons.link),
                 value: _dispatchRefId,
-                items: _pendingDispatches.map((d) => DropdownMenuItem(
-                  value: d['id'] as String,
-                  child: Text('${d['batch_number']} · ${d['qty']} PCS · ${d['date']}'),
-                ),).toList(),
-                onChanged: (v) => setState(() => _dispatchRefId = v),
+                items: _pendingDispatches
+                    .map(
+                      (d) => DropdownMenuItem(
+                        value: d['id'] as String,
+                        child: Text(
+                          '${d['batch_number']} | ${d['part_code']} - ${d['part_name']} | '
+                          '${(d['remaining_qty'] as num).toInt()} PCS left | ${d['date']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _onDispatchChanged,
+                validator: (value) => value == null
+                    ? 'Select the Faco dispatch being received'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            if (_batchCtrl.text.isNotEmpty) ...[
+              Text(
+                'Original batch: ${_batchCtrl.text}',
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 12),
             ],
@@ -219,7 +272,8 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                 decoration: BoxDecoration(
                   color: Colors.orange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                  border:
+                      Border.all(color: Colors.orange.withValues(alpha: 0.4)),
                 ),
                 child: const Row(
                   children: [
@@ -251,7 +305,8 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     final list = ref.watch(receiveFacoListProvider);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+      error: (e, _) =>
+          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
       data: (records) {
         if (records.isEmpty) {
           return const EmptyState(
@@ -270,10 +325,14 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.purple.withValues(alpha: 0.12),
-                child: const Icon(Icons.move_to_inbox, color: Colors.purple, size: 20),
+                child: const Icon(Icons.move_to_inbox,
+                    color: Colors.purple, size: 20),
               ),
-              title: Text(r['batch_number'] ?? '—',
-                  style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),),
+              title: Text(
+                r['batch_number'] ?? '—',
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+              ),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -283,10 +342,13 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (shortage)
-                        const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+                        const Icon(Icons.warning_amber,
+                            size: 14, color: Colors.orange),
                       const SizedBox(width: 4),
-                      Text('${r['qty_received']} PCS',
-                          style: const TextStyle(fontWeight: FontWeight.bold),),
+                      Text(
+                        '${r['qty_received']} PCS',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ],
                   ),
                   Icon(

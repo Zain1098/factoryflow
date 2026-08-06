@@ -1507,31 +1507,28 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       }
     }
 
-    final prodCtrl = TextEditingController(
-      text: existingEntry != null
-          ? existingEntry.productionQty.toInt().toString()
-          : (maxAllowedProdQty != null
-              ? maxAllowedProdQty.toInt().toString()
-              : ''),
-    );
-    final rejectCtrl = TextEditingController(
-      text: existingEntry != null
-          ? existingEntry.rejectQty.toInt().toString()
-          : '0',
-    );
-    final remarksCtrl =
-        TextEditingController(text: existingEntry?.remarks ?? '');
+    final initialProductionQty = existingEntry != null
+        ? existingEntry.productionQty.toInt().toString()
+        : (maxAllowedProdQty != null
+            ? maxAllowedProdQty.toInt().toString()
+            : '');
+    final initialRejectQty = existingEntry != null
+        ? existingEntry.rejectQty.toInt().toString()
+        : '0';
     String localStatus = existingEntry?.status ?? 'Running';
 
-    await showModalBottomSheet<void>(
+    final savedEntry = await showModalBottomSheet<MachineEntry>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) {
-        return StatefulBuilder(
+      builder: (ctx) => _MachineEntryControllerScope(
+        initialProductionQty: initialProductionQty,
+        initialRejectQty: initialRejectQty,
+        initialRemarks: existingEntry?.remarks ?? '',
+        builder: (prodCtrl, rejectCtrl, remarksCtrl) => StatefulBuilder(
           builder: (ctx, setModalState) {
             final selectedMachine = machines.firstWhere(
                 (m) => m['id'] == localMachineId,
@@ -1915,15 +1912,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                               remarks: remarksCtrl.text.trim(),
                             );
 
-                            setState(() {
-                              if (index != null) {
-                                _sessionEntries[index] = entry;
-                              } else {
-                                _sessionEntries.add(entry);
-                              }
-                            });
-
-                            Navigator.pop(ctx);
+                            Navigator.pop(ctx, entry);
                           },
                           child: Text(existingEntry == null
                               ? 'Add Machine Entry to List'
@@ -1935,13 +1924,18 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                   ),
                 ),);
           },
-        );
-      },
+        ),
+      ),
     );
 
-    prodCtrl.dispose();
-    rejectCtrl.dispose();
-    remarksCtrl.dispose();
+    if (!mounted || savedEntry == null) return;
+    setState(() {
+      if (index != null) {
+        _sessionEntries[index] = savedEntry;
+      } else {
+        _sessionEntries.add(savedEntry);
+      }
+    });
   }
 
   // ─── TAB 2: WIP BATCHES ─────────────────────────────────────────────────────
@@ -2289,4 +2283,60 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       },
     );
   }
+}
+
+/// Owns the sheet-only controllers so Flutter disposes them only after the
+/// bottom-sheet route has fully removed its text fields.
+class _MachineEntryControllerScope extends StatefulWidget {
+  const _MachineEntryControllerScope({
+    required this.initialProductionQty,
+    required this.initialRejectQty,
+    required this.initialRemarks,
+    required this.builder,
+  });
+
+  final String initialProductionQty;
+  final String initialRejectQty;
+  final String initialRemarks;
+  final Widget Function(
+    TextEditingController productionController,
+    TextEditingController rejectController,
+    TextEditingController remarksController,
+  ) builder;
+
+  @override
+  State<_MachineEntryControllerScope> createState() =>
+      _MachineEntryControllerScopeState();
+}
+
+class _MachineEntryControllerScopeState
+    extends State<_MachineEntryControllerScope> {
+  late final TextEditingController _productionController;
+  late final TextEditingController _rejectController;
+  late final TextEditingController _remarksController;
+
+  @override
+  void initState() {
+    super.initState();
+    _productionController = TextEditingController(
+      text: widget.initialProductionQty,
+    );
+    _rejectController = TextEditingController(text: widget.initialRejectQty);
+    _remarksController = TextEditingController(text: widget.initialRemarks);
+  }
+
+  @override
+  void dispose() {
+    _productionController.dispose();
+    _rejectController.dispose();
+    _remarksController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(
+    _productionController,
+    _rejectController,
+    _remarksController,
+  );
 }

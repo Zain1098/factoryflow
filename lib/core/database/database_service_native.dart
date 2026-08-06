@@ -883,13 +883,15 @@ class DatabaseService {
 
   /// Today's production summary.
   ///
-  /// In a sequential production flow the same physical piece is processed by
-  /// several machines. Finished production must therefore be counted only at
-  /// the configured final machine; summing every machine would count the same
-  /// piece multiple times. Rejects remain an all-stage operational total.
+  /// A piece is finished only when its production posting creates BP stock.
+  /// This ledger-backed check remains correct even if the user changes the
+  /// machine route after an earlier batch was posted. The final-machine filter
+  /// is retained only as a fallback for legacy rows created before ledger
+  /// posting was introduced. Rejects remain an all-stage operational total.
   Future<Map<String, double>> getTodayProductionSummary(
     String todayStr, {
     String? finalMachineId,
+    bool countAllStageOutput = false,
   }) async {
     final factoryId = activeWorkspaceId;
     if (factoryId.isEmpty) {
@@ -901,11 +903,28 @@ class DatabaseService {
       };
     }
     final prod = db.select(
-      'SELECT COALESCE(SUM(CASE '
-      'WHEN (? IS NULL OR machine_id = ?) THEN good_qty ELSE 0 END),0) AS prod, '
-      'COALESCE(SUM(bp_reject_qty),0) AS bp_rej '
-      'FROM productions WHERE factory_id = ? AND date = ?',
-      [finalMachineId, finalMachineId, factoryId, todayStr],
+      '''SELECT COALESCE(SUM(CASE
+           WHEN ? = 1 THEN good_qty
+           WHEN EXISTS (
+             SELECT 1 FROM stock_ledger sl
+             WHERE sl.factory_id = productions.factory_id
+               AND sl.ref_table = 'productions'
+               AND sl.ref_id = productions.id
+               AND sl.stage = 'bp_stock'
+               AND sl.direction = 'IN'
+           ) THEN good_qty
+           WHEN ? IS NOT NULL AND machine_id = ? THEN good_qty
+           ELSE 0
+         END), 0) AS prod,
+         COALESCE(SUM(bp_reject_qty), 0) AS bp_rej
+         FROM productions WHERE factory_id = ? AND date = ?''',
+      [
+        countAllStageOutput ? 1 : 0,
+        finalMachineId,
+        finalMachineId,
+        factoryId,
+        todayStr,
+      ],
     );
     final ap = db.select(
       'SELECT COALESCE(SUM(rejected_qty),0) AS ap_rej '

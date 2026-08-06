@@ -39,11 +39,17 @@ class ReceiveFacoRepository {
     }
 
     // Shortage check: compare with dispatched qty (PRD 3.7 — allowed, flagged)
+    if (dispatchRefId == null) {
+      return const ReceiveFacoResult(
+        success: false,
+        error: 'Select the original Faco dispatch before receiving material.',
+      );
+    }
     double? dispatchedQty;
     bool shortageFlag = false;
     if (dispatchRefId != null) {
       final rows = _db.db.select(
-        'SELECT qty FROM dispatch_to_facos '
+        'SELECT qty, batch_number FROM dispatch_to_facos '
         'WHERE factory_id = ? AND id = ? AND part_id = ?',
         [factoryId, dispatchRefId, partId],
       );
@@ -51,6 +57,14 @@ class ReceiveFacoRepository {
         return const ReceiveFacoResult(
           success: false,
           error: 'The selected Faco dispatch is no longer available.',
+        );
+      }
+      final dispatchBatch = rows.first['batch_number'] as String? ?? '';
+      if (dispatchBatch.isEmpty || dispatchBatch != batchNumber) {
+        return const ReceiveFacoResult(
+          success: false,
+          error:
+              'Select the original Faco dispatch; batch numbers cannot be entered manually.',
         );
       }
       dispatchedQty = (rows.first['qty'] as num).toDouble();
@@ -162,12 +176,14 @@ class ReceiveFacoRepository {
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
       '''SELECT df.id, df.batch_number, df.qty, df.date,
+                p.code AS part_code, p.name AS part_name,
                 df.qty - COALESCE(SUM(rf.qty_received), 0) AS remaining_qty
          FROM dispatch_to_facos df
+         LEFT JOIN parts p ON p.id = df.part_id AND p.factory_id = df.factory_id
          LEFT JOIN receive_from_facos rf
            ON rf.factory_id = df.factory_id AND rf.dispatch_ref_id = df.id
          WHERE df.factory_id = ? AND df.part_id = ?
-         GROUP BY df.id, df.batch_number, df.qty, df.date
+         GROUP BY df.id, df.batch_number, df.qty, df.date, p.code, p.name
          HAVING df.qty - COALESCE(SUM(rf.qty_received), 0) > 0
          ORDER BY df.date DESC LIMIT 20''',
       [factoryId, partId],

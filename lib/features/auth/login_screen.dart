@@ -247,25 +247,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: isDark
                 ? [
-                    const Color(0xFF12151A),
-                    const Color(0xFF1A2233),
-                    const Color(0xFF12151A),
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primary.withValues(alpha: 0.32),
+                    theme.colorScheme.surface,
                   ]
                 : [
-                    const Color(0xFFF0F4FF),
-                    const Color(0xFFFFFFFF),
-                    const Color(0xFFEEF2FF),
+                    theme.colorScheme.primary.withValues(alpha: 0.14),
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
                   ],
           ),
         ),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
               child: FadeTransition(
                 opacity: _fade,
                 child: SlideTransition(
@@ -275,7 +275,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: Column(
                       children: [
                         _buildHeader(theme),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 28),
 
                         if (showOfflineMode) _buildOfflineBanner(theme),
                         if (showOfflineMode) const SizedBox(height: 16),
@@ -293,12 +293,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         ),
                         const SizedBox(height: 12),
 
-                        // Divider + Google button
-                        if (!_isSignUp) ...[
-                          _buildDividerWithText(theme, 'or'),
-                          const SizedBox(height: 12),
-                          _buildGoogleButton(theme, isLoading, connected),
-                        ],
+                        _buildDividerWithText(theme, 'or continue with'),
+                        const SizedBox(height: 12),
+                        _buildGoogleButton(theme, isLoading, connected),
                         const SizedBox(height: 12),
 
                         // Toggle sign-in / sign-up
@@ -311,16 +308,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   : "Don't have an account? ",
                               style: theme.textTheme.bodySmall,
                             ),
-                            GestureDetector(
-                              onTap: () =>
+                            TextButton(
+                              onPressed: () =>
                                   setState(() => _isSignUp = !_isSignUp),
+                              style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                minimumSize: const Size(48, 40),
+                              ),
                               child: Text(
                                 _isSignUp ? 'Sign In' : 'Create Account',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
                               ),
                             ),
                           ],
@@ -380,7 +377,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           minimumSize: const Size(double.infinity, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           side: BorderSide(
             color: theme.colorScheme.outline.withValues(alpha: 0.4),
@@ -394,27 +391,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return Column(
       children: [
         Container(
-          width: 84,
-          height: 84,
+          width: 72,
+          height: 72,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF3D5A80), Color(0xFF5C7A9E)],
+              colors: [
+                theme.colorScheme.primary,
+                theme.colorScheme.secondary,
+              ],
             ),
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF3D5A80).withValues(alpha: 0.35),
+                color: theme.colorScheme.primary.withValues(alpha: 0.35),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
           child:
-              const Icon(Icons.factory_rounded, size: 42, color: Colors.white),
+              const Icon(Icons.factory_rounded, size: 36, color: Colors.white),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Text(
           AppConstants.appName,
           style: theme.textTheme.headlineLarge?.copyWith(
@@ -422,19 +422,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            'Manufacturing ERP',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
+        const SizedBox(height: 4),
+        Text(
+          _isSignUp
+              ? 'Create your factory workspace'
+              : 'Manufacturing ERP',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -527,24 +521,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E2329) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFF3D5A80).withValues(alpha: 0.1),
+              : theme.colorScheme.primary.withValues(alpha: 0.14),
         ),
         boxShadow: [
           BoxShadow(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
-                : const Color(0xFF3D5A80).withValues(alpha: 0.07),
+                : theme.colorScheme.primary.withValues(alpha: 0.10),
             blurRadius: 28,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
       child: Form(
         key: _formKey,
         child: Column(
@@ -569,7 +563,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
 
             // Sign-up only fields
             if (_isSignUp) ...[

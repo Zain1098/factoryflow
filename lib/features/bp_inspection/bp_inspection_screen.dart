@@ -77,9 +77,10 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
       );
 
       if (result.success) {
-        setState(() => _success =
-            'BP Inspection saved! Hold $holdQty PCS'
-            '${rejectQty > 0 ? ', reject $rejectQty PCS' : ' (all OK)'}',);
+        setState(
+          () => _success = 'BP Inspection saved! Hold $holdQty PCS'
+              '${rejectQty > 0 ? ', reject $rejectQty PCS' : ' (all OK)'}',
+        );
         ref.invalidate(bpInspectionListProvider);
         _reset();
       } else {
@@ -147,58 +148,38 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
             const SectionHeader('Batch & Part'),
             ...[
               batches.when(
-                loading: () => AppFormField(
-                  label: 'Batch Number',
-                  controller: _batchCtrl,
+                loading: () => const LinearProgressIndicator(),
+                error: (error, _) =>
+                    ErrorBanner('Could not load production batches: $error'),
+                data: (list) => AppDropdown<String>(
+                  label: 'Production Batch',
+                  isRequired: true,
                   prefixIcon: const Icon(Icons.qr_code_2),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Batch number required'
-                      : null,
-                ),
-                error: (_, __) => AppFormField(
-                  label: 'Batch Number',
-                  controller: _batchCtrl,
-                  prefixIcon: const Icon(Icons.qr_code_2),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Batch number required'
-                      : null,
-                ),
-                data: (list) => Autocomplete<String>(
-                  optionsBuilder: (textEditingValue) {
-                    if (textEditingValue.text.isEmpty) return list;
-                    return list.where(
-                      (b) => b
-                          .toLowerCase()
-                          .contains(textEditingValue.text.toLowerCase()),
+                  value: _batchCtrl.text.isEmpty ? null : _batchCtrl.text,
+                  items: list
+                      .map((batch) => DropdownMenuItem(
+                            value: batch['batch_number'] as String,
+                            child: Text(
+                              '${batch['batch_number']} • ${batch['part_code']} - '
+                              '${batch['part_name']} • ${batch['machine_name']}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    final batch = list.firstWhere(
+                      (item) => item['batch_number'] == value,
                     );
-                  },
-                  onSelected: (v) async {
-                    _batchCtrl.text = v;
-                    final batch = await ref
-                        .read(bpInspectionRepositoryProvider)
-                        .getLatestBatchStage(v);
-                    if (!mounted) return;
                     setState(() {
-                      if (batch != null) {
-                        _partId = batch['part_id'] as String?;
-                        _machineId = batch['machine_id'] as String?;
-                      }
+                      _batchCtrl.text = value;
+                      _partId = batch['part_id'] as String?;
+                      _machineId = batch['machine_id'] as String?;
                     });
                   },
-                  fieldViewBuilder: (ctx, ctrl, focusNode, onSubmit) {
-                    return TextFormField(
-                      controller: ctrl,
-                      focusNode: focusNode,
-                      onChanged: (v) => _batchCtrl.text = v,
-                      decoration: const InputDecoration(
-                        labelText: 'Batch Number',
-                        prefixIcon: Icon(Icons.qr_code_2),
-                      ),
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Batch number required'
-                          : null,
-                    );
-                  },
+                  validator: (value) => value == null
+                      ? 'Select the original Production batch'
+                      : null,
                 ),
               ),
               const SizedBox(height: 12),
@@ -343,7 +324,9 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               subtitle: Text(
                   '${r['part_code'] ?? ''} · hold ${(r['inspected_qty'] as num?)?.toInt() ?? 0}'
@@ -356,7 +339,9 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                   Text(
                     '${(r['bp_reject_qty'] as num?)?.toInt() ?? 0} rej',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: Colors.red,),
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
                   ),
                   Icon(
                     isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,

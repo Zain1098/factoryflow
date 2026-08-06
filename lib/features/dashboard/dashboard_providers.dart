@@ -117,6 +117,12 @@ class DashboardData {
 
 final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+  // Register the dependency before awaiting, then use the loaded value below.
+  // Without this, the initial default (single-stage) state can briefly sum all
+  // machine entries for a saved multi-stage factory configuration.
+  ref.watch(productionFlowProvider);
+  await ref.read(productionFlowProvider.notifier).ensureLoaded();
+  final flow = ref.read(productionFlowProvider);
   final factoryId = db.activeWorkspaceId;
   if (factoryId.isEmpty) return DashboardData.empty;
 
@@ -139,7 +145,6 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   // Read WIP from the stock ledger, rather than inferring it from production
   // history. This preserves correct quantities when a stage has rejects or a
   // batch is processed across multiple days.
-  final flow = ref.watch(productionFlowProvider);
   final sequence = flow.requiredMachineIds;
   final bendingWip = sequence.isNotEmpty
       ? await db.getTotalBalanceByStage(productionWipStage(sequence[0]))
@@ -157,6 +162,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final todaySummary = await db.getTodayProductionSummary(
     todayStr,
     finalMachineId: finalMachineId,
+    countAllStageOutput: flow.countsAllStageOutput,
   );
   final todayProd = todaySummary['production'] ?? 0;
   final todayBp = todaySummary['bp_reject'] ?? 0;
@@ -230,9 +236,16 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
 
     final wProd = db.db.select(
       'SELECT COALESCE(SUM(CASE '
+      'WHEN ? = 1 THEN good_qty '
       'WHEN (? IS NULL OR machine_id = ?) THEN good_qty ELSE 0 END), 0) as qty '
       'FROM productions WHERE factory_id = ? AND date = ?',
-      [finalMachineId, finalMachineId, factoryId, dStr],
+      [
+        flow.countsAllStageOutput ? 1 : 0,
+        finalMachineId,
+        finalMachineId,
+        factoryId,
+        dStr,
+      ],
     );
     final wQty = (wProd.first['qty'] as num?)?.toDouble() ?? 0.0;
 

@@ -35,8 +35,7 @@ class DispatchFacoRepository {
 
   /// Parts with available Own BP Stock that can go to FACO (BP inspection optional).
   Future<List<Map<String, dynamic>>> getAvailableBpStockParts() async {
-    final rows =
-        await _db.getBalancesByStage(StockStage.bpStock.value);
+    final rows = await _db.getBalancesByStage(StockStage.bpStock.value);
     return rows
         .where((r) => ((r['balance'] as num?)?.toDouble() ?? 0) > 0)
         .map((r) => Map<String, dynamic>.from(r))
@@ -99,6 +98,13 @@ class DispatchFacoRepository {
       );
     }
     for (final item in items) {
+      if ((item.batchNumber ?? '').trim().isEmpty) {
+        return const DispatchFacoResult(
+          success: false,
+          error:
+              'Select an available production batch before dispatching to Faco.',
+        );
+      }
       if (item.qty <= 0) {
         return DispatchFacoResult(
           success: false,
@@ -240,37 +246,45 @@ class DispatchFacoRepository {
     return rows.map((r) => r['batch_number'] as String).toList();
   }
 
-  /// BP-inspected batches still available (optional path).
+  /// Finished production batches with quantity still available for Faco.
+  /// A formal BP inspection is optional, but any recorded BP rejects still
+  /// reduce the batch quantity that can be dispatched.
   Future<List<Map<String, dynamic>>> getRecentBpInspections() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final finalMachineId =
         _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
     final rows = _db.db.select(
-      '''SELECT bi.batch_number, bi.part_id,
+      '''SELECT pr.batch_number, pr.part_id,
                 p.code AS part_code, p.name AS part_name,
-                MAX(bi.date) AS date,
+                MAX(pr.date) AS date,
                 COALESCE((
-                  SELECT SUM(pr.good_qty)
-                  FROM productions pr
-                  WHERE pr.factory_id = bi.factory_id
-                    AND pr.batch_number = bi.batch_number
-                    AND pr.part_id = bi.part_id
-                    AND (? IS NULL OR pr.machine_id = ?)
+                  SELECT SUM(output.good_qty)
+                  FROM productions output
+                  WHERE output.factory_id = pr.factory_id
+                    AND output.batch_number = pr.batch_number
+                    AND output.part_id = pr.part_id
+                    AND (? IS NULL OR output.machine_id = ?)
                 ), 0)
-                - SUM(bi.bp_reject_qty)
+                - COALESCE((
+                  SELECT SUM(bi.bp_reject_qty)
+                  FROM bp_inspections bi
+                  WHERE bi.factory_id = pr.factory_id
+                    AND bi.batch_number = pr.batch_number
+                    AND bi.part_id = pr.part_id
+                ), 0)
                 - COALESCE((
                   SELECT SUM(df.qty)
                   FROM dispatch_to_facos df
-                  WHERE df.factory_id = bi.factory_id
-                    AND df.batch_number = bi.batch_number
-                    AND df.part_id = bi.part_id
+                  WHERE df.factory_id = pr.factory_id
+                    AND df.batch_number = pr.batch_number
+                    AND df.part_id = pr.part_id
                 ), 0) AS available_qty
-         FROM bp_inspections bi
-         INNER JOIN parts p ON p.id = bi.part_id
-           AND p.factory_id = bi.factory_id
-         WHERE bi.factory_id = ?
-         GROUP BY bi.factory_id, bi.batch_number, bi.part_id, p.code, p.name
+         FROM productions pr
+         INNER JOIN parts p ON p.id = pr.part_id
+           AND p.factory_id = pr.factory_id
+         WHERE pr.factory_id = ?
+         GROUP BY pr.factory_id, pr.batch_number, pr.part_id, p.code, p.name
          HAVING available_qty > 0
          ORDER BY date DESC LIMIT 30''',
       [finalMachineId, finalMachineId, factoryId],

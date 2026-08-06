@@ -12,8 +12,13 @@ const _uuid = Uuid();
 
 // Fallback reasons used only when DB has no configured reasons yet.
 const kBpRejectReasonsFallback = [
-  'Crack', 'Dimension Out of Tolerance', 'Bend Angle Error',
-  'Surface Scratch', 'Burr/Sharp Edge', 'Deformation', 'Incomplete Forming',
+  'Crack',
+  'Dimension Out of Tolerance',
+  'Bend Angle Error',
+  'Surface Scratch',
+  'Burr/Sharp Edge',
+  'Deformation',
+  'Incomplete Forming',
 ];
 
 /// Live BP reject reasons from DB, falling back to defaults.
@@ -67,10 +72,12 @@ class BpInspectionRepository {
             'Reject qty ($bpRejectQty) cannot exceed hold qty ($inspectedQty).',
       );
     }
-    if (bpRejectQty > 0 && (rejectReason == null || rejectReason.trim().isEmpty)) {
+    if (bpRejectQty > 0 &&
+        (rejectReason == null || rejectReason.trim().isEmpty)) {
       return const BpInspectionResult(
         success: false,
-        error: 'Reject reason is required when reject quantity is greater than zero.',
+        error:
+            'Reject reason is required when reject quantity is greater than zero.',
       );
     }
     if (batchNumber.trim().isEmpty) {
@@ -175,16 +182,30 @@ class BpInspectionRepository {
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
-  /// Get recent batch numbers for autocomplete
-  Future<List<String>> getRecentBatches() async {
+  /// Production batches that can be selected for BP inspection.  The human
+  /// batch code remains stable, while the extra context prevents choosing the
+  /// wrong batch when several parts were produced on the same day.
+  Future<List<Map<String, dynamic>>> getRecentBatches() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
-      'SELECT DISTINCT batch_number FROM productions '
-      'WHERE factory_id = ? ORDER BY created_at DESC LIMIT 20',
+      '''SELECT pr.batch_number, pr.part_id, pr.machine_id,
+                p.code AS part_code, p.name AS part_name,
+                m.name AS machine_name, pr.created_at
+         FROM productions pr
+         LEFT JOIN parts p ON p.id = pr.part_id AND p.factory_id = pr.factory_id
+         LEFT JOIN machines m ON m.id = pr.machine_id AND m.factory_id = pr.factory_id
+         WHERE pr.factory_id = ?
+           AND pr.created_at = (
+             SELECT MAX(latest.created_at) FROM productions latest
+             WHERE latest.factory_id = pr.factory_id
+               AND latest.batch_number = pr.batch_number
+               AND latest.part_id = pr.part_id
+           )
+         ORDER BY pr.created_at DESC LIMIT 30''',
       [factoryId],
     );
-    return rows.map((r) => r['batch_number'] as String).toList();
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
   Future<Map<String, dynamic>?> getLatestBatchStage(
@@ -220,7 +241,8 @@ final bpInspectionListProvider =
   return ref.watch(bpInspectionRepositoryProvider).getRecent();
 });
 
-final recentBatchesProvider = FutureProvider<List<String>>((ref) async {
+final recentBatchesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(bpInspectionRepositoryProvider).getRecentBatches();
 });
 

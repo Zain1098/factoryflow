@@ -58,4 +58,22 @@ void main() {
     expect(repaired.requiredMachineIds, isEmpty);
     expect(repaired.validationError, isNull);
   });
+
+  test('completed output remains the default company KPI rule', () {
+    const config = ProductionFlowConfig();
+
+    expect(config.countingMode, ProductionCountingMode.completedOutput);
+    expect(config.countsAllStageOutput, isFalse);
+  });
+
+  test('stage workload KPI mode survives configuration serialization', () {
+    const config = ProductionFlowConfig(
+      countingMode: ProductionCountingMode.stageWorkload,
+    );
+
+    final restored = ProductionFlowConfig.fromJson(config.toJson());
+
+    expect(restored.countingMode, ProductionCountingMode.stageWorkload);
+    expect(restored.countsAllStageOutput, isTrue);
+  });
 }

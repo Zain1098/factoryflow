@@ -19,17 +19,36 @@ enum ProductionMode {
   }
 }
 
+/// Defines the one official quantity used by dashboard KPIs, reports, and
+/// production alerts for this factory.
+enum ProductionCountingMode {
+  completedOutput('completed_output', 'Completed PCS (Final Output)'),
+  stageWorkload('stage_workload', 'Stage Workload (All Machines)');
+
+  const ProductionCountingMode(this.code, this.label);
+
+  final String code;
+  final String label;
+
+  static ProductionCountingMode fromCode(String? code) {
+    if (code == stageWorkload.code) return stageWorkload;
+    return completedOutput;
+  }
+}
+
 /// Defines machine sequence and production routing logic.
 class ProductionFlowConfig {
   const ProductionFlowConfig({
     this.enabled = false,
     this.productionMode = ProductionMode.multiStageSequential,
+    this.countingMode = ProductionCountingMode.completedOutput,
     this.requireFinalMachineForDispatch = true,
     this.requiredMachineIds = const [],
   });
 
   final bool enabled;
   final ProductionMode productionMode;
+  final ProductionCountingMode countingMode;
   final bool requireFinalMachineForDispatch;
   final List<String> requiredMachineIds;
 
@@ -37,6 +56,9 @@ class ProductionFlowConfig {
       enabled &&
       productionMode == ProductionMode.multiStageSequential &&
       requiredMachineIds.isNotEmpty;
+
+  bool get countsAllStageOutput =>
+      countingMode == ProductionCountingMode.stageWorkload;
 
   String? get validationError {
     if (enabled &&
@@ -72,12 +94,14 @@ class ProductionFlowConfig {
   ProductionFlowConfig copyWith({
     bool? enabled,
     ProductionMode? productionMode,
+    ProductionCountingMode? countingMode,
     bool? requireFinalMachineForDispatch,
     List<String>? requiredMachineIds,
   }) {
     return ProductionFlowConfig(
       enabled: enabled ?? this.enabled,
       productionMode: productionMode ?? this.productionMode,
+      countingMode: countingMode ?? this.countingMode,
       requireFinalMachineForDispatch:
           requireFinalMachineForDispatch ?? this.requireFinalMachineForDispatch,
       requiredMachineIds: requiredMachineIds ?? this.requiredMachineIds,
@@ -87,6 +111,7 @@ class ProductionFlowConfig {
   Map<String, dynamic> toJson() => {
         'enabled': enabled,
         'productionMode': productionMode.code,
+        'countingMode': countingMode.code,
         'requireFinalMachineForDispatch': requireFinalMachineForDispatch,
         'requiredMachineIds': requiredMachineIds,
       };
@@ -95,6 +120,9 @@ class ProductionFlowConfig {
     return ProductionFlowConfig(
       enabled: j['enabled'] as bool? ?? false,
       productionMode: ProductionMode.fromCode(j['productionMode'] as String?),
+      countingMode: ProductionCountingMode.fromCode(
+        j['countingMode'] as String?,
+      ),
       requireFinalMachineForDispatch:
           j['requireFinalMachineForDispatch'] as bool? ?? true,
       requiredMachineIds: (j['requiredMachineIds'] as List<dynamic>?)
@@ -193,6 +221,9 @@ class ProductionFlowNotifier extends Notifier<ProductionFlowConfig> {
 
   Future<void> setProductionMode(ProductionMode mode) =>
       save(state.copyWith(productionMode: mode));
+
+  Future<void> setCountingMode(ProductionCountingMode mode) =>
+      save(state.copyWith(countingMode: mode));
 
   Future<void> setRequireFinalMachineForDispatch(bool v) =>
       save(state.copyWith(requireFinalMachineForDispatch: v));

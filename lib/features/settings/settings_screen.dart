@@ -471,16 +471,6 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-          ListTile(
-            leading: const Icon(Icons.cloud_sync_outlined),
-            title: const Text('Cloud Sync Status'),
-            subtitle: const Text('Pending queue & sync history'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                    builder: (_) => const _DatabaseSyncStatusPage(),),),
-          ),
           if (canManageFactory)
             ListTile(
               leading:
@@ -2097,6 +2087,46 @@ class _ProductionFlowPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
+          Text(
+            'Company Production KPI',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'This single company rule is used by every dashboard KPI, report, and production alert.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          RadioListTile<ProductionCountingMode>(
+            contentPadding: EdgeInsets.zero,
+            value: ProductionCountingMode.completedOutput,
+            groupValue: flow.countingMode,
+            onChanged: (mode) {
+              if (mode != null) {
+                ref.read(productionFlowProvider.notifier).setCountingMode(mode);
+              }
+            },
+            title: const Text('Completed PCS (Recommended)'),
+            subtitle: const Text(
+              'Count only final-machine good output. Three stages making 450 PCS count as 450 PCS.',
+            ),
+          ),
+          RadioListTile<ProductionCountingMode>(
+            contentPadding: EdgeInsets.zero,
+            value: ProductionCountingMode.stageWorkload,
+            groupValue: flow.countingMode,
+            onChanged: (mode) {
+              if (mode != null) {
+                ref.read(productionFlowProvider.notifier).setCountingMode(mode);
+              }
+            },
+            title: const Text('Stage Workload (All Machine Outputs)'),
+            subtitle: const Text(
+              'Count each stage output. Three stages making 450 PCS show as 1,350 PCS workload.',
+            ),
+          ),
+          const Divider(),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
@@ -2164,6 +2194,21 @@ class _ProductionFlowPage extends ConsumerWidget {
               subtitle: const Text(
                   'Every machine entry immediately counts as completed final production.',),
             ),
+            if (flow.productionMode == ProductionMode.directSingleStage) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Direct mode does not use a machine route or WIP. Use it only when each machine creates a separate finished product. For one part moving through several machines, select Multi-Stage Sequential Flow above.',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+            if (flow.productionMode == ProductionMode.multiStageSequential) ...[
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -2233,6 +2278,64 @@ class _ProductionFlowPage extends ConsumerWidget {
                         );
                       }).toList(),
                     ),
+                    if (flow.requiredMachineIds.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'Route order',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      ...flow.requiredMachineIds.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final id = entry.value;
+                        final machine = list.firstWhere(
+                          (item) => item['id'] == id,
+                          orElse: () => <String, dynamic>{'name': 'Unknown machine'},
+                        );
+                        final name = machine['name'] as String? ?? 'Unknown machine';
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 13,
+                            child: Text('${index + 1}'),
+                          ),
+                          title: Text(name),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Move earlier',
+                                icon: const Icon(Icons.arrow_upward),
+                                onPressed: index == 0
+                                    ? null
+                                    : () {
+                                        final updated = [...flow.requiredMachineIds];
+                                        final moved = updated.removeAt(index);
+                                        updated.insert(index - 1, moved);
+                                        ref.read(productionFlowProvider.notifier)
+                                            .setRequiredMachines(updated);
+                                      },
+                              ),
+                              IconButton(
+                                tooltip: 'Move later',
+                                icon: const Icon(Icons.arrow_downward),
+                                onPressed: index == flow.requiredMachineIds.length - 1
+                                    ? null
+                                    : () {
+                                        final updated = [...flow.requiredMachineIds];
+                                        final moved = updated.removeAt(index);
+                                        updated.insert(index + 1, moved);
+                                        ref.read(productionFlowProvider.notifier)
+                                            .setRequiredMachines(updated);
+                                      },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 );
               },
@@ -2272,6 +2375,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                   ],
                 ),
               ),
+            ],
             ],
           ],
         ],

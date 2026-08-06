@@ -80,6 +80,7 @@ class DatabaseService {
   Future<Map<String, double>> getTodayProductionSummary(
     String todayStr, {
     String? finalMachineId,
+    bool countAllStageOutput = false,
   }) async =>
       {
         'production': 0,

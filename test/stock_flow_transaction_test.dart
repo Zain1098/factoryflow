@@ -64,8 +64,8 @@ void main() {
         SELECT RAISE(ABORT, 'forced material queue failure');
       END
     ''');
-    final repository =
-        MaterialReceiveRepository(databaseService, syncService, ledgerService, alertProducerService);
+    final repository = MaterialReceiveRepository(
+        databaseService, syncService, ledgerService, alertProducerService);
 
     final result = await repository.save(
       partId: 'part-a',
@@ -199,7 +199,42 @@ void main() {
     expect(pendingAp.single['balance'], 100);
   });
 
-  test('AP rejected quantity is split between hold and RTV without duplication',
+  test('Faco receipt requires its selected dispatch and original batch',
+      () async {
+    await databaseService.insertRecord('dispatch_to_facos', {
+      'id': 'dispatch-linked',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-LINKED',
+      'part_id': 'part-a',
+      'qty': 10,
+      'date': '2026-07-30',
+      'time': '08:00',
+      'sync_status': 'synced',
+    });
+    final repository =
+        ReceiveFacoRepository(databaseService, syncService, ledgerService);
+
+    final noDispatch = await repository.save(
+      batchNumber: 'BATCH-LINKED',
+      partId: 'part-a',
+      qtyReceived: 1,
+      createdBy: 'user-a',
+    );
+    final wrongBatch = await repository.save(
+      batchNumber: 'BATCH-TYPED',
+      partId: 'part-a',
+      qtyReceived: 1,
+      dispatchRefId: 'dispatch-linked',
+      createdBy: 'user-a',
+    );
+
+    expect(noDispatch.success, isFalse);
+    expect(noDispatch.error, contains('original Faco dispatch'));
+    expect(wrongBatch.success, isFalse);
+    expect(wrongBatch.error, contains('cannot be entered manually'));
+  });
+
+  test('AP inspection keeps RTV as stock and final reject as history only',
       () async {
     await seedStock(
       id: 'pending-ap-seed',
@@ -215,7 +250,7 @@ void main() {
       partId: 'part-a',
       qtyChecked: 100,
       approvedQty: 70,
-      rejectedQty: 30,
+      rejectedQty: 20,
       rtvQty: 10,
       rejectReason: 'Uneven Coating',
       inspectorId: 'user-a',
@@ -232,7 +267,7 @@ void main() {
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'ap_rejected'),
-      20,
+      0,
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
@@ -273,8 +308,8 @@ void main() {
       stage: StockStage.rtvStock,
       qty: 10,
     );
-    final repository =
-        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
+    final repository = RtvRepository(
+        databaseService, syncService, ledgerService, alertProducerService);
 
     final saved = await repository.save(
       batchNumber: 'BATCH-A',
@@ -336,8 +371,8 @@ void main() {
       stage: StockStage.rtvStock,
       qty: 10,
     );
-    final repository =
-        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
+    final repository = RtvRepository(
+        databaseService, syncService, ledgerService, alertProducerService);
     final sent = await repository.save(
       batchNumber: 'BATCH-A',
       partId: 'part-a',
@@ -406,8 +441,8 @@ void main() {
       stage: StockStage.rtvStock,
       qty: 5,
     );
-    final repository =
-        RtvRepository(databaseService, syncService, ledgerService, alertProducerService);
+    final repository = RtvRepository(
+        databaseService, syncService, ledgerService, alertProducerService);
 
     final returned = await repository.saveReinspection(
       rtvId: 'rtv-cycle-3',
@@ -471,8 +506,8 @@ void main() {
       'rtv_qty': 0,
       'sync_status': 'synced',
     });
-    final repository =
-        FinalDispatchRepository(databaseService, syncService, ledgerService, alertProducerService);
+    final repository = FinalDispatchRepository(
+        databaseService, syncService, ledgerService, alertProducerService);
 
     final blocked = await repository.saveDispatchSession(
       customerId: 'customer-a',

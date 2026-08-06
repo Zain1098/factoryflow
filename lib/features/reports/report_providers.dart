@@ -85,10 +85,12 @@ final dailyProductionReportProvider =
     '''
     SELECT
       p.date,
-       COALESCE(SUM(CASE WHEN (? IS NULL OR p.machine_id = ?)
+       COALESCE(SUM(CASE WHEN ? = 1 THEN p.production_qty
+         WHEN (? IS NULL OR p.machine_id = ?)
          THEN p.production_qty ELSE 0 END), 0) AS total_prod,
        COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
-       COALESCE(SUM(CASE WHEN (? IS NULL OR p.machine_id = ?)
+       COALESCE(SUM(CASE WHEN ? = 1 THEN p.good_qty
+         WHEN (? IS NULL OR p.machine_id = ?)
          THEN p.good_qty ELSE 0 END), 0) AS good,
       COALESCE(t.target, 0) AS target
     FROM productions p
@@ -103,8 +105,10 @@ final dailyProductionReportProvider =
     ORDER BY p.date DESC
   ''',
     [
+      flow.countsAllStageOutput ? 1 : 0,
       finalMachineId,
       finalMachineId,
+      flow.countsAllStageOutput ? 1 : 0,
       finalMachineId,
       finalMachineId,
       factoryId,

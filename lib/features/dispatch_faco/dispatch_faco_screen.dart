@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/providers/batch_config_provider.dart';
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -20,14 +19,14 @@ class _FacoLine {
     required this.partCode,
     required this.partName,
     required this.availableQty,
-    this.batchNumber,
+    required this.batchNumber,
   });
 
   final String partId;
   final String partCode;
   final String partName;
   final double availableQty;
-  final String? batchNumber;
+  final String batchNumber;
   final qtyCtrl = TextEditingController();
 
   double get qty => double.tryParse(qtyCtrl.text) ?? 0;
@@ -44,7 +43,6 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   String? _driverId;
   final _challanCtrl = TextEditingController();
   final _remarksCtrl = TextEditingController();
-  final _batchCtrl = TextEditingController();
   bool _isSaving = false;
   String? _error;
   String? _success;
@@ -62,7 +60,6 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     _tabController.dispose();
     _challanCtrl.dispose();
     _remarksCtrl.dispose();
-    _batchCtrl.dispose();
     for (final item in _items) {
       item.dispose();
     }
@@ -70,18 +67,18 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   }
 
   void _addPart(Map<String, dynamic> stock) {
-    final id = stock['id'] as String;
-    if (_items.any((i) => i.partId == id)) return;
+    final id = stock['part_id'] as String;
+    final batchNumber = stock['batch_number'] as String;
+    if (_items.any((i) => i.partId == id && i.batchNumber == batchNumber))
+      return;
     setState(() {
       _items.add(
         _FacoLine(
           partId: id,
-          partCode: stock['code'] as String? ?? '',
-          partName: stock['name'] as String? ?? '',
-          availableQty: (stock['balance'] as num?)?.toDouble() ?? 0,
-          batchNumber: _batchCtrl.text.trim().isEmpty
-              ? null
-              : _batchCtrl.text.trim(),
+          partCode: stock['part_code'] as String? ?? '',
+          partName: stock['part_name'] as String? ?? '',
+          availableQty: (stock['available_qty'] as num?)?.toDouble() ?? 0,
+          batchNumber: batchNumber,
         ),
       );
     });
@@ -109,8 +106,10 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
         return;
       }
       if (item.qty > item.availableQty) {
-        setState(() => _error =
-            '${item.partCode}: qty exceeds available ${item.availableQty.toInt()} PCS.',);
+        setState(
+          () => _error =
+              '${item.partCode}: qty exceeds available ${item.availableQty.toInt()} PCS.',
+        );
         return;
       }
     }
@@ -131,10 +130,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                     partCode: i.partCode,
                     partName: i.partName,
                     qty: i.qty,
-                    batchNumber: i.batchNumber ??
-                        (_batchCtrl.text.trim().isEmpty
-                            ? null
-                            : _batchCtrl.text.trim()),
+                    batchNumber: i.batchNumber,
                   ),
                 )
                 .toList(),
@@ -152,10 +148,12 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           );
 
       if (result.success) {
-        setState(() => _success =
-            'Dispatched ${_items.length} part(s) to FACO successfully!',);
+        setState(
+          () => _success =
+              'Dispatched ${_items.length} part(s) to FACO successfully!',
+        );
         ref.invalidate(dispatchFacoListProvider);
-        ref.invalidate(bpStockPartsForDispatchProvider);
+        ref.invalidate(bpReinspectedBatchesProvider);
         _reset();
       } else {
         setState(() => _error = result.error ?? 'Save failed');
@@ -173,7 +171,6 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     }
     _challanCtrl.clear();
     _remarksCtrl.clear();
-    _batchCtrl.clear();
     setState(() {
       _items.clear();
       _vendorId = null;
@@ -196,7 +193,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'),),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -225,7 +224,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'),),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
             child: const Text('Add'),
@@ -265,8 +266,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     final vendors = ref.watch(vendorsProvider);
     final vehicles = ref.watch(vehiclesProvider);
     final drivers = ref.watch(driversProvider);
-    final stockParts = ref.watch(bpStockPartsForDispatchProvider);
-    final showBatch = ref.watch(batchConfigProvider);
+    final batches = ref.watch(bpReinspectedBatchesProvider);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -285,48 +285,44 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 12),
-          if (showBatch) ...[
-            AppFormField(
-              label: 'Batch Number (optional)',
-              controller: _batchCtrl,
-              prefixIcon: const Icon(Icons.qr_code_2),
-              hint: 'Link a production batch if needed',
-            ),
-            const SizedBox(height: 12),
-          ],
-          stockParts.when(
+          batches.when(
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load BP stock: $e'),
+            error: (e, _) =>
+                ErrorBanner('Could not load dispatchable batches: $e'),
             data: (list) {
               if (list.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    'No Own BP Stock available. Finish production first.',
+                    'No finished production batch is available for Faco dispatch.',
                     style: TextStyle(color: Colors.orange),
                   ),
                 );
               }
               return AppDropdown<String>(
-                label: 'Add Part',
+                label: 'Add Batch to Dispatch',
                 isRequired: false,
-                prefixIcon: const Icon(Icons.category_outlined),
+                prefixIcon: const Icon(Icons.qr_code_2_outlined),
                 value: null,
                 items: list
-                    .where((p) => !_items.any((i) => i.partId == p['id']))
+                    .where((batch) => !_items.any((item) =>
+                        item.partId == batch['part_id'] &&
+                        item.batchNumber == batch['batch_number']))
                     .map(
-                      (p) => DropdownMenuItem(
-                        value: p['id'] as String,
+                      (batch) => DropdownMenuItem(
+                        value: '${batch['batch_number']}|${batch['part_id']}',
                         child: Text(
-                          '${p['code']} – ${p['name']} '
-                          '(${(p['balance'] as num).toInt()} PCS)',
+                          '${batch['batch_number']} | ${batch['part_code']} - '
+                          '${batch['part_name']} | ${(batch['available_qty'] as num).toInt()} PCS',
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     )
                     .toList(),
-                onChanged: (id) {
-                  if (id == null) return;
-                  final match = list.firstWhere((p) => p['id'] == id);
+                onChanged: (key) {
+                  if (key == null) return;
+                  final match = list.firstWhere((batch) =>
+                      '${batch['batch_number']}|${batch['part_id']}' == key);
                   _addPart(match);
                 },
               );
@@ -357,7 +353,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       ],
                     ),
                     Text(
-                      'Available: ${item.availableQty.toInt()} PCS',
+                      'Batch: ${item.batchNumber} | Available: ${item.availableQty.toInt()} PCS',
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
@@ -381,7 +377,6 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
               ),
             );
           }),
-
           const SectionHeader('Vendor'),
           vendors.when(
             loading: () => const LinearProgressIndicator(),
@@ -403,7 +398,6 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
               validator: (v) => v == null ? 'Vendor is required' : null,
             ),
           ),
-
           const SectionHeader('Transport (Optional)'),
           vehicles.when(
             loading: () => const LinearProgressIndicator(),
@@ -512,8 +506,11 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             return ListTile(
               leading: CircleAvatar(
                 backgroundColor: Colors.orange.withValues(alpha: 0.12),
-                child: const Icon(Icons.local_shipping,
-                    color: Colors.orange, size: 20,),
+                child: const Icon(
+                  Icons.local_shipping,
+                  color: Colors.orange,
+                  size: 20,
+                ),
               ),
               title: Text(
                 '${r['part_code'] ?? '—'} · ${r['batch_number'] ?? ''}'.trim(),

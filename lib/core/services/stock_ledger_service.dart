@@ -265,25 +265,8 @@ class StockLedgerService {
       if (!approvedResult.success) return approvedResult;
     }
 
-    final rejectedHoldQty = rejectedQty - rtvQty;
-    if (rejectedHoldQty < 0) {
-      return const StockLedgerResult(
-        success: false,
-        error: 'RTV quantity cannot exceed rejected quantity.',
-      );
-    }
-
-    if (rejectedHoldQty > 0) {
-      final rejectedResult = await _writeIn(
-        partId: partId,
-        stage: StockStage.apRejected,
-        qty: rejectedHoldQty,
-        refTable: 'ap_inspections',
-        refId: refId,
-        triggerSync: triggerSync,
-      );
-      if (!rejectedResult.success) return rejectedResult;
-    }
+    // Final rejects are consumed by the Pending AP OUT above. They remain in
+    // immutable inspection history but must never appear as live inventory.
 
     if (rtvQty > 0) {
       return _writeIn(

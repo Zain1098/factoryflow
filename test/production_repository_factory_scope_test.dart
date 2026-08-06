@@ -246,6 +246,45 @@ void main() {
     expect(summary['bp_reject'], 150);
   });
 
+  test('ledger completion prevents multi-machine production from multiplying',
+      () async {
+    for (final row in [
+      {'id': 'ledger-stage-1', 'machine_id': 'machine-a1'},
+      {'id': 'ledger-stage-2', 'machine_id': 'machine-middle'},
+      {'id': 'ledger-stage-3', 'machine_id': 'machine-a2'},
+    ]) {
+      await databaseService.insertRecord('productions', {
+        ...row,
+        'factory_id': 'factory-a',
+        'batch_number': 'LEDGER-20260731-001',
+        'part_id': 'part-a',
+        'date': '2026-07-31',
+        'production_qty': 450,
+        'good_qty': 450,
+        'created_at': '2026-07-31T08:00:00.000Z',
+      });
+    }
+    await databaseService.insertRecord('stock_ledger', {
+      'id': 'ledger-finished-output',
+      'factory_id': 'factory-a',
+      'part_id': 'part-a',
+      'stage': 'bp_stock',
+      'direction': 'IN',
+      'qty': 450,
+      'running_balance': 450,
+      'ref_table': 'productions',
+      'ref_id': 'ledger-stage-3',
+      'created_at': '2026-07-31T08:00:00.000Z',
+      'sync_status': 'synced',
+    });
+
+    final summary = await databaseService.getTodayProductionSummary(
+      '2026-07-31',
+    );
+
+    expect(summary['production'], 450);
+  });
+
   test('invalid multi-stage configuration is blocked before stock changes',
       () async {
     final invalidRepository = ProductionRepository(
