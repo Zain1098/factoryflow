@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_user.dart';
-import '../../core/network/sync_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'dashboard_providers.dart';
@@ -15,7 +14,6 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dashAsync = ref.watch(dashboardProvider);
     final user = ref.watch(currentUserProvider).value;
-    final syncCount = ref.watch(pendingSyncCountProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -29,9 +27,9 @@ class DashboardScreen extends ConsumerWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'FactoryFlow',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            Text(
+              user == null ? 'FactoryFlow' : 'Hello, ${user.name}!',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             if (user != null)
               Text(
@@ -43,18 +41,15 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
-          syncCount.when(
-            data: (count) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: SyncBadge(count: count),
-            ),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+          IconButton.filledTonal(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => context.push('/search'),
+            tooltip: 'Search records',
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(dashboardProvider),
-            tooltip: 'Refresh',
+            icon: const Icon(Icons.notifications_none_rounded),
+            onPressed: () => context.push('/notifications'),
+            tooltip: 'Notifications',
           ),
         ],
       ),
@@ -73,6 +68,26 @@ class DashboardScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
+              _buildPastelOverview(context, data),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Quick entry',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => context.go('/entries'),
+                    child: const Text('View all'),
+                  ),
+                ],
+              ),
+              _buildPastelQuickActions(context),
+              const SizedBox(height: 14),
               // ── First-time setup banner ──
               if (data.rawMaterial == 0 &&
                   data.bpStock == 0 &&
@@ -114,6 +129,129 @@ class DashboardScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPastelOverview(BuildContext context, DashboardData data) {
+    final efficiency = data.targetEfficiency.clamp(0.0, 100.0);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8E5FF),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Today’s progress',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 8),
+                Text('${efficiency.toStringAsFixed(0)}%',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                Text(
+                    '${_fmt(data.todayProduction)} of ${_fmt(data.todayTarget)} PCS target',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 12),
+                if (data.pendingSyncCount > 0)
+                  Text(
+                    '${data.pendingSyncCount} record(s) pending sync',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF725A00),
+                        ),
+                  ),
+                if (data.pendingSyncCount > 0) const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () => context.push('/production'),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add production'),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 82,
+            height: 82,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 76,
+                  height: 76,
+                  child: CircularProgressIndicator(
+                    value: efficiency / 100,
+                    strokeWidth: 8,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: Colors.white.withValues(alpha: 0.72),
+                    color: const Color(0xFF6256B8),
+                  ),
+                ),
+                Text('${_fmt(data.todayProduction)} PCS',
+                    style: Theme.of(context).textTheme.labelSmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPastelQuickActions(BuildContext context) {
+    final actions = [
+      (
+        'Production',
+        'Record machine output',
+        Icons.precision_manufacturing_outlined,
+        '/production',
+        const Color(0xFF789FD5)
+      ),
+      (
+        'Material',
+        'Receive raw stock',
+        Icons.inventory_2_outlined,
+        '/material-receive',
+        const Color(0xFF77A682)
+      ),
+      (
+        'Inspection',
+        'Quality check',
+        Icons.fact_check_outlined,
+        '/bp-inspection',
+        const Color(0xFFD39A39)
+      ),
+      (
+        'Dispatch',
+        'Send to customer',
+        Icons.local_shipping_outlined,
+        '/final-dispatch',
+        const Color(0xFFD77E8B)
+      ),
+    ];
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.17,
+      ),
+      itemCount: actions.length,
+      itemBuilder: (context, index) {
+        final action = actions[index];
+        return SoftActionTile(
+          title: action.$1,
+          subtitle: action.$2,
+          icon: action.$3,
+          color: action.$5,
+          onTap: () => context.push(action.$4),
+        );
+      },
     );
   }
 

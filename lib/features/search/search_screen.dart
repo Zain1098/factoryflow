@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/database_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 
-final _searchQueryProvider = NotifierProvider<_SearchQueryNotifier, String>(_SearchQueryNotifier.new);
+final _searchQueryProvider =
+    NotifierProvider<_SearchQueryNotifier, String>(_SearchQueryNotifier.new);
 
 class _SearchQueryNotifier extends Notifier<String> {
   @override
@@ -12,7 +13,8 @@ class _SearchQueryNotifier extends Notifier<String> {
   void set(String v) => state = v;
 }
 
-final _searchResultsProvider = FutureProvider.family<List<Map<String, dynamic>>, String>(
+final _searchResultsProvider =
+    FutureProvider.family<List<Map<String, dynamic>>, String>(
   (ref, query) async {
     if (query.trim().isEmpty) return [];
     final db = ref.watch(databaseServiceProvider);
@@ -43,15 +45,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: TextField(
-          controller: _searchCtrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Search batch, part, challan...',
-            border: InputBorder.none,
-            prefixIcon: Icon(Icons.search),
+        toolbarHeight: 76,
+        titleSpacing: 16,
+        title: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(18),
           ),
-          onChanged: (v) => ref.read(_searchQueryProvider.notifier).set(v),
+          child: TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Search batch, part, challan...',
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              prefixIcon: Icon(Icons.search_rounded),
+            ),
+            onChanged: (v) => ref.read(_searchQueryProvider.notifier).set(v),
+          ),
         ),
         actions: [
           if (_searchCtrl.text.isNotEmpty)
@@ -66,12 +78,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: query.isEmpty
           ? const EmptyState(
-              message: 'Enter a batch number, part code, or challan number to search.',
+              message:
+                  'Enter a batch number, part code, or challan number to search.',
               icon: Icons.search,
             )
           : results.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => EmptyState(message: 'Search error: $e', icon: Icons.error_outline),
+              error: (e, _) => EmptyState(
+                  message: 'Search error: $e', icon: Icons.error_outline),
               data: (records) {
                 if (records.isEmpty) {
                   return EmptyState(
@@ -80,7 +94,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   );
                 }
                 return ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                   itemCount: records.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
@@ -88,14 +102,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     final table = r['_table'] as String? ?? '';
                     return ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: _tableColor(table).withValues(alpha: 0.12),
-                        child: Icon(_tableIcon(table), color: _tableColor(table), size: 18),
+                        backgroundColor:
+                            _tableColor(table).withValues(alpha: 0.12),
+                        child: Icon(_tableIcon(table),
+                            color: _tableColor(table), size: 18),
                       ),
                       title: Text(
-                        r['batch_number'] as String? ?? r['id'] as String? ?? '—',
-                        style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                        r['batch_number'] as String? ??
+                            r['id'] as String? ??
+                            '—',
+                        style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600),
                       ),
-                      subtitle: Text('${_tableLabel(table)} · ${r['date'] ?? ''}'),
+                      subtitle:
+                          Text('${_tableLabel(table)} · ${r['date'] ?? ''}'),
                       trailing: Text(
                         _qtyLabel(r, table),
                         style: const TextStyle(fontWeight: FontWeight.bold),
@@ -110,47 +131,76 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Color _tableColor(String table) {
     switch (table) {
-      case 'productions': return Colors.teal;
-      case 'bp_inspections': return Colors.blue;
-      case 'dispatch_to_facos': return Colors.orange;
-      case 'receive_from_facos': return Colors.purple;
-      case 'ap_inspections': return Colors.green;
-      case 'rtvs': return Colors.red;
-      case 'final_dispatches': return Colors.indigo;
-      default: return Colors.grey;
+      case 'productions':
+        return Colors.teal;
+      case 'bp_inspections':
+        return Colors.blue;
+      case 'dispatch_to_facos':
+        return Colors.orange;
+      case 'receive_from_facos':
+        return Colors.purple;
+      case 'ap_inspections':
+        return Colors.green;
+      case 'rtvs':
+        return Colors.red;
+      case 'final_dispatches':
+        return Colors.indigo;
+      default:
+        return Colors.grey;
     }
   }
 
   IconData _tableIcon(String table) {
     switch (table) {
-      case 'productions': return Icons.precision_manufacturing;
-      case 'bp_inspections': return Icons.fact_check;
-      case 'dispatch_to_facos': return Icons.local_shipping;
-      case 'receive_from_facos': return Icons.move_to_inbox;
-      case 'ap_inspections': return Icons.verified;
-      case 'rtvs': return Icons.undo;
-      case 'final_dispatches': return Icons.send;
-      default: return Icons.inventory_2;
+      case 'productions':
+        return Icons.precision_manufacturing;
+      case 'bp_inspections':
+        return Icons.fact_check;
+      case 'dispatch_to_facos':
+        return Icons.local_shipping;
+      case 'receive_from_facos':
+        return Icons.move_to_inbox;
+      case 'ap_inspections':
+        return Icons.verified;
+      case 'rtvs':
+        return Icons.undo;
+      case 'final_dispatches':
+        return Icons.send;
+      default:
+        return Icons.inventory_2;
     }
   }
 
   String _tableLabel(String table) {
     switch (table) {
-      case 'productions': return 'Production';
-      case 'bp_inspections': return 'BP Inspection';
-      case 'dispatch_to_facos': return 'Dispatch to Faco';
-      case 'receive_from_facos': return 'Receive from Faco';
-      case 'ap_inspections': return 'AP Inspection';
-      case 'rtvs': return 'RTV';
-      case 'final_dispatches': return 'Final Dispatch';
-      case 'material_receives': return 'Material Receive';
-      default: return table;
+      case 'productions':
+        return 'Production';
+      case 'bp_inspections':
+        return 'BP Inspection';
+      case 'dispatch_to_facos':
+        return 'Dispatch to Faco';
+      case 'receive_from_facos':
+        return 'Receive from Faco';
+      case 'ap_inspections':
+        return 'AP Inspection';
+      case 'rtvs':
+        return 'RTV';
+      case 'final_dispatches':
+        return 'Final Dispatch';
+      case 'material_receives':
+        return 'Material Receive';
+      default:
+        return table;
     }
   }
 
   String _qtyLabel(Map<String, dynamic> r, String table) {
-    final qty = r['qty'] ?? r['production_qty'] ?? r['qty_received'] ??
-        r['dispatch_qty'] ?? r['rtv_qty'] ?? r['qty_checked'];
+    final qty = r['qty'] ??
+        r['production_qty'] ??
+        r['qty_received'] ??
+        r['dispatch_qty'] ??
+        r['rtv_qty'] ??
+        r['qty_checked'];
     if (qty == null) return '';
     return '${(qty as num).toInt()} PCS';
   }

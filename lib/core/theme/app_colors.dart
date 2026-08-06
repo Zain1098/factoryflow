@@ -16,9 +16,11 @@ class AppColors {
   static const Color warningAmber = Color(0xFFF59E0B);
 
   // Light theme
-  static const Color lightBackground = Color(0xFFF1F4F8);
+  // Warm, low-contrast surfaces keep data-heavy factory screens calm while
+  // semantic colors remain reserved for actual operational meaning.
+  static const Color lightBackground = Color(0xFFF7F7F5);
   static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightSurfaceVariant = Color(0xFFF8FAFC);
+  static const Color lightSurfaceVariant = Color(0xFFF1F2F0);
   static const Color lightOnSurface = Color(0xFF0F1923);
   static const Color lightBorder = Color(0xFFE2E8F0);
 

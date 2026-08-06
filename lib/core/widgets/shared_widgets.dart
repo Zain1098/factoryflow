@@ -2,6 +2,116 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+/// Compact reusable header for top-level operational screens.
+class CompactScreenHeader extends StatelessWidget {
+  const CompactScreenHeader({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    this.trailing,
+  });
+
+  final String eyebrow;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  eyebrow.toUpperCase(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(title, style: theme.textTheme.headlineSmall),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+class SoftActionTile extends StatelessWidget {
+  const SoftActionTile({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: color, size: 19),
+              ),
+              const Spacer(),
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Text('Open', style: Theme.of(context).textTheme.labelMedium),
+                  const Spacer(),
+                  const Icon(Icons.arrow_forward_rounded, size: 16),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── App Form Field ───────────────────────────────────────────────────────────
 class AppFormField extends StatelessWidget {
   const AppFormField({
@@ -323,7 +433,10 @@ class SyncBadge extends StatelessWidget {
       child: Text(
         '$count pending sync',
         style: const TextStyle(
-            color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600,),
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -351,7 +464,9 @@ class SaveButton extends StatelessWidget {
               width: 18,
               height: 18,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white,),
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
             )
           : const Icon(Icons.save_outlined),
       label: Text(label),
@@ -392,8 +507,11 @@ class ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline,
-              color: theme.colorScheme.onErrorContainer, size: 18,),
+          Icon(
+            Icons.error_outline,
+            color: theme.colorScheme.onErrorContainer,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -432,7 +550,9 @@ class SuccessBanner extends StatelessWidget {
             child: Text(
               message,
               style: const TextStyle(
-                  color: Colors.green, fontWeight: FontWeight.w500,),
+                color: Colors.green,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -493,12 +613,14 @@ Future<bool> showConfirmDialog(
       content: Text(message),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),),
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           style: isDestructive
               ? FilledButton.styleFrom(
-                  backgroundColor: Theme.of(ctx).colorScheme.error,)
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                )
               : null,
           onPressed: () => Navigator.pop(ctx, true),
           child: Text(confirmLabel),
@@ -595,8 +717,10 @@ class RecordDateTimePicker extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(showTime ? Icons.access_time : Icons.calendar_today,
-                      size: 18,),
+                  Icon(
+                    showTime ? Icons.access_time : Icons.calendar_today,
+                    size: 18,
+                  ),
                   const SizedBox(width: 8),
                   ConstrainedBox(
                     constraints: BoxConstraints(maxWidth: labelMaxWidth),

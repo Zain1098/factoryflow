@@ -51,7 +51,9 @@ class _AppShellState extends ConsumerState<AppShell>
     await ref.read(currentUserProvider.notifier).signOut();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Session expired after inactivity. Please sign in again.')),
+        const SnackBar(
+            content: Text(
+                'Session expired after inactivity. Please sign in again.')),
       );
     }
   }
@@ -62,6 +64,7 @@ class _AppShellState extends ConsumerState<AppShell>
       ref.read(alertProducerServiceProvider).checkAll();
     }
   }
+
   Future<bool> _onWillPop() async {
     final location = GoRouterState.of(context).matchedLocation;
     final router = GoRouter.of(context);
@@ -114,62 +117,71 @@ class _AppShellState extends ConsumerState<AppShell>
       child: Listener(
         onPointerDown: (_) => _resetIdleTimer(),
         child: Scaffold(
-        body: Column(
-          children: [
-            if (!isOnline)
-              MaterialBanner(
-                backgroundColor:
-                    Theme.of(context).colorScheme.surfaceContainerHighest,
-                leading:
-                    const Icon(Icons.cloud_off_outlined, color: Colors.orange),
-                content: Text(
-                  pendingSync > 0
-                      ? 'Offline — $pendingSync record(s) will sync when connected.'
-                      : 'Offline mode — all saved data is available.',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
+          body: Column(
+            children: [
+              if (!isOnline)
+                MaterialBanner(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  leading: const Icon(Icons.cloud_off_outlined,
+                      color: Colors.orange),
+                  content: Text(
+                    pendingSync > 0
+                        ? 'Offline — $pendingSync record(s) will sync when connected.'
+                        : 'Offline mode — all saved data is available.',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  actions: const [SizedBox.shrink()],
                 ),
-                actions: const [SizedBox.shrink()],
-              ),
-            Expanded(child: widget.child),
-          ],
-        ),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: Theme.of(context).dividerColor,
-                width: 1,
+              Expanded(child: widget.child),
+            ],
+          ),
+          bottomNavigationBar: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Theme.of(context).dividerColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: NavigationBar(
+                selectedIndex: _calculateIndex(context),
+                onDestinationSelected: (index) => _onTap(context, index),
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard),
+                    label: 'Dashboard',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.edit_note_outlined),
+                    selectedIcon: Icon(Icons.edit_note),
+                    label: 'Entries',
+                  ),
+                  NavigationDestination(
+                      icon: Icon(Icons.search), label: 'Search'),
+                  NavigationDestination(
+                    icon: Icon(Icons.assessment_outlined),
+                    selectedIcon: Icon(Icons.assessment),
+                    label: 'Reports',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: 'Settings',
+                  ),
+                ],
               ),
             ),
           ),
-          child: NavigationBar(
-            selectedIndex: _calculateIndex(context),
-            onDestinationSelected: (index) => _onTap(context, index),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard),
-                label: 'Dashboard',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.edit_note_outlined),
-                selectedIcon: Icon(Icons.edit_note),
-                label: 'Entries',
-              ),
-              NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-              NavigationDestination(
-                icon: Icon(Icons.assessment_outlined),
-                selectedIcon: Icon(Icons.assessment),
-                label: 'Reports',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: 'Settings',
-              ),
-            ],
-          ),
-        ),
         ),
       ),
     );

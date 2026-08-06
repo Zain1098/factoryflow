@@ -47,29 +47,65 @@ class AppTheme {
   static TextTheme _buildTextTheme(TextTheme base) {
     return GoogleFonts.interTextTheme(base).copyWith(
       headlineLarge: GoogleFonts.inter(
-          fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -0.5,),
+        fontSize: 32,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.5,
+      ),
       headlineMedium: GoogleFonts.inter(
-          fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: -0.3,),
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.3,
+      ),
       headlineSmall: GoogleFonts.inter(
-          fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: -0.2,),
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
+      ),
       titleLarge: GoogleFonts.inter(
-          fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: -0.2,),
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
+      ),
       titleMedium: GoogleFonts.inter(
-          fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: -0.1,),
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        letterSpacing: -0.1,
+      ),
       titleSmall: GoogleFonts.inter(
-          fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0,),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0,
+      ),
       bodyLarge: GoogleFonts.inter(
-          fontSize: 16, fontWeight: FontWeight.w400, letterSpacing: 0,),
+        fontSize: 16,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0,
+      ),
       bodyMedium: GoogleFonts.inter(
-          fontSize: 14, fontWeight: FontWeight.w400, letterSpacing: 0,),
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0,
+      ),
       bodySmall: GoogleFonts.inter(
-          fontSize: 12, fontWeight: FontWeight.w400, letterSpacing: 0,),
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        letterSpacing: 0,
+      ),
       labelLarge: GoogleFonts.inter(
-          fontSize: 14, fontWeight: FontWeight.w600, letterSpacing: 0.1,),
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.1,
+      ),
       labelMedium: GoogleFonts.inter(
-          fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 0.3,),
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        letterSpacing: 0.3,
+      ),
       labelSmall: GoogleFonts.inter(
-          fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.8,),
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
     );
   }
 
@@ -113,7 +149,7 @@ class AppTheme {
         elevation: 0,
         color: AppColors.lightSurface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.lightBorder),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -125,9 +161,12 @@ class AppTheme {
           minimumSize: const Size(double.infinity, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: GoogleFonts.inter(
-              fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 0,),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
           elevation: 0,
         ),
       ),
@@ -139,31 +178,36 @@ class AppTheme {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           side: const BorderSide(color: AppColors.lightBorder, width: 1.5),
           textStyle: GoogleFonts.inter(
-              fontSize: 15, fontWeight: FontWeight.w500, letterSpacing: 0,),
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.steelBlue,
           textStyle: GoogleFonts.inter(
-              fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0,),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.lightSurfaceVariant,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.lightBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.lightBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide:
-              const BorderSide(color: AppColors.steelBlue, width: 1.5),
+          borderSide: const BorderSide(color: AppColors.steelBlue, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -171,11 +215,13 @@ class AppTheme {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        labelStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w400),
+        labelStyle:
+            GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w400),
         hintStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: Colors.grey.shade400,),
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: Colors.grey.shade400,
+        ),
       ),
       listTileTheme: const ListTileThemeData(
         minVerticalPadding: 12,
@@ -194,22 +240,27 @@ class AppTheme {
             return const IconThemeData(color: AppColors.steelBlue, size: 22);
           }
           return IconThemeData(
-              color: AppColors.lightOnSurface.withValues(alpha: 0.45),
-              size: 22,);
+            color: AppColors.lightOnSurface.withValues(alpha: 0.45),
+            size: 22,
+          );
         }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.steelBlue,);
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.steelBlue,
+            );
           }
           return GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w400,
-              color: AppColors.lightOnSurface.withValues(alpha: 0.45),);
+            fontSize: 11,
+            fontWeight: FontWeight.w400,
+            color: AppColors.lightOnSurface.withValues(alpha: 0.45),
+          );
         }),
         elevation: 0,
+        height: 68,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
       ),
@@ -223,8 +274,7 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         contentTextStyle: GoogleFonts.inter(fontSize: 14),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
@@ -275,7 +325,7 @@ class AppTheme {
         elevation: 0,
         color: AppColors.darkSurface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.darkBorder),
         ),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -287,9 +337,12 @@ class AppTheme {
           minimumSize: const Size(double.infinity, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: GoogleFonts.inter(
-              fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 0,),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
           elevation: 0,
         ),
       ),
@@ -301,25 +354,31 @@ class AppTheme {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           side: const BorderSide(color: AppColors.darkBorder, width: 1.5),
           textStyle: GoogleFonts.inter(
-              fontSize: 15, fontWeight: FontWeight.w500, letterSpacing: 0,),
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.steelBlueLight,
           textStyle: GoogleFonts.inter(
-              fontSize: 14, fontWeight: FontWeight.w500, letterSpacing: 0,),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.darkSurfaceVariant,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.darkBorder),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: AppColors.darkBorder),
         ),
         focusedBorder: OutlineInputBorder(
@@ -334,13 +393,15 @@ class AppTheme {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         labelStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: AppColors.darkOnSurface.withValues(alpha: 0.5),),
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppColors.darkOnSurface.withValues(alpha: 0.5),
+        ),
         hintStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: AppColors.darkOnSurface.withValues(alpha: 0.3),),
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppColors.darkOnSurface.withValues(alpha: 0.3),
+        ),
       ),
       listTileTheme: const ListTileThemeData(
         minVerticalPadding: 12,
@@ -357,24 +418,32 @@ class AppTheme {
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const IconThemeData(
-                color: AppColors.steelBlueLight, size: 22,);
+              color: AppColors.steelBlueLight,
+              size: 22,
+            );
           }
           return IconThemeData(
-              color: AppColors.darkOnSurface.withValues(alpha: 0.4), size: 22,);
+            color: AppColors.darkOnSurface.withValues(alpha: 0.4),
+            size: 22,
+          );
         }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: AppColors.steelBlueLight,);
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.steelBlueLight,
+            );
           }
           return GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w400,
-              color: AppColors.darkOnSurface.withValues(alpha: 0.4),);
+            fontSize: 11,
+            fontWeight: FontWeight.w400,
+            color: AppColors.darkOnSurface.withValues(alpha: 0.4),
+          );
         }),
         elevation: 0,
+        height: 68,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.transparent,
       ),
@@ -390,10 +459,11 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.darkSurfaceElevated,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         contentTextStyle: GoogleFonts.inter(
-            fontSize: 14, color: AppColors.darkOnSurface,),
+          fontSize: 14,
+          color: AppColors.darkOnSurface,
+        ),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {

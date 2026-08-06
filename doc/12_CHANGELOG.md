@@ -1,6 +1,11 @@
 # Documentation Changelog
 
 ## v3.2-dev - 2026-08-01
+- Refreshed the shared mobile presentation layer with a warmer compact theme,
+  rounded form/card surfaces, floating bottom navigation, reusable pastel
+  action tiles, dashboard progress/quick-entry cards, and an upper global
+  search treatment. Routes, providers, stock calculations, and sync behavior
+  remain unchanged.
 - Enabled `atomicProductionSyncEnabled = true` — server ledger baseline
   reconciled per doc 18; atomic production sync is now active.
 - Added versioned local schema migration system: `schema_version` tracked in
