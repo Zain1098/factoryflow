@@ -134,6 +134,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
 
   @override
   Widget build(BuildContext context) {
+    final rtvReasons = ref.watch(rtvReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Return to Vendor'),
@@ -268,7 +269,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
             isRequired: true,
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _reason,
-            items: kRtvReasons
+            items: (rtvReasons.value ?? kRtvReasonsFallback)
                 .map(
                   (r) => DropdownMenuItem(
                     value: r,

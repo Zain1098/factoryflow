@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../constants/app_constants.dart';
+import '../../features/auth/auth_providers.dart';
 import '../network/sync_service.dart';
 import '../services/alert_producer_service.dart';
 
@@ -18,17 +22,38 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   DateTime? _lastBackPress;
+  Timer? _idleTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _resetIdleTimer();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _idleTimer?.cancel();
     super.dispose();
+  }
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(
+      const Duration(minutes: AppConstants.sessionTimeoutMinutes),
+      _expireIdleSession,
+    );
+  }
+
+  Future<void> _expireIdleSession() async {
+    if (!mounted || ref.read(currentUserProvider).value == null) return;
+    await ref.read(currentUserProvider.notifier).signOut();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expired after inactivity. Please sign in again.')),
+      );
+    }
   }
 
   @override
@@ -86,7 +111,9 @@ class _AppShellState extends ConsumerState<AppShell>
       onPopInvokedWithResult: (didPop, _) async {
         if (!didPop) await _onWillPop();
       },
-      child: Scaffold(
+      child: Listener(
+        onPointerDown: (_) => _resetIdleTimer(),
+        child: Scaffold(
         body: Column(
           children: [
             if (!isOnline)
@@ -142,6 +169,7 @@ class _AppShellState extends ConsumerState<AppShell>
               ),
             ],
           ),
+        ),
         ),
       ),
     );

@@ -42,6 +42,34 @@ and a real online/offline device CRUD flow still require post-push validation.
 The app changes are local code changes until that remote/device verification is
 completed.
 
+## Update - 2026-08-06: Overall reliability and UI consistency pass
+
+- Generic queue records now carry a private sync envelope containing command,
+  device, user, workspace, timestamp, schema, and app-version metadata. The
+  private metadata is removed before the table mutation is sent to Supabase.
+- Erase operations now require an explicit workspace ID and wrap local backup,
+  erase, and queue cleanup in the local database transaction boundary.
+- Remote backup selection is filtered by both user and workspace instead of
+  scanning all pending backup rows.
+- BP, AP, and RTV inspection forms now read configured reject-reason masters,
+  using the existing fallback list only when no configured reason exists.
+- Shared `ErrorBanner` now converts transport/database exception text into a
+  short user-facing message. Existing `AppFormField`, `NumberFormField`,
+  `AppDropdown`, `SaveButton`, and the central Material theme remain the
+  reusable form system for new screens.
+- The app shell now expires an inactive authenticated session after the
+  configured timeout and resets the timer on user interaction.
+- Web preview now persists its local tables and sync queue in browser storage
+  and applies the common workspace-scoped master update statements, so edit,
+  deactivate, and pending-sync state survive a browser reload.
+
+### Verification for this pass
+
+- `git diff --check` passed.
+- `flutter build web --debug --no-pub` was attempted with a 180-second limit
+  but did not finish on this laptop. No web-build or runtime success is claimed
+  until the stale Flutter/Dart process issue is cleared.
+
 ## Scope
 
 Combined functional, UX, permission, offline, and data-safety review of the

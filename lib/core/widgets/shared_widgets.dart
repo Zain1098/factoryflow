@@ -360,6 +360,22 @@ class SaveButton extends StatelessWidget {
 }
 
 // ─── Error Banner ─────────────────────────────────────────────────────────────
+String userFacingError(String message) {
+  final normalized = message.replaceFirst(RegExp(r'^Exception:\s*'), '');
+  if (normalized.contains('PostgrestException') ||
+      normalized.contains('SocketException') ||
+      normalized.contains('Failed host lookup') ||
+      normalized.contains('TimeoutException')) {
+    return 'Could not complete this request. Check your connection and try again.';
+  }
+  if (normalized.startsWith('Error:')) {
+    return 'Could not load this section. Please try again.';
+  }
+  return normalized.length > 180
+      ? '${normalized.substring(0, 177)}…'
+      : normalized;
+}
+
 class ErrorBanner extends StatelessWidget {
   const ErrorBanner(this.message, {super.key});
   final String message;
@@ -381,7 +397,7 @@ class ErrorBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              message,
+              userFacingError(message),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onErrorContainer,
               ),

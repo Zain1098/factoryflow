@@ -184,6 +184,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
 
   @override
   Widget build(BuildContext context) {
+    final rejectReasons = ref.watch(apRejectReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('AP Inspection'),
@@ -224,7 +225,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             label: 'Reject Reason (if any)',
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _rejectReason,
-            items: kApRejectReasons
+            items: (rejectReasons.value ?? kApRejectReasonsFallback)
                 .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                 .toList(),
             onChanged: (v) => setState(() => _rejectReason = v),

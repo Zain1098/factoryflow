@@ -107,6 +107,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
 
   @override
   Widget build(BuildContext context) {
+    final rejectReasons = ref.watch(bpRejectReasonsListProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('BP Inspection'),
@@ -285,7 +286,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
               isRequired: false,
               prefixIcon: const Icon(Icons.report_problem_outlined),
               value: _rejectReason,
-              items: kBpRejectReasons
+              items: (rejectReasons.value ?? kBpRejectReasonsFallback)
                   .map(
                     (r) => DropdownMenuItem(
                       value: r,

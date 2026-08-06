@@ -158,7 +158,8 @@ class SyncService {
           // Strip generated columns so Supabase doesn't reject the upsert
           payload = Map.from(payload)
             ..removeWhere((k, _) => _generatedColumns.contains(k))
-            ..remove('sync_status');
+            ..remove('sync_status')
+            ..remove('_sync_metadata');
 
           if (tableName == 'productions' && operation == 'insert') {
             final batchNum = payload['batch_number'] as String?;
@@ -449,7 +450,7 @@ class SyncService {
       tableName: tableName,
       recordId: recordId,
       operation: 'insert',
-      payload: payload,
+      payload: await _withSyncMetadata(payload),
     );
     if (triggerSync) await schedulePendingSync();
   }
@@ -468,7 +469,7 @@ class SyncService {
       tableName: tableName,
       recordId: recordId,
       operation: 'update',
-      payload: payload,
+      payload: await _withSyncMetadata(payload),
     );
     if (triggerSync) await schedulePendingSync();
   }
@@ -487,7 +488,7 @@ class SyncService {
       tableName: 'stock_ledger',
       recordId: recordId,
       operation: 'ledger',
-      payload: payload,
+      payload: await _withSyncMetadata(payload),
     );
     if (triggerSync) await schedulePendingSync();
   }
@@ -507,7 +508,7 @@ class SyncService {
       tableName: 'productions',
       recordId: recordId,
       operation: 'production_post',
-      payload: payload,
+      payload: await _withSyncMetadata(payload),
     );
     if (triggerSync) await schedulePendingSync();
   }
@@ -522,6 +523,30 @@ class SyncService {
       // Local posting is already durable. Connectivity failures remain pending
       // and the periodic/reconnect worker will retry them later.
     }
+  }
+
+  Future<Map<String, dynamic>> _withSyncMetadata(
+    Map<String, dynamic> payload,
+  ) async {
+    String? userId;
+    try {
+      userId = Supabase.instance.client.auth.currentUser?.id;
+    } catch (_) {
+      // Local/offline mode can start before Supabase initialization.
+    }
+    final deviceId = await _db.getOrCreateDeviceId();
+    return {
+      ...payload,
+      '_sync_metadata': {
+        'command_id': payload['command_id'] ?? const Uuid().v4(),
+        'device_id': deviceId,
+        'user_id': payload['user_id'] ?? userId,
+        'factory_id': payload['factory_id'],
+        'created_at': payload['created_at'] ?? DateTime.now().toUtc().toIso8601String(),
+        'schema_version': AppConstants.syncEnvelopeSchemaVersion,
+        'app_version': AppConstants.appVersion,
+      },
+    };
   }
 
   // Exponential backoff delay (not used for timer but available for manual retry)

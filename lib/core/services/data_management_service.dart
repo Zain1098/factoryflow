@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../constants/app_constants.dart';
 import '../database/database_service.dart';
 import '../models/app_user.dart';
 import '../network/sync_service.dart';
@@ -61,44 +60,48 @@ class DataManagementService {
   Future<void> eraseSection({
     required EraseSection section,
     required String userId,
-    String factoryId = AppConstants.defaultFactoryId,
+    required String factoryId,
   }) async {
-    await _db.backupTable(
-      table: section.table,
-      userId: userId,
-      factoryId: factoryId,
-      reason: 'user_erase_section',
-    );
-    _db.eraseTableForFactory(section.table, factoryId);
-    _db.eraseQueuedChangesForFactory(factoryId, [section.table]);
+    await _db.runInTransaction(() async {
+      await _db.backupTable(
+        table: section.table,
+        userId: userId,
+        factoryId: factoryId,
+        reason: 'user_erase_section',
+      );
+      _db.eraseTableForFactory(section.table, factoryId);
+      _db.eraseQueuedChangesForFactory(factoryId, [section.table]);
+    });
     // Push backup records to Supabase silently.
-    await _pushBackupsToSupabase();
+    await _pushBackupsToSupabase(userId: userId, factoryId: factoryId);
   }
 
   /// Backs up ALL transaction tables then erases them.
   /// Master data (parts, machines etc.) is preserved.
   Future<void> eraseAllTransactionData({
     required String userId,
-    String factoryId = AppConstants.defaultFactoryId,
+    required String factoryId,
   }) async {
-    for (final table in _allTransactionTables) {
-      await _db.backupTable(
-        table: table,
-        userId: userId,
-        factoryId: factoryId,
-        reason: 'user_erase_all',
-      );
-      _db.eraseTableForFactory(table, factoryId);
-    }
-    _db.eraseQueuedChangesForFactory(factoryId, _allTransactionTables);
-    await _pushBackupsToSupabase();
+    await _db.runInTransaction(() async {
+      for (final table in _allTransactionTables) {
+        await _db.backupTable(
+          table: table,
+          userId: userId,
+          factoryId: factoryId,
+          reason: 'user_erase_all',
+        );
+        _db.eraseTableForFactory(table, factoryId);
+      }
+      _db.eraseQueuedChangesForFactory(factoryId, _allTransactionTables);
+    });
+    await _pushBackupsToSupabase(userId: userId, factoryId: factoryId);
   }
 
   /// Backs up master data + all transaction data, then clears everything.
   /// Used before account deletion.
   Future<void> eraseEverything({
     required String userId,
-    String factoryId = AppConstants.defaultFactoryId,
+    required String factoryId,
   }) async {
     const allTables = [
       'productions', 'material_receives', 'final_dispatches', 'stock_ledger',
@@ -111,17 +114,19 @@ class DataManagementService {
       'shifts', 'bp_reject_reasons', 'ap_reject_reasons', 'rtv_reasons',
       'audit_log', 'sync_conflicts', 'draft_forms',
     ];
-    for (final table in allTables) {
-      await _db.backupTable(
-        table: table,
-        userId: userId,
-        factoryId: factoryId,
-        reason: 'account_deletion',
-      );
-      _db.eraseTableForFactory(table, factoryId);
-    }
-    _db.eraseQueuedChangesForFactory(factoryId, allTables);
-    await _pushBackupsToSupabase();
+    await _db.runInTransaction(() async {
+      for (final table in allTables) {
+        await _db.backupTable(
+          table: table,
+          userId: userId,
+          factoryId: factoryId,
+          reason: 'account_deletion',
+        );
+        _db.eraseTableForFactory(table, factoryId);
+      }
+      _db.eraseQueuedChangesForFactory(factoryId, allTables);
+    });
+    await _pushBackupsToSupabase(userId: userId, factoryId: factoryId);
   }
 
   /// Archives the account profile + local data, requests remote deactivation,
@@ -137,7 +142,7 @@ class DataManagementService {
     );
     await eraseEverything(userId: user.id, factoryId: user.factoryId);
     await _requestRemoteAccountDeletion(user.id);
-    await _pushBackupsToSupabase();
+    await _pushBackupsToSupabase(userId: user.id, factoryId: user.factoryId);
   }
 
   /// Row counts for each erasable section — shown in UI.
@@ -151,12 +156,17 @@ class DataManagementService {
 
   /// Pushes pending backup_records to Supabase silently.
   /// Failures are ignored — local backup already exists.
-  Future<void> _pushBackupsToSupabase() async {
+  Future<void> _pushBackupsToSupabase({
+    required String userId,
+    required String factoryId,
+  }) async {
     if (!await _sync.isOnline()) return;
     try {
       final client = Supabase.instance.client;
       final pending = _db.db.select(
-        "SELECT * FROM backup_records WHERE sync_status = 'pending' LIMIT 200",
+        "SELECT * FROM backup_records WHERE sync_status = 'pending' "
+        'AND user_id = ? AND factory_id = ? LIMIT 200',
+        [userId, factoryId],
       );
       if (pending.isEmpty) return;
       final rows = pending.map((r) {
