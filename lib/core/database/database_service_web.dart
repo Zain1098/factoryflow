@@ -98,7 +98,19 @@ class DatabaseService {
     required String id,
     required String status,
     String? reviewedBy,
-  }) async {}
+    String? reviewRemarks,
+  }) async {
+    final rows = _tables['correction_requests'] ?? [];
+    final matches = rows.where((item) => item['id'] == id);
+    if (matches.isEmpty) return;
+    final row = matches.first;
+    if (row['factory_id'] != activeWorkspaceId) return;
+    row['status'] = status;
+    row['reviewed_by'] = reviewedBy;
+    row['review_remarks'] = reviewRemarks;
+    row['reviewed_at'] = DateTime.now().toIso8601String();
+    await _persist();
+  }
 
   Future<void> writeAuditLog({
     required String id,
@@ -539,9 +551,12 @@ class DatabaseService {
   }) async {
     final list =
         List<Map<String, dynamic>>.from(_tables['stock_adjustments'] ?? []);
+    final workspaceRows = list
+        .where((r) => r['factory_id'] == activeWorkspaceId)
+        .toList();
     final filtered = partId != null
-        ? list.where((r) => r['part_id'] == partId).toList()
-        : list;
+        ? workspaceRows.where((r) => r['part_id'] == partId).toList()
+        : workspaceRows;
     filtered.sort((a, b) =>
         (b['created_at'] as String).compareTo(a['created_at'] as String),);
     return filtered.take(limit).toList();

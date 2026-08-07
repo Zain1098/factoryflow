@@ -208,7 +208,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     final theme = Theme.of(context);
     final apStockAsync = ref.watch(pendingApStockProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -164,7 +164,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
     final vendors = ref.watch(vendorsProvider);
     final candidates = ref.watch(rtvCandidatesProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -475,7 +475,7 @@ class _RtvResolutionSheetState extends ConsumerState<_RtvResolutionSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -706,7 +706,7 @@ class _RtvReturnSheetState extends ConsumerState<_RtvReturnSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,

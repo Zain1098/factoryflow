@@ -215,6 +215,20 @@ class SyncService {
                 .select('id')
                 .timeout(const Duration(seconds: 12));
             if (rows.isEmpty) throw StateError('Cloud insert was not accepted.');
+          } else if (operation == 'correction_review') {
+            final result = await client.rpc(
+              'review_correction_request',
+              params: {
+                'p_id': recordId,
+                'p_status': payload['status'],
+                'p_remarks': payload['review_remarks'] ?? '',
+              },
+            ).timeout(const Duration(seconds: 12));
+            if (result is Map && result['success'] == false) {
+              throw StateError(
+                result['error']?.toString() ?? 'Correction review was rejected.',
+              );
+            }
           } else if (operation == 'update') {
             final factoryId = payload['factory_id']?.toString() ?? '';
             if (tableName == 'rtvs') {

@@ -24,6 +24,26 @@ class DashboardWeeklyData {
   final double qty;
 }
 
+/// One part's current balances across the factory pipeline. Keeping the
+/// dashboard view model part-scoped prevents a large total from hiding which
+/// component actually needs attention.
+class DashboardPartStock {
+  const DashboardPartStock({
+    required this.partId,
+    required this.partCode,
+    required this.partName,
+    required this.stageBalances,
+  });
+
+  final String partId;
+  final String partCode;
+  final String partName;
+  final Map<String, double> stageBalances;
+
+  double get totalStock =>
+      stageBalances.values.fold<double>(0, (total, balance) => total + balance);
+}
+
 class DashboardData {
   const DashboardData({
     required this.rawMaterial,
@@ -49,6 +69,7 @@ class DashboardData {
     required this.pendingApprovals,
     required this.machineStatuses,
     required this.weeklyData,
+    required this.partStocks,
   });
 
   final double rawMaterial;
@@ -74,6 +95,7 @@ class DashboardData {
   final int pendingApprovals;
   final List<DashboardMachineStatus> machineStatuses;
   final List<DashboardWeeklyData> weeklyData;
+  final List<DashboardPartStock> partStocks;
 
   static const empty = DashboardData(
     rawMaterial: 0,
@@ -99,6 +121,7 @@ class DashboardData {
     pendingApprovals: 0,
     machineStatuses: [],
     weeklyData: [],
+    partStocks: [],
   );
 
   double get totalRejectPct {
@@ -155,6 +178,64 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final endFormingWip = sequence.length > 2
       ? await db.getTotalBalanceByStage(productionWipStage(sequence[2]))
       : 0.0;
+
+  // Build the dashboard stock view from the same per-part balances used by
+  // operational screens. Totals remain available for KPIs, while the UI can
+  // now show exactly which part is sitting at each stage.
+  final stageLabels = <String, String>{
+    StockStage.rawMaterial.value: 'Raw Material',
+    kProductionRejectedStage: 'Production Rejected',
+    StockStage.bpStock.value: 'BP Stock',
+    StockStage.bpRejected.value: 'BP Rejected',
+    StockStage.atFaco.value: 'At Faco',
+    StockStage.pendingAp.value: 'Pending AP',
+    StockStage.approvedAp.value: 'AP Approved',
+    StockStage.apRejected.value: 'AP Rejected',
+    StockStage.rtvStock.value: 'RTV',
+  };
+  if (sequence.isNotEmpty) {
+    stageLabels[productionWipStage(sequence[0])] = 'Bending WIP';
+  }
+  if (sequence.length > 1) {
+    stageLabels[productionWipStage(sequence[1])] = 'Notching WIP';
+  }
+  if (sequence.length > 2) {
+    stageLabels[productionWipStage(sequence[2])] = 'End Forming WIP';
+  }
+
+  final perStageRows = await Future.wait(
+    stageLabels.keys.map((stage) => db.getBalancesByStage(stage)),
+  );
+  final partStockRows = <String, Map<String, dynamic>>{};
+  for (var index = 0; index < perStageRows.length; index++) {
+    final stage = stageLabels.keys.elementAt(index);
+    for (final row in perStageRows[index]) {
+      final partId = row['id'] as String;
+      final part = partStockRows.putIfAbsent(
+        partId,
+        () => {
+          'code': row['code'] as String? ?? '',
+          'name': row['name'] as String? ?? 'Unnamed part',
+          'balances': <String, double>{},
+        },
+      );
+      (part['balances'] as Map<String, double>)[stage] =
+          (row['balance'] as num?)?.toDouble() ?? 0;
+    }
+  }
+  final partStocks = partStockRows.entries
+      .map(
+        (entry) => DashboardPartStock(
+          partId: entry.key,
+          partCode: entry.value['code'] as String,
+          partName: entry.value['name'] as String,
+          stageBalances: Map.unmodifiable(
+            entry.value['balances'] as Map<String, double>,
+          ),
+        ),
+      )
+      .toList()
+    ..sort((a, b) => a.partName.compareTo(b.partName));
 
   // Today's production totals
   final finalMachineId =
@@ -285,5 +366,6 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     pendingApprovals: pendingApprovals,
     machineStatuses: machineStatuses,
     weeklyData: weeklyData,
+    partStocks: partStocks,
   );
 });

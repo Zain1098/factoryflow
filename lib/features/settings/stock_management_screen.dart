@@ -7,6 +7,7 @@ import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../auth/auth_providers.dart';
+import '../../core/constants/user_roles.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,14 @@ class _StockManagementScreenState extends ConsumerState<StockManagementScreen>
 
   @override
   Widget build(BuildContext context) {
+    final role = ref.watch(userRoleProvider);
+    if (role == null || !role.canAdjustStock) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Stock adjustments are restricted to Owner and Admin.'),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock Management'),
@@ -109,6 +118,7 @@ class _PartStockCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final canAdjustStock = ref.watch(userRoleProvider)?.canAdjustStock ?? false;
     final balances = part['balances'] as Map<String, double>;
     final nonZero =
         StockStage.values.where((s) => (balances[s.value] ?? 0) > 0).toList();
@@ -138,11 +148,12 @@ class _PartStockCard extends ConsumerWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                TextButton.icon(
-                  icon: const Icon(Icons.tune, size: 16),
-                  label: const Text('Adjust'),
-                  onPressed: () => _showAdjustDialog(context, ref, balances),
-                ),
+                if (canAdjustStock)
+                  TextButton.icon(
+                    icon: const Icon(Icons.tune, size: 16),
+                    label: const Text('Adjust'),
+                    onPressed: () => _showAdjustDialog(context, ref, balances),
+                  ),
               ],
             ),
             if (nonZero.isNotEmpty) ...[
@@ -304,6 +315,8 @@ class _PartStockCard extends ConsumerWidget {
     required double qty,
     required String remark,
   }) async {
+    final role = ref.read(userRoleProvider);
+    if (role == null || !role.canAdjustStock) return;
     final db = ref.read(databaseServiceProvider);
     final sync = ref.read(syncServiceProvider);
     final ledger = ref.read(stockLedgerServiceProvider);

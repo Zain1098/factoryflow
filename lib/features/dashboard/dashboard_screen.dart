@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_user.dart';
+import '../../core/network/sync_service.dart';
+import '../../core/widgets/app_shell.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'dashboard_providers.dart';
@@ -15,6 +17,8 @@ class DashboardScreen extends ConsumerWidget {
     final dashAsync = ref.watch(dashboardProvider);
     final user = ref.watch(currentUserProvider).value;
     final theme = Theme.of(context);
+    final isOnline = ref.watch(isOnlineProvider);
+    final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -41,10 +45,10 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
-          IconButton.filledTonal(
-            icon: const Icon(Icons.search_rounded),
-            onPressed: () => context.push('/search'),
-            tooltip: 'Search records',
+          SyncStatusButton(
+            isOnline: isOnline,
+            pendingCount: pendingSync,
+            compact: true,
           ),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded),
@@ -99,16 +103,13 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 16),
 
               // ── Machine Status Row ──
-              _buildMachineStatusSection(context, data),
-              const SizedBox(height: 16),
-
               // ── Weekly Production Chart ──
               _buildWeeklyChart(context, data),
               const SizedBox(height: 16),
 
               // ── Live Stock Pipeline ──
-              _buildSectionLabel(context, 'Live Stock Pipeline'),
-              _buildStockGrid(context, data),
+              _buildSectionLabel(context, 'Live Stock by Part'),
+              _buildPartStockList(context, data),
               const SizedBox(height: 16),
 
               // ── Today's Activity ──
@@ -122,8 +123,7 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 16),
 
               // ── Quick Actions ──
-              _buildSectionLabel(context, 'Quick Entry'),
-              _buildQuickActions(context),
+              _buildMachineStatusSection(context, data),
               const SizedBox(height: 32),
             ],
           ),
@@ -779,6 +779,140 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildPartStockList(BuildContext context, DashboardData data) {
+    final theme = Theme.of(context);
+    if (data.partStocks.isEmpty) {
+      return const EmptyState(
+        icon: Icons.inventory_2_outlined,
+        message: 'No active parts available yet.',
+      );
+    }
+
+    return Column(
+      children: data.partStocks.map((part) {
+        final balances = part.stageBalances.entries
+            .where((entry) => entry.value != 0)
+            .toList();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: () => context.push(
+                '/reports/live-stock?partId=${Uri.encodeQueryComponent(part.partId)}',
+              ),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: theme.cardTheme.color ?? theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: theme.dividerColor),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.inventory_2_outlined,
+                            color: theme.colorScheme.primary,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                part.partCode.isEmpty
+                                    ? part.partName
+                                    : part.partCode,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (part.partCode.isNotEmpty)
+                                Text(
+                                  part.partName,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '${_fmt(part.totalStock)} PCS',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (balances.isEmpty)
+                      Text(
+                        'No stock recorded',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: balances
+                            .map(
+                              (entry) => _PartStockPill(
+                                label: _stockStageLabel(entry.key),
+                                qty: entry.value,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _stockStageLabel(String stage) {
+    const labels = {
+      'raw_material': 'Raw',
+      'production_rejected': 'Prod reject',
+      'bp_stock': 'BP',
+      'bp_rejected': 'BP reject',
+      'at_faco': 'At Faco',
+      'pending_ap': 'Pending AP',
+      'approved_ap': 'AP approved',
+      'ap_rejected': 'AP reject',
+      'rtv_stock': 'RTV',
+    };
+    if (stage.startsWith('production_wip_')) return 'WIP';
+    return labels[stage] ?? stage;
+  }
+
   Widget _buildStockGrid(BuildContext context, DashboardData data) {
     final theme = Theme.of(context);
     final stocks = [
@@ -1360,6 +1494,32 @@ class _StatPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PartStockPill extends StatelessWidget {
+  const _PartStockPill({required this.label, required this.qty});
+
+  final String label;
+  final double qty;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        '$label ${qty == qty.toInt() ? qty.toInt() : qty.toStringAsFixed(1)}',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

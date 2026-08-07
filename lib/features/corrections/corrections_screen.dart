@@ -4,12 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/database/database_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
-import '../../core/constants/user_roles.dart';
 
 final _correctionsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+  final workspaceId = db.activeWorkspaceId.trim();
+  if (workspaceId.isEmpty) return [];
   final rows = db.db.select(
-    'SELECT * FROM correction_requests ORDER BY requested_at DESC LIMIT 50',
+    '''
+    SELECT * FROM correction_requests
+    WHERE factory_id = ?
+    ORDER BY requested_at DESC
+    LIMIT 50
+    ''',
+    [workspaceId],
   );
   return rows.map((r) => Map<String, dynamic>.from(r)).toList();
 });
@@ -21,7 +28,7 @@ class CorrectionsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final corrections = ref.watch(_correctionsProvider);
     final role = ref.watch(userRoleProvider);
-    final isAdmin = role == UserRole.admin;
+    final isApprover = role?.canApproveCorrections ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -80,14 +87,14 @@ class CorrectionsScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    if (isAdmin && status == 'pending') ...[
+                    if (isApprover && status == 'pending') ...[
                       const SizedBox(height: 4),
                       const Text('Tap to review',
                           style: TextStyle(fontSize: 10, color: Colors.grey),),
                     ],
                   ],
                 ),
-                onTap: isAdmin && status == 'pending'
+                onTap: isApprover && status == 'pending'
                     ? () => _showReviewDialog(context, ref, r)
                     : null,
               );
@@ -147,6 +154,7 @@ class CorrectionsScreen extends ConsumerWidget {
         id: record['id'] as String,
         status: result,
         reviewedBy: user?.id,
+        reviewRemarks: remarksCtrl.text.trim(),
       );
       ref.invalidate(_correctionsProvider);
     }

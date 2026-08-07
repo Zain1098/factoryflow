@@ -280,7 +280,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
     final vehicles = ref.watch(vehiclesProvider);
     final drivers = ref.watch(driversProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

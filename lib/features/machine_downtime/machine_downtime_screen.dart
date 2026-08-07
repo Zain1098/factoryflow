@@ -131,7 +131,7 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
     final machines = ref.watch(machinesProvider);
     final operators = ref.watch(operatorsProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Form(
         key: _formKey,

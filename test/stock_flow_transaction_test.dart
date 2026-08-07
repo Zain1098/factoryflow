@@ -236,6 +236,15 @@ void main() {
 
   test('AP inspection keeps RTV as stock and final reject as history only',
       () async {
+    await databaseService.insertRecord('receive_from_facos', {
+      'id': 'faco-receive-a',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-A',
+      'part_id': 'part-a',
+      'qty_received': 100,
+      'date': '2026-07-30',
+      'sync_status': 'synced',
+    });
     await seedStock(
       id: 'pending-ap-seed',
       partId: 'part-a',
@@ -273,6 +282,43 @@ void main() {
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
       10,
     );
+  });
+
+  test('AP inspection rejects a batch that was not received from Faco',
+      () async {
+    await databaseService.insertRecord('receive_from_facos', {
+      'id': 'faco-receive-linked',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-LINKED',
+      'part_id': 'part-a',
+      'qty_received': 100,
+      'date': '2026-07-30',
+      'sync_status': 'synced',
+    });
+    await seedStock(
+      id: 'pending-ap-wrong-batch-seed',
+      partId: 'part-a',
+      stage: StockStage.pendingAp,
+      qty: 100,
+    );
+
+    final result = await ApInspectionRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+    ).save(
+      batchNumber: 'BATCH-TYPED',
+      partId: 'part-a',
+      qtyChecked: 10,
+      approvedQty: 10,
+      rejectedQty: 0,
+      rtvQty: 0,
+      rejectReason: 'Uneven Coating',
+      inspectorId: 'user-a',
+    );
+
+    expect(result.success, isFalse);
+    expect(result.error, contains('pending AP batch stock'));
   });
 
   test('RTV assignment keeps vendor-outstanding stock and blocks reuse',

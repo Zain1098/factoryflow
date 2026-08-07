@@ -132,7 +132,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
     final machines = ref.watch(machinesProvider);
     final batches = ref.watch(recentBatchesProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Form(
         key: _formKey,

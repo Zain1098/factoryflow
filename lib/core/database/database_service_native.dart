@@ -284,7 +284,8 @@ class DatabaseService {
         id TEXT PRIMARY KEY, factory_id TEXT, table_name TEXT, record_id TEXT,
         requested_by TEXT, requested_at TEXT, reason TEXT,
         old_value_json TEXT, proposed_value_json TEXT, status TEXT DEFAULT 'pending',
-        reviewed_by TEXT, reviewed_at TEXT, sync_status TEXT DEFAULT 'pending')''',
+        reviewed_by TEXT, reviewed_at TEXT, review_remarks TEXT,
+        sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS audit_log (
         id TEXT PRIMARY KEY, factory_id TEXT, table_name TEXT, record_id TEXT,
         action TEXT, old_value_json TEXT, new_value_json TEXT,
@@ -659,6 +660,12 @@ class DatabaseService {
       db.execute(
         'ALTER TABLE dispatch_items ADD COLUMN batch_number TEXT',
       );
+    }
+
+    final correctionCols = db.select('PRAGMA table_info(correction_requests)');
+    final correctionNames = correctionCols.map((row) => row['name'] as String).toSet();
+    if (!correctionNames.contains('review_remarks')) {
+      db.execute('ALTER TABLE correction_requests ADD COLUMN review_remarks TEXT');
     }
 
     // Ensure new tables exist on older installs that pre-date this migration.
@@ -1220,16 +1227,30 @@ class DatabaseService {
     required String id,
     required String status,
     String? reviewedBy,
+    String? reviewRemarks,
   }) async {
+    final request = db.select(
+      'SELECT factory_id FROM correction_requests WHERE id = ?',
+      [id],
+    );
+    if (request.isEmpty) return;
+    final factoryId = request.first['factory_id'] as String? ?? '';
+    if (factoryId.isEmpty || factoryId != activeWorkspaceId) return;
     db.execute(
-      'UPDATE correction_requests SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?',
-      [status, reviewedBy, DateTime.now().toIso8601String(), id],
+      'UPDATE correction_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, review_remarks = ? WHERE id = ?',
+      [status, reviewedBy, DateTime.now().toIso8601String(), reviewRemarks, id],
     );
     await enqueueSync(
       tableName: 'correction_requests',
       recordId: id,
-      operation: 'update',
-      payload: {'id': id, 'status': status, 'reviewed_by': reviewedBy},
+      operation: 'correction_review',
+      payload: {
+        'id': id,
+        'factory_id': factoryId,
+        'status': status,
+        'reviewed_by': reviewedBy,
+        'review_remarks': reviewRemarks,
+      },
     );
   }
 
@@ -1604,8 +1625,12 @@ class DatabaseService {
     String? partId,
     int limit = 100,
   }) async {
-    final where = partId != null ? 'WHERE sa.part_id = ?' : '';
-    final params = partId != null ? [partId, limit] : [limit];
+    final where = partId != null
+        ? 'WHERE sa.factory_id = ? AND sa.part_id = ?'
+        : 'WHERE sa.factory_id = ?';
+    final params = partId != null
+        ? [activeWorkspaceId, partId, limit]
+        : [activeWorkspaceId, limit];
     final result = db.select(
       '''SELECT sa.*, p.name as part_name, p.code as part_code
          FROM stock_adjustments sa

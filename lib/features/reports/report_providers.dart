@@ -586,6 +586,7 @@ final facoPendingReportProvider =
 
 class LiveStockRow {
   const LiveStockRow({
+    required this.partId,
     required this.partName,
     required this.partCode,
     required this.rawMaterial,
@@ -597,6 +598,7 @@ class LiveStockRow {
     required this.rtvStock,
     required this.totalStock,
   });
+  final String partId;
   final String partName;
   final String partCode;
   final double rawMaterial;
@@ -618,7 +620,7 @@ final liveStockReportProvider =
   final rows = db.db.select(
     '''
     SELECT
-      p.name, p.code,
+      p.id, p.name, p.code,
       COALESCE(MAX(CASE WHEN sl.stage='raw_material' THEN sl.running_balance END), 0) AS raw,
       COALESCE(MAX(CASE WHEN sl.stage='bp_stock' THEN sl.running_balance END), 0) AS bp,
       COALESCE(MAX(CASE WHEN sl.stage='at_faco' THEN sl.running_balance END), 0) AS faco,
@@ -650,6 +652,7 @@ final liveStockReportProvider =
     final aprej = (r['aprej'] as num).toDouble();
     final rtv = (r['rtv'] as num).toDouble();
     return LiveStockRow(
+      partId: r['id'] as String,
       partName: r['name'] as String,
       partCode: r['code'] as String? ?? '',
       rawMaterial: raw,

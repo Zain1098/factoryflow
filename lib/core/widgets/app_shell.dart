@@ -106,6 +106,7 @@ class _AppShellState extends ConsumerState<AppShell>
   Widget build(BuildContext context) {
     final isOnline = ref.watch(isOnlineProvider);
     final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
+    final location = GoRouterState.of(context).matchedLocation;
 
     // Always intercept so entry pages pop to Entries (or prior stack)
     // instead of jumping straight to Dashboard when the shell has no stack.
@@ -140,10 +141,12 @@ class _AppShellState extends ConsumerState<AppShell>
             selectedIndex: _calculateIndex(context),
             onSelected: (index) => _onTap(context, index),
           ),
-          floatingActionButton: _SyncStatusButton(
-            isOnline: isOnline,
-            pendingCount: pendingSync,
-          ),
+          floatingActionButton: location == '/dashboard'
+              ? null
+              : SyncStatusButton(
+                  isOnline: isOnline,
+                  pendingCount: pendingSync,
+                ),
         ),
       ),
     );
@@ -207,14 +210,16 @@ class _AppShellState extends ConsumerState<AppShell>
 
 /// Compact, app-wide access to automatic cloud sync. Detailed pages are only
 /// needed where an administrator must resolve an actual conflict.
-class _SyncStatusButton extends ConsumerWidget {
-  const _SyncStatusButton({
+class SyncStatusButton extends ConsumerWidget {
+  const SyncStatusButton({
     required this.isOnline,
     required this.pendingCount,
+    this.compact = false,
   });
 
   final bool isOnline;
   final int pendingCount;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -234,20 +239,29 @@ class _SyncStatusButton extends ConsumerWidget {
             ? '$pendingCount pending'
             : 'Synced';
 
+    final action = compact
+        ? IconButton.filledTonal(
+            onPressed: () => _showSyncSheet(context, ref),
+            icon: Icon(icon),
+            tooltip: 'Cloud sync: $label',
+            style: IconButton.styleFrom(foregroundColor: color),
+          )
+        : FloatingActionButton.extended(
+            heroTag: 'cloud-sync-status',
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            foregroundColor: color,
+            elevation: 3,
+            onPressed: () => _showSyncSheet(context, ref),
+            icon: Icon(icon),
+            label: Text(label),
+          );
+
     return Semantics(
       button: true,
       label: 'Cloud sync status: $label',
       child: Tooltip(
         message: 'Cloud sync: $label',
-        child: FloatingActionButton.extended(
-          heroTag: 'cloud-sync-status',
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          foregroundColor: color,
-          elevation: 3,
-          onPressed: () => _showSyncSheet(context, ref),
-          icon: Icon(icon),
-          label: Text(label),
-        ),
+        child: action,
       ),
     );
   }
@@ -265,7 +279,8 @@ class _SyncStatusButton extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Cloud Sync', style: Theme.of(context).textTheme.titleLarge),
+                Text('Cloud Sync',
+                    style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Text(
                   !isOnline

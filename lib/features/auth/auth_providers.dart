@@ -874,10 +874,33 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   }
 
   Future<void> refresh() async {
-    state = await AsyncValue.guard(
+    // An auth event can arrive while a password sign-in is still persisting
+    // the matching local profile. Do not clear a good, matching in-memory
+    // session just because that background profile refresh briefly returns
+    // null; doing so makes GoRouter send the user back to /login.
+    final expectedAuthUserId =
+        ref.read(supabaseClientProvider)?.auth.currentUser?.id;
+    final previousUser = state.value;
+    final refreshed = await AsyncValue.guard(
       () => ref.read(authRepositoryProvider).getCurrentAppUser(),
     );
-    final user = state.value;
+
+    // A refresh started for an older account must never overwrite a newer
+    // account that signed in while the profile request was in flight.
+    final currentAuthUserId =
+        ref.read(supabaseClientProvider)?.auth.currentUser?.id;
+    if (expectedAuthUserId != currentAuthUserId) return;
+
+    final refreshedUser = refreshed.value;
+    if (refreshedUser == null &&
+        expectedAuthUserId != null &&
+        previousUser?.id == expectedAuthUserId) {
+      state = AsyncData(previousUser);
+      return;
+    }
+
+    state = refreshed;
+    final user = refreshedUser;
     if (user != null) {
       await ref
           .read(databaseServiceProvider)

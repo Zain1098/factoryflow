@@ -4,12 +4,17 @@ enum UserRole {
   productionIncharge('Production Incharge'),
   store('Store'),
   qualityInspector('Quality Inspector'),
-  management('Management');
+  /// Read-only business reporting role. The database value is kept as Viewer
+  /// so Flutter, workspace_members and Supabase RLS share one vocabulary.
+  management('Viewer');
 
   const UserRole(this.value);
   final String value;
 
   static UserRole? fromValue(String value) {
+    // Backward compatibility for locally cached sessions from before the
+    // shared-workspace role model was standardised.
+    if (value == 'Management') return UserRole.management;
     for (final role in UserRole.values) {
       if (role.value == value) return role;
     }
@@ -21,6 +26,10 @@ enum UserRole {
   bool get canManageMasters => this == UserRole.admin || this == UserRole.owner;
 
   bool get canApproveCorrections => this == UserRole.admin || this == UserRole.owner;
+
+  /// Manual stock reconciliation changes the financial/operational source of
+  /// truth, so it is deliberately narrower than normal transaction entry.
+  bool get canAdjustStock => this == UserRole.admin || this == UserRole.owner;
 
   bool canAccessModule(String module) {
     if (this == UserRole.admin || this == UserRole.owner) return true;

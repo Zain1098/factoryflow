@@ -55,11 +55,38 @@ class ApInspectionRepository {
         error: 'Inspection quantities must be valid positive values.',
       );
     }
+    if (batchNumber.trim().isEmpty) {
+      return const ApInspectionResult(
+        success: false,
+        error: 'Select the original Faco receipt batch before AP inspection.',
+      );
+    }
     if ((approvedQty + rejectedQty + rtvQty - qtyChecked).abs() > 0.001) {
       return ApInspectionResult(
         success: false,
         error:
             'OK ($approvedQty) + RTV ($rtvQty) + Final Reject ($rejectedQty) must equal Checked ($qtyChecked)',
+      );
+    }
+    final batchRows = _db.db.select(
+      '''SELECT COALESCE((
+           SELECT SUM(qty_received)
+           FROM receive_from_facos
+           WHERE factory_id = ? AND batch_number = ? AND part_id = ?
+         ), 0) - COALESCE((
+           SELECT SUM(qty_checked)
+           FROM ap_inspections
+           WHERE factory_id = ? AND batch_number = ? AND part_id = ?
+         ), 0) AS available_qty''',
+      [factoryId, batchNumber, partId, factoryId, batchNumber, partId],
+    );
+    final batchAvailable =
+        (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
+    if (qtyChecked > batchAvailable) {
+      return ApInspectionResult(
+        success: false,
+        error:
+            '$batchNumber: Checked qty (${qtyChecked.toInt()}) exceeds pending AP batch stock (${batchAvailable.toInt()} PCS).',
       );
     }
     final available =

@@ -76,7 +76,7 @@ class ReportsScreen extends ConsumerWidget {
           Icons.inventory_2_outlined,
           Colors.green,
           'Current stock at every stage',
-          () => _push(context, const _LiveStockReport()),
+          () => _push(context, const LiveStockReport()),
         ),
         _ReportTile(
           'Faco Pending',
@@ -133,8 +133,7 @@ class ReportsScreen extends ConsumerWidget {
           ),
           _DateRangeChips(range: range),
           const SizedBox(height: 14),
-          for (final section in sections)
-            _ReportSectionCard(section: section),
+          for (final section in sections) _ReportSectionCard(section: section),
         ],
       ),
     );
@@ -392,7 +391,12 @@ class _ReportSection {
 
 class _ReportTile {
   const _ReportTile(
-      this.title, this.icon, this.color, this.subtitle, this.onTap,);
+    this.title,
+    this.icon,
+    this.color,
+    this.subtitle,
+    this.onTap,
+  );
   final String title;
   final IconData icon;
   final Color color;
@@ -478,8 +482,12 @@ class _ReportPage extends ConsumerWidget {
               children: [
                 if (summaryCards.isNotEmpty) _SummaryRow(summaryCards, color),
                 Expanded(
-                    child: _DataTable(
-                        header: tableHeader, rows: rows, color: color,),),
+                  child: _DataTable(
+                    header: tableHeader,
+                    rows: rows,
+                    color: color,
+                  ),
+                ),
               ],
             ),
     );
@@ -542,8 +550,11 @@ class _SummaryCard {
 // ─── Data Table ───────────────────────────────────────────────────────────────
 
 class _DataTable extends StatelessWidget {
-  const _DataTable(
-      {required this.header, required this.rows, required this.color,});
+  const _DataTable({
+    required this.header,
+    required this.rows,
+    required this.color,
+  });
   final List<String> header;
   final List<List<String>> rows;
   final Color color;
@@ -1043,21 +1054,26 @@ class _FacoPendingReport extends ConsumerWidget {
 
 // ─── 9. Live Stock ────────────────────────────────────────────────────────────
 
-class _LiveStockReport extends ConsumerWidget {
-  const _LiveStockReport();
+class LiveStockReport extends ConsumerWidget {
+  const LiveStockReport({super.key, this.partId});
+
+  final String? partId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(liveStockReportProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
-      final totalAll = data.fold(0.0, (s, r) => s + r.totalStock);
+      final filteredData = partId == null
+          ? data
+          : data.where((row) => row.partId == partId).toList();
+      final totalAll = filteredData.fold(0.0, (s, r) => s + r.totalStock);
       return _ReportPage(
-        title: 'Live Stock',
+        title: partId == null ? 'Live Stock' : 'Part Live Stock',
         color: Colors.green,
         summaryCards: [
           _SummaryCard('Total Stock', _n(totalAll)),
-          _SummaryCard('Parts', '${data.length}'),
+          _SummaryCard('Parts', '${filteredData.length}'),
         ],
         tableHeader: const [
           'Part',
@@ -1070,7 +1086,7 @@ class _LiveStockReport extends ConsumerWidget {
           'RTV',
           'Total',
         ],
-        rows: data
+        rows: filteredData
             .map(
               (r) => [
                 r.partCode.isNotEmpty
@@ -1088,18 +1104,18 @@ class _LiveStockReport extends ConsumerWidget {
             )
             .toList(),
         emptyMessage: 'No stock data available',
-        onExport: data.isEmpty
+        onExport: filteredData.isEmpty
             ? null
             : () => ExportSheet.show(
                   context: context,
                   onExcel: () => ExportService.exportStockReport(
                     context: context,
-                    rows: data,
+                    rows: filteredData,
                     format: ExportFormat.excel,
                   ),
                   onPdf: () => ExportService.exportStockReport(
                     context: context,
-                    rows: data,
+                    rows: filteredData,
                     format: ExportFormat.pdf,
                   ),
                 ),
@@ -1231,7 +1247,10 @@ class _HoldReport extends ConsumerWidget {
   }
 
   Widget _buildBpHoldTab(
-      BuildContext context, HoldMaterialReportData data, ThemeData theme,) {
+    BuildContext context,
+    HoldMaterialReportData data,
+    ThemeData theme,
+  ) {
     if (data.bpHoldList.isEmpty) {
       return const EmptyState(
         message: 'No material currently on BP QC Hold.',
@@ -1258,19 +1277,26 @@ class _HoldReport extends ConsumerWidget {
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-                  child: const Icon(Icons.build_circle_outlined,
-                      color: Colors.redAccent,),
+                  child: const Icon(
+                    Icons.build_circle_outlined,
+                    color: Colors.redAccent,
+                  ),
                 ),
                 title: Row(
                   children: [
                     Expanded(
-                        child: Text('${r.partCode} – ${r.partName}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold),),),
-                    Text('${r.qty.toInt()} PCS',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.redAccent,),),
+                      child: Text(
+                        '${r.partCode} – ${r.partName}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Text(
+                      '${r.qty.toInt()} PCS',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.redAccent,
+                      ),
+                    ),
                   ],
                 ),
                 subtitle: Padding(
@@ -1289,7 +1315,10 @@ class _HoldReport extends ConsumerWidget {
   }
 
   Widget _buildRtvHoldTab(
-      BuildContext context, HoldMaterialReportData data, ThemeData theme,) {
+    BuildContext context,
+    HoldMaterialReportData data,
+    ThemeData theme,
+  ) {
     if (data.rtvHoldList.isEmpty) {
       return const EmptyState(
         message: 'No active RTV (Post-Plating) Hold.',
@@ -1324,12 +1353,18 @@ class _HoldReport extends ConsumerWidget {
                 title: Row(
                   children: [
                     Expanded(
-                        child: Text('${r.partCode} – ${r.partName}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold),),),
-                    Text('${r.qty.toInt()} PCS',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, color: Colors.orange,),),
+                      child: Text(
+                        '${r.partCode} – ${r.partName}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Text(
+                      '${r.qty.toInt()} PCS',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
                   ],
                 ),
                 subtitle: Padding(
@@ -1340,7 +1375,9 @@ class _HoldReport extends ConsumerWidget {
                       Text('Vendor: ${r.vendorName} · Status: ${r.status}'),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2,),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: ageColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
@@ -1348,9 +1385,10 @@ class _HoldReport extends ConsumerWidget {
                         child: Text(
                           '${r.agingDays}d aging',
                           style: TextStyle(
-                              color: ageColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,),
+                            color: ageColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -1387,17 +1425,23 @@ class _HoldReport extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,),),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(value,
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: color,),),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
               ],
             ),
           ),

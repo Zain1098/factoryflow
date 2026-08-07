@@ -112,6 +112,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/search', builder: (_, __) => const SearchScreen()),
           GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
           GoRoute(
+            path: '/reports/live-stock',
+            builder: (_, state) => LiveStockReport(
+              partId: state.uri.queryParameters['partId'],
+            ),
+          ),
+          GoRoute(
             path: '/notifications',
             builder: (_, __) => const NotificationsScreen(),
           ),

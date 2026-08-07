@@ -215,32 +215,36 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Account Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.only(top: 12, bottom: 28),
         children: [
           // ── Avatar Section ──
-          Center(
-            child: Stack(
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Stack(
               children: [
                 CircleAvatar(
-                  radius: 56,
+                  radius: 36,
                   backgroundColor: theme.colorScheme.primaryContainer,
                   child: _buildAvatarContent(user),
                 ),
                 Positioned(
-                  bottom: 0,
-                  right: 0,
+                  bottom: -2,
+                  right: -2,
                   child: Material(
                     color: theme.colorScheme.primary,
                     borderRadius: BorderRadius.circular(20),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: _isUploadingImage ? null : _pickAndUploadAvatar,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(7),
                         child: _isUploadingImage
                             ? const SizedBox(
-                                width: 20,
-                                height: 20,
+                                width: 16,
+                                height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   color: Colors.white,
@@ -249,25 +253,39 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                             : const Icon(
                                 Icons.camera_alt,
                                 color: Colors.white,
-                                size: 20,
+                                size: 17,
                               ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Tap to change photo',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                  ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(user?.name ?? 'Your profile',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 3),
+                        Text(user?.email ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 5),
+                        Text('Tap camera to update photo',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.primary)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 24),
 
           // ── Account Info Card ──
           Card(
