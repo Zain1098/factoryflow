@@ -21,6 +21,7 @@ import '../auth/account_settings_screen.dart';
 import '../corrections/corrections_screen.dart';
 import '../corrections/conflict_review_screen.dart';
 import 'stock_management_screen.dart';
+import 'team_members_screen.dart';
 
 Future<bool> _runSettingsAction(
   BuildContext context,
@@ -441,6 +442,17 @@ class SettingsScreen extends ConsumerWidget {
           // ── PRODUCTION ────────────────────────────────────────────────────
           if (canManageFactory) ...[
             const _SectionLabel('Factory Setup'),
+            _SettingsNavigationTile(
+              icon: Icons.groups_2_outlined,
+              title: 'Team Members',
+              subtitle: 'Invite people and control role-based access',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const TeamMembersScreen(),
+                ),
+              ),
+            ),
             _SettingsNavigationTile(
               icon: Icons.track_changes_outlined,
               title: 'Daily Production Targets',

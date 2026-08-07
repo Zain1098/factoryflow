@@ -106,7 +106,6 @@ class _AppShellState extends ConsumerState<AppShell>
   Widget build(BuildContext context) {
     final isOnline = ref.watch(isOnlineProvider);
     final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
-    final location = GoRouterState.of(context).matchedLocation;
 
     // Always intercept so entry pages pop to Entries (or prior stack)
     // instead of jumping straight to Dashboard when the shell has no stack.
@@ -141,12 +140,6 @@ class _AppShellState extends ConsumerState<AppShell>
             selectedIndex: _calculateIndex(context),
             onSelected: (index) => _onTap(context, index),
           ),
-          floatingActionButton: location == '/dashboard'
-              ? null
-              : SyncStatusButton(
-                  isOnline: isOnline,
-                  pendingCount: pendingSync,
-                ),
         ),
       ),
     );

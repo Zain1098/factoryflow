@@ -115,6 +115,42 @@ class SyncService {
     }
   }
 
+  /// Pulls the active company's shared records onto a newly signed-in mobile.
+  /// Pending local records are never overwritten; normal upload remains the
+  /// source of truth for offline work made on this device.
+  Future<int> hydrateActiveWorkspace() async {
+    if (!await isOnline() || !await isSupabaseReady()) return 0;
+    if (await _db.countPendingSync() > 0) return 0;
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return 0;
+    const tables = [
+      'parts', 'machines', 'suppliers', 'vendors', 'customers', 'operators',
+      'vehicles', 'drivers', 'shifts', 'bp_reject_reasons', 'ap_reject_reasons',
+      'rtv_reasons', 'target_master', 'purchase_orders', 'material_receives',
+      'productions', 'machine_downtimes', 'bp_inspections', 'dispatch_to_facos',
+      'receive_from_facos', 'ap_inspections', 'ap_rejected_actions', 'rtvs',
+      'rtv_reinspections', 'final_dispatches', 'dispatch_sessions', 'dispatch_items',
+      'stock_ledger', 'correction_requests', 'physical_counts', 'stock_adjustments',
+    ];
+    var imported = 0;
+    final client = Supabase.instance.client;
+    for (final table in tables) {
+      try {
+        final response = await client.from(table).select().eq('factory_id', factoryId)
+            .timeout(const Duration(seconds: 12));
+        final rows = (response as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+        await _db.upsertRemoteRecords(table, rows);
+        imported += rows.length;
+      } catch (_) {
+        // Older hosted databases may not yet contain every additive table.
+        // Continue importing the tables that are available to this app version.
+      }
+    }
+    return imported;
+  }
+
   Future<SyncResult> syncPending() async {
     if (_isSyncing) return const SyncResult(skipped: true);
     if (!await isOnline()) return const SyncResult(offline: true);

@@ -122,6 +122,19 @@ class DatabaseService {
     Map<String, dynamic>? newValue,
   }) async {}
 
+  Future<void> upsertRemoteRecords(String table, List<Map<String, dynamic>> rows) async {
+    final local = _tables.putIfAbsent(table, () => []);
+    for (final remote in rows) {
+      final id = remote['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      final index = local.indexWhere((row) => row['id']?.toString() == id);
+      if (index >= 0 && local[index]['sync_status'] == 'pending') continue;
+      local.removeWhere((row) => row['id']?.toString() == id);
+      local.add({...remote, 'sync_status': 'synced'});
+    }
+    await _persist();
+  }
+
   Future<List<Map<String, dynamic>>> getOpenPurchaseOrders(
           String partId,) async =>
       [];

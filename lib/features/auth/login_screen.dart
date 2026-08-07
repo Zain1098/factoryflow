@@ -22,6 +22,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _passwordCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _workspaceCtrl = TextEditingController();
+  final _joinCodeCtrl = TextEditingController();
   bool _obscure = true;
   bool _isResetting = false;
   bool _isSignUp = false;
@@ -58,6 +59,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _passwordCtrl.dispose();
     _nameCtrl.dispose();
     _workspaceCtrl.dispose();
+    _joinCodeCtrl.dispose();
     _anim.dispose();
     super.dispose();
   }
@@ -74,6 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 password: _passwordCtrl.text,
                 profileName: _nameCtrl.text.trim(),
                 workspaceName: _workspaceCtrl.text.trim(),
+                joinCode: _joinCodeCtrl.text.trim(),
               );
       if (!mounted) return;
       final signUpState = ref.read(currentUserProvider);
@@ -84,6 +87,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               email: email,
               profileName: _nameCtrl.text.trim(),
               workspaceName: _workspaceCtrl.text.trim(),
+              joinCode: _joinCodeCtrl.text.trim(),
             ),
           ),
         );
@@ -587,15 +591,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 textInputAction: TextInputAction.next,
                 enabled: !isLoading,
                 decoration: InputDecoration(
-                  labelText: 'Company / Workspace Name',
+                  labelText: 'Company / Workspace Name (new company)',
                   prefixIcon: const Icon(Icons.business_outlined),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty)
-                    ? 'Workspace name is required'
+                validator: (v) => _joinCodeCtrl.text.trim().isEmpty &&
+                        (v == null || v.trim().isEmpty)
+                    ? 'Enter company name or a join code'
                     : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _joinCodeCtrl,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.characters,
+                enabled: !isLoading,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Team join code (if invited)',
+                  hintText: 'Example: A1B2C3D4',
+                  prefixIcon: const Icon(Icons.key_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (v) => v != null && v.trim().isNotEmpty &&
+                        !RegExp(r'^[A-Za-z0-9]{8}$').hasMatch(v.trim())
+                    ? 'Enter the 8-character join code'
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Use either a new company name or the one-time code from your Owner. A join code connects this mobile to the existing company.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 14),
             ],

@@ -141,6 +141,7 @@ Future<void> _savePendingSignup({
   required String email,
   required String profileName,
   required String workspaceName,
+  required String joinCode,
 }) async {
   await _secureStorage.write(
     key: _kPendingSignupKey,
@@ -148,6 +149,7 @@ Future<void> _savePendingSignup({
       'email': email.trim().toLowerCase(),
       'profile_name': profileName.trim(),
       'workspace_name': workspaceName.trim(),
+      'join_code': joinCode.trim().toUpperCase(),
     }),
   );
 }
@@ -161,6 +163,7 @@ Future<Map<String, String>?> _loadPendingSignup(String? email) async {
     return {
       'profile_name': data['profile_name'] as String? ?? '',
       'workspace_name': data['workspace_name'] as String? ?? '',
+      'join_code': data['join_code'] as String? ?? '',
     };
   } catch (_) {
     return null;
@@ -178,6 +181,24 @@ class AuthRepository {
   final GoogleSignIn _googleSignIn;
 
   User? get currentAuthUser => _client?.auth.currentUser;
+
+  Future<Map> _completeWorkspaceSetup(
+    SupabaseClient client,
+    String profileName,
+    String workspaceName,
+    String joinCode,
+  ) async {
+    if (joinCode.trim().isNotEmpty) {
+      return await client.rpc(
+        'accept_workspace_invite',
+        params: {'p_profile_name': profileName, 'p_code': joinCode.trim()},
+      ) as Map;
+    }
+    return await client.rpc(
+      'create_user_workspace',
+      params: {'p_profile_name': profileName, 'p_workspace_name': workspaceName},
+    ) as Map;
+  }
 
   Future<AppUser?> signIn({
     required String email,
@@ -410,6 +431,7 @@ class AuthRepository {
     required String password,
     required String profileName,
     required String workspaceName,
+    required String joinCode,
     required DatabaseService db,
   }) async {
     final client = _client;
@@ -441,18 +463,13 @@ class AuthRepository {
       email: email,
       profileName: profileName,
       workspaceName: workspaceName,
+      joinCode: joinCode,
     );
     if (response.session == null) return null;
 
     Map result;
     try {
-      result = await client.rpc(
-        'create_user_workspace',
-        params: {
-          'p_profile_name': profileName,
-          'p_workspace_name': workspaceName,
-        },
-      );
+      result = await _completeWorkspaceSetup(client, profileName, workspaceName, joinCode);
     } catch (e) {
       throw Exception('Workspace setup failed: $e');
     }
@@ -460,7 +477,7 @@ class AuthRepository {
     final workspaceIdStr = result['workspace_id'] as String;
     await db.upsertWorkspace(
       id: workspaceIdStr,
-      name: workspaceName,
+      name: result['workspace_name'] as String? ?? workspaceName,
       ownerUserId: userId,
       syncStatus: 'synced',
     );
@@ -468,7 +485,7 @@ class AuthRepository {
       id: const Uuid().v4(),
       workspaceId: workspaceIdStr,
       userId: userId,
-      role: 'owner',
+      role: result['role'] as String? ?? 'owner',
       syncStatus: 'synced',
     );
     await db.setActiveWorkspaceId(workspaceIdStr);
@@ -479,7 +496,7 @@ class AuthRepository {
       factoryId: workspaceIdStr,
       name: profileName,
       email: email,
-      role: UserRole.owner,
+      role: UserRole.fromValue(result['role'] as String? ?? 'owner') ?? UserRole.owner,
     );
     await _saveLocalSession(user);
     return user;
@@ -490,6 +507,7 @@ class AuthRepository {
     required String token,
     required String profileName,
     required String workspaceName,
+    required String joinCode,
     required DatabaseService db,
   }) async {
     final client = _client;
@@ -504,17 +522,11 @@ class AuthRepository {
       throw Exception('Email verification did not create a valid session.');
     }
 
-    final result = await client.rpc(
-      'create_user_workspace',
-      params: {
-        'p_profile_name': profileName,
-        'p_workspace_name': workspaceName,
-      },
-    );
+    final result = await _completeWorkspaceSetup(client, profileName, workspaceName, joinCode);
     final workspaceId = (result as Map)['workspace_id'] as String;
     await db.upsertWorkspace(
       id: workspaceId,
-      name: workspaceName,
+      name: result['workspace_name'] as String? ?? workspaceName,
       ownerUserId: userId,
       syncStatus: 'synced',
     );
@@ -522,7 +534,7 @@ class AuthRepository {
       id: const Uuid().v4(),
       workspaceId: workspaceId,
       userId: userId,
-      role: 'owner',
+      role: result['role'] as String? ?? 'owner',
       syncStatus: 'synced',
     );
     await db.setActiveWorkspaceId(workspaceId);
@@ -533,7 +545,7 @@ class AuthRepository {
       factoryId: workspaceId,
       name: profileName,
       email: response.user?.email ?? email,
-      role: UserRole.owner,
+      role: UserRole.fromValue(result['role'] as String? ?? 'owner') ?? UserRole.owner,
     );
     await _saveLocalSession(user);
     return user;
@@ -684,16 +696,15 @@ class AuthRepository {
     final pending = await _loadPendingSignup(client.auth.currentUser?.email);
     final pendingProfile = pending?['profile_name'];
     final pendingWorkspace = pending?['workspace_name'];
-    final result = await client.rpc(
-      'create_user_workspace',
-      params: {
-        'p_profile_name': (pendingProfile ?? profileName).trim().isEmpty
-            ? 'User'
-            : (pendingProfile ?? profileName).trim(),
-        'p_workspace_name': (pendingWorkspace ?? 'My Workspace').trim().isEmpty
-            ? 'My Workspace'
-            : (pendingWorkspace ?? 'My Workspace').trim(),
-      },
+    final result = await _completeWorkspaceSetup(
+      client,
+      (pendingProfile ?? profileName).trim().isEmpty
+          ? 'User'
+          : (pendingProfile ?? profileName).trim(),
+      (pendingWorkspace ?? 'My Workspace').trim().isEmpty
+          ? 'My Workspace'
+          : (pendingWorkspace ?? 'My Workspace').trim(),
+      pending?['join_code'] ?? '',
     );
     final workspaceId = (result as Map)['workspace_id'] as String?;
     if (workspaceId == null || workspaceId.isEmpty) return null;
@@ -792,6 +803,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
     required String password,
     required String profileName,
     required String workspaceName,
+    required String joinCode,
   }) async {
     state = const AsyncLoading();
     var verificationRequired = false;
@@ -801,6 +813,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             password: password,
             profileName: profileName,
             workspaceName: workspaceName,
+            joinCode: joinCode,
             db: ref.read(databaseServiceProvider),
           );
       if (user == null) {
@@ -818,6 +831,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
     required String token,
     required String profileName,
     required String workspaceName,
+    required String joinCode,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
@@ -826,6 +840,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             token: token,
             profileName: profileName,
             workspaceName: workspaceName,
+            joinCode: joinCode,
             db: ref.read(databaseServiceProvider),
           );
       _onLoginSuccess();
@@ -844,10 +859,12 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   void _onLoginSuccess() {
     ref.read(syncServiceProvider).startPeriodicSync();
     _syncMasterDataIfOnline();
+    unawaited(ref.read(syncServiceProvider).hydrateActiveWorkspace());
   }
 
   void _onSessionRestored() {
     ref.read(syncServiceProvider).startPeriodicSync();
+    unawaited(ref.read(syncServiceProvider).hydrateActiveWorkspace());
     _syncMasterDataIfOnline();
   }
 

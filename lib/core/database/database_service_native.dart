@@ -1093,6 +1093,31 @@ class DatabaseService {
     );
   }
 
+  /// Imports cloud rows without queuing them back to Supabase. Only columns
+  /// known by this device are retained, and pending local work always wins.
+  Future<void> upsertRemoteRecords(
+    String table,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    final columns = db.select('PRAGMA table_info($table)')
+        .map((row) => row['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    if (columns.isEmpty) return;
+    for (final remote in rows) {
+      final id = remote['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+      final local = db.select('SELECT sync_status FROM $table WHERE id = ? LIMIT 1', [id]);
+      if (local.isNotEmpty && local.first['sync_status'] == 'pending') continue;
+      final safe = <String, dynamic>{
+        for (final entry in remote.entries)
+          if (columns.contains(entry.key) && entry.key != 'sync_status') entry.key: entry.value,
+        if (columns.contains('sync_status')) 'sync_status': 'synced',
+      };
+      if (safe.isNotEmpty) await insertRecord(table, safe);
+    }
+  }
+
   // ── Sync Queue ────────────────────────────────────────────────────────────
 
   Future<void> enqueueSync({

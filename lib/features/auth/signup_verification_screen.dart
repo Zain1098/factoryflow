@@ -12,11 +12,13 @@ class SignupVerificationScreen extends ConsumerStatefulWidget {
     required this.email,
     required this.profileName,
     required this.workspaceName,
+    required this.joinCode,
   });
 
   final String email;
   final String profileName;
   final String workspaceName;
+  final String joinCode;
 
   @override
   ConsumerState<SignupVerificationScreen> createState() =>
@@ -76,6 +78,7 @@ class _SignupVerificationScreenState
           token: token,
           profileName: widget.profileName,
           workspaceName: widget.workspaceName,
+          joinCode: widget.joinCode,
         );
     if (!mounted) return;
     final state = ref.read(currentUserProvider);
@@ -156,7 +159,7 @@ class _SignupVerificationScreenState
             ),
             const SizedBox(height: 8),
             Text(
-              'Enter the verification code sent to ${widget.email}.\nYour company workspace will be created automatically upon verification.',
+              'Enter the verification code sent to ${widget.email}.\n${widget.joinCode.isEmpty ? 'Your company workspace will be created automatically.' : 'You will join the company assigned to your code.'}',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
