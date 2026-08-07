@@ -14,6 +14,7 @@ class ReportsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
 
     final sections = [
       _ReportSection('Production', Colors.teal, [
@@ -116,13 +117,24 @@ class ReportsScreen extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          _ReportsHero(
+            range: range,
+            onChooseRange: () => _pickRange(context, ref, range),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'QUICK RANGE',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 1.1,
+            ),
+          ),
           _DateRangeChips(range: range),
-          for (final section in sections) ...[
-            _SectionHeader(section.title, section.color),
-            ...section.tiles.map((t) => _ReportListTile(tile: t)),
-          ],
+          const SizedBox(height: 14),
+          for (final section in sections)
+            _ReportSectionCard(section: section),
         ],
       ),
     );
@@ -155,6 +167,60 @@ class ReportsScreen extends ConsumerWidget {
 
 // ─── Date Range Quick Chips ───────────────────────────────────────────────────
 
+class _ReportsHero extends StatelessWidget {
+  const _ReportsHero({required this.range, required this.onChooseRange});
+
+  final DateRange range;
+  final VoidCallback onChooseRange;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(Icons.analytics_outlined, color: scheme.onPrimary),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Factory insights', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 3),
+                Text(
+                  '${DateFormat('dd MMM').format(range.from)} - ${DateFormat('dd MMM yyyy').format(range.to)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton.filledTonal(
+            tooltip: 'Choose report dates',
+            onPressed: onChooseRange,
+            icon: const Icon(Icons.calendar_month_outlined, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DateRangeChips extends ConsumerWidget {
   const _DateRangeChips({required this.range});
   final DateRange range;
@@ -170,18 +236,34 @@ class _DateRangeChips extends ConsumerWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.only(top: 8),
       child: Row(
         children: presets.map((p) {
           final isSelected =
               range.fromStr == p.$2.fromStr && range.toStr == p.$2.toStr;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
+            child: ChoiceChip(
               label: Text(p.$1),
               selected: isSelected,
               onSelected: (_) =>
                   ref.read(reportDateRangeProvider.notifier).set(p.$2),
+              selectedColor: Theme.of(context).colorScheme.primary,
+              labelStyle: TextStyle(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(11),
+                side: BorderSide(
+                  color: isSelected
+                      ? Colors.transparent
+                      : Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
             ),
           );
         }).toList(),
@@ -192,32 +274,49 @@ class _DateRangeChips extends ConsumerWidget {
 
 // ─── Section Header ───────────────────────────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title, this.color);
-  final String title;
-  final Color color;
+class _ReportSectionCard extends StatelessWidget {
+  const _ReportSectionCard({required this.section});
+  final _ReportSection section;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
         children: [
-          Container(
-            width: 4,
-            height: 16,
-            decoration: BoxDecoration(
-                color: color, borderRadius: BorderRadius.circular(2),),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title.toUpperCase(),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: section.color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
+                const SizedBox(width: 8),
+                Text(section.title, style: theme.textTheme.titleSmall),
+                const Spacer(),
+                Text(
+                  '${section.tiles.length} REPORTS',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
           ),
+          ...section.tiles.map((tile) => _ReportListTile(tile: tile)),
         ],
       ),
     );
@@ -230,30 +329,54 @@ class _ReportListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: tile.color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: tile.onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: tile.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(tile.icon, color: tile.color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tile.title, style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 3),
+                    Text(
+                      tile.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
-        child: Icon(tile.icon, color: tile.color, size: 20),
       ),
-      title:
-          Text(tile.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(
-        tile.subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-      trailing: Icon(
-        Icons.chevron_right,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-      onTap: tile.onTap,
     );
   }
 }
