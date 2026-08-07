@@ -482,10 +482,11 @@ class _ReportPage extends ConsumerWidget {
               children: [
                 if (summaryCards.isNotEmpty) _SummaryRow(summaryCards, color),
                 Expanded(
-                  child: _DataTable(
+                  child: _ReportDataCards(
                     header: tableHeader,
                     rows: rows,
                     color: color,
+                    hasExportAction: onExport != null,
                   ),
                 ),
               ],
@@ -505,37 +506,57 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
       color: color.withValues(alpha: 0.06),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Row(
-        children: cards
-            .map(
-              (c) => Expanded(
-                child: Column(
-                  children: [
-                    Text(
-                      c.value,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: color,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      c.label,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+      child: SizedBox(
+        height: 92,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          itemCount: cards.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final card = cards[index];
+            return Container(
+              width: 132,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
               ),
-            )
-            .toList(),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: color.withValues(alpha: 0.18)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    card.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    card.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -549,42 +570,139 @@ class _SummaryCard {
 
 // ─── Data Table ───────────────────────────────────────────────────────────────
 
-class _DataTable extends StatelessWidget {
-  const _DataTable({
+class _ReportDataCards extends StatelessWidget {
+  const _ReportDataCards({
     required this.header,
     required this.rows,
     required this.color,
+    required this.hasExportAction,
   });
   final List<String> header;
   final List<List<String>> rows;
+  final Color color;
+  final bool hasExportAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(16, 14, 16, hasExportAction ? 96 : 28),
+      itemCount: rows.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) => _ReportDataCard(
+        header: header,
+        row: rows[index],
+        color: color,
+      ),
+    );
+  }
+}
+
+class _ReportDataCard extends StatelessWidget {
+  const _ReportDataCard({
+    required this.header,
+    required this.row,
+    required this.color,
+  });
+
+  final List<String> header;
+  final List<String> row;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SingleChildScrollView(
-        child: DataTable(
-          headingRowColor:
-              WidgetStateProperty.all(color.withValues(alpha: 0.1)),
-          headingTextStyle: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-            color: color,
+    final scheme = theme.colorScheme;
+    final title = row.isEmpty ? '' : row.first;
+    final fields = List.generate(
+      row.length > 1 ? row.length - 1 : 0,
+      (index) => (header[index + 1], row[index + 1]),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
           ),
-          dataTextStyle: theme.textTheme.bodySmall,
-          columnSpacing: 20,
-          horizontalMargin: 16,
-          columns: header.map((h) => DataColumn(label: Text(h))).toList(),
-          rows: rows
-              .map(
-                (r) => DataRow(
-                  cells: r.map((c) => DataCell(Text(c))).toList(),
+          if (fields.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: fields
+                  .map(
+                    (field) => _ReportMetric(
+                      label: field.$1,
+                      value: field.$2,
+                      color: color,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportMetric extends StatelessWidget {
+  const _ReportMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 116),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
                 ),
-              )
-              .toList(),
-        ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+          ),
+        ],
       ),
     );
   }
