@@ -206,6 +206,14 @@ class AppUpdateNotifier extends AsyncNotifier<AppUpdateStatus?> {
     state = AsyncData(status);
     return status;
   }
+
+  /// Startup checks must not put the entire app in a loading state. The
+  /// Settings page calls [checkNow] when the user explicitly asks to refresh.
+  Future<AppUpdateStatus> checkInBackground() async {
+    final status = await ref.read(appUpdateServiceProvider).check();
+    state = AsyncData(status);
+    return status;
+  }
 }
 
 final appUpdateProvider =

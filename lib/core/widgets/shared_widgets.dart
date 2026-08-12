@@ -317,7 +317,7 @@ class EntryInfoSurface extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(
+            color: theme.shadowColor.withValues(
               alpha: theme.brightness == Brightness.dark ? 0.08 : 0.025,
             ),
             blurRadius: 12,

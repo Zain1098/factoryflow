@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/app_update_downloader.dart';
 import '../../core/services/app_update_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 
@@ -16,52 +17,35 @@ class AppUpdateGate extends ConsumerStatefulWidget {
 
 class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
   bool _started = false;
-  bool _optionalPromptShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<AppUpdateStatus?>(appUpdateProvider.select((state) => state.value),
+        (_, status) {
+      if (status?.hasUpdate == true && status?.release != null) {
+        NotificationService.instance.showAppUpdate(
+          versionCode: status!.release!.versionCode,
+          versionName: status.release!.versionName,
+          isRequired: status.decision == AppUpdateDecision.mandatory,
+        );
+      }
+    });
+  }
 
   void _checkAfterBootstrap() {
     if (_started) return;
     _started = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(appUpdateProvider.notifier).checkNow();
-    });
-  }
-
-  void _showOptionalPrompt(AppUpdateStatus status) {
-    if (_optionalPromptShown) return;
-    _optionalPromptShown = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || status.release == null) return;
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Update available'),
-          content: _ReleaseDetails(status: status),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Later'),
-            ),
-            UpdateDownloadButton(
-              release: status.release!,
-              label: 'Download update',
-            ),
-          ],
-        ),
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await NotificationService.instance.initialize().catchError((_) {});
+      if (mounted) await ref.read(appUpdateProvider.notifier).checkInBackground();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).value;
-    final update = ref.watch(appUpdateProvider).value;
     if (user != null) _checkAfterBootstrap();
-    if (update?.decision == AppUpdateDecision.optional) {
-      _showOptionalPrompt(update!);
-    }
-    if (update?.decision == AppUpdateDecision.mandatory && update?.release != null) {
-      return _MandatoryUpdateGate(status: update!);
-    }
     return widget.child;
   }
 }
@@ -74,7 +58,7 @@ class AppUpdateSettingsSection extends ConsumerWidget {
     final installed = ref.watch(installedAppVersionProvider).value;
     final status = ref.watch(appUpdateProvider).value;
     final subtitle = switch (status?.decision) {
-      AppUpdateDecision.mandatory => 'Update required to continue using the app',
+      AppUpdateDecision.mandatory => 'Update required by your administrator',
       AppUpdateDecision.optional => 'Version ${status!.release!.versionName} is available',
       AppUpdateDecision.upToDate => "You're up to date",
       _ => installed == null
@@ -163,7 +147,7 @@ class _AppUpdateDetailsPageState extends ConsumerState<AppUpdateDetailsPage> {
               if (status.hasUpdate)
                 UpdateDownloadButton(
                   release: status.release!,
-                  label: 'Download and install',
+                  label: 'Download update',
                 )
               else
                 const ListTile(
@@ -182,45 +166,6 @@ class _AppUpdateDetailsPageState extends ConsumerState<AppUpdateDetailsPage> {
       ),
     );
   }
-}
-
-class _MandatoryUpdateGate extends StatelessWidget {
-  const _MandatoryUpdateGate({required this.status});
-  final AppUpdateStatus status;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Icon(Icons.system_update_alt_rounded,
-                        size: 56, color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(height: 20),
-                    Text('Update required',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 12),
-                    _ReleaseDetails(status: status, centered: true),
-                    const SizedBox(height: 24),
-                    UpdateDownloadButton(
-                      release: status.release!,
-                      label: 'Download and install',
-                      expanded: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
 }
 
 class _ReleaseDetails extends StatelessWidget {
@@ -243,7 +188,7 @@ class _ReleaseDetails extends StatelessWidget {
         ],
         if (status.decision == AppUpdateDecision.mandatory) ...[
           const SizedBox(height: 8),
-          const Text('This update is required before you can use FactoryFlow.',
+          const Text('Please download and install this update soon to remain compatible.',
               textAlign: TextAlign.center),
         ],
       ],

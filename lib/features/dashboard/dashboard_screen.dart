@@ -134,10 +134,11 @@ class DashboardScreen extends ConsumerWidget {
 
   Widget _buildPastelOverview(BuildContext context, DashboardData data) {
     final efficiency = data.targetEfficiency.clamp(0.0, 100.0);
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8E5FF),
+        color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
@@ -162,7 +163,7 @@ class DashboardScreen extends ConsumerWidget {
                   Text(
                     '${data.pendingSyncCount} record(s) pending sync',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: const Color(0xFF725A00),
+                          color: scheme.onPrimaryContainer,
                         ),
                   ),
                 if (data.pendingSyncCount > 0) const SizedBox(height: 8),
@@ -187,8 +188,9 @@ class DashboardScreen extends ConsumerWidget {
                     value: efficiency / 100,
                     strokeWidth: 8,
                     strokeCap: StrokeCap.round,
-                    backgroundColor: Colors.white.withValues(alpha: 0.72),
-                    color: const Color(0xFF6256B8),
+                    backgroundColor:
+                        scheme.onPrimaryContainer.withValues(alpha: 0.16),
+                    color: scheme.primary,
                   ),
                 ),
                 Text('${_fmt(data.todayProduction)} PCS',
@@ -269,19 +271,20 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildSetupBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.blue.withValues(alpha: 0.08),
+        color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.rocket_launch_outlined,
-            color: Colors.blue,
+            color: scheme.primary,
             size: 28,
           ),
           const SizedBox(width: 12),
@@ -289,17 +292,20 @@ class DashboardScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Welcome to FactoryFlow!',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: scheme.onPrimaryContainer,
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Text(
+                Text(
                   'Get started by adding Parts and initial stock in Settings.',
-                  style: TextStyle(fontSize: 12, color: Colors.blue),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onPrimaryContainer,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
@@ -307,7 +313,7 @@ class DashboardScreen extends ConsumerWidget {
                   icon: const Icon(Icons.settings_outlined, size: 16),
                   label: const Text('Go to Settings'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.blue,
+                    backgroundColor: scheme.primary,
                     minimumSize: const Size(0, 36),
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                   ),

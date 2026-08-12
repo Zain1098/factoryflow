@@ -25,7 +25,6 @@ const _kSessionKey = 'ff_local_session';
 const _kSessionCreatedKey = 'ff_session_created';
 const _kSessionProviderKey = 'ff_auth_provider';
 const _kPendingSignupKey = 'ff_pending_signup';
-const _kSessionMaxAge = Duration(days: 14);
 
 String _safeAuthMessage(Object error, {required String fallback}) {
   final message = error.toString().toLowerCase();
@@ -113,14 +112,6 @@ Future<AppUser?> _loadLocalSession() async {
     if (raw == null) return null;
 
     final createdStr = await _secureStorage.read(key: _kSessionCreatedKey);
-    if (createdStr != null) {
-      final created = DateTime.tryParse(createdStr);
-      if (created != null &&
-          DateTime.now().difference(created) > _kSessionMaxAge) {
-        await _clearLocalSession();
-        return null;
-      }
-    }
 
     var user = AppUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     if (createdStr != null) {
@@ -732,6 +723,12 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 // ─── CurrentUserNotifier ──────────────────────────────────────────────────────
 
 class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
+  // Supabase emits `signedIn` as soon as credentials are accepted. The app
+  // profile and local session are saved immediately afterwards, so a refresh
+  // triggered by that early event must not briefly replace the login flow with
+  // null and send GoRouter back to /login.
+  bool _interactiveSignInInProgress = false;
+
   @override
   Future<AppUser?> build() async {
     ref.listen(authStateProvider, (_, next) {
@@ -740,7 +737,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
       if (authState.event == AuthChangeEvent.signedIn ||
           authState.event == AuthChangeEvent.tokenRefreshed ||
           authState.event == AuthChangeEvent.userUpdated) {
-        unawaited(refresh());
+        if (!_interactiveSignInInProgress) unawaited(refresh());
       } else if (authState.event == AuthChangeEvent.signedOut) {
         unawaited(_restoreLocalSessionAfterRemoteSignOut());
       }
@@ -768,34 +765,44 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
 
   Future<void> signIn(String email, String password) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final user = await ref
-          .read(authRepositoryProvider)
-          .signIn(email: email, password: password);
-      if (user != null) {
-        await ref
-            .read(databaseServiceProvider)
-            .setActiveWorkspaceId(user.factoryId);
-        _onLoginSuccess();
-      }
-      return user;
-    });
+    _interactiveSignInInProgress = true;
+    try {
+      state = await AsyncValue.guard(() async {
+        final user = await ref
+            .read(authRepositoryProvider)
+            .signIn(email: email, password: password);
+        if (user != null) {
+          await ref
+              .read(databaseServiceProvider)
+              .setActiveWorkspaceId(user.factoryId);
+          _onLoginSuccess();
+        }
+        return user;
+      });
+    } finally {
+      _interactiveSignInInProgress = false;
+    }
   }
 
   Future<void> signInWithGoogle() async {
     final previous = state.value;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final user = await ref.read(authRepositoryProvider).signInWithGoogle();
-      if (user != null) {
-        await ref
-            .read(databaseServiceProvider)
-            .setActiveWorkspaceId(user.factoryId);
-        _onLoginSuccess();
-        return user;
-      }
-      return kIsWeb ? previous : user;
-    });
+    _interactiveSignInInProgress = true;
+    try {
+      state = await AsyncValue.guard(() async {
+        final user = await ref.read(authRepositoryProvider).signInWithGoogle();
+        if (user != null) {
+          await ref
+              .read(databaseServiceProvider)
+              .setActiveWorkspaceId(user.factoryId);
+          _onLoginSuccess();
+          return user;
+        }
+        return kIsWeb ? previous : user;
+      });
+    } finally {
+      _interactiveSignInInProgress = false;
+    }
   }
 
   Future<bool> signUp({
@@ -807,22 +814,27 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   }) async {
     state = const AsyncLoading();
     var verificationRequired = false;
-    state = await AsyncValue.guard(() async {
-      final user = await ref.read(authRepositoryProvider).signUp(
-            email: email,
-            password: password,
-            profileName: profileName,
-            workspaceName: workspaceName,
-            joinCode: joinCode,
-            db: ref.read(databaseServiceProvider),
-          );
-      if (user == null) {
-        verificationRequired = true;
-        return null;
-      }
-      _onLoginSuccess();
-      return user;
-    });
+    _interactiveSignInInProgress = true;
+    try {
+      state = await AsyncValue.guard(() async {
+        final user = await ref.read(authRepositoryProvider).signUp(
+              email: email,
+              password: password,
+              profileName: profileName,
+              workspaceName: workspaceName,
+              joinCode: joinCode,
+              db: ref.read(databaseServiceProvider),
+            );
+        if (user == null) {
+          verificationRequired = true;
+          return null;
+        }
+        _onLoginSuccess();
+        return user;
+      });
+    } finally {
+      _interactiveSignInInProgress = false;
+    }
     return verificationRequired && !state.hasError;
   }
 
@@ -834,18 +846,23 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
     required String joinCode,
   }) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final user = await ref.read(authRepositoryProvider).verifySignUpOtp(
-            email: email,
-            token: token,
-            profileName: profileName,
-            workspaceName: workspaceName,
-            joinCode: joinCode,
-            db: ref.read(databaseServiceProvider),
-          );
-      _onLoginSuccess();
-      return user;
-    });
+    _interactiveSignInInProgress = true;
+    try {
+      state = await AsyncValue.guard(() async {
+        final user = await ref.read(authRepositoryProvider).verifySignUpOtp(
+              email: email,
+              token: token,
+              profileName: profileName,
+              workspaceName: workspaceName,
+              joinCode: joinCode,
+              db: ref.read(databaseServiceProvider),
+            );
+        _onLoginSuccess();
+        return user;
+      });
+    } finally {
+      _interactiveSignInInProgress = false;
+    }
   }
 
   Future<void> continueOffline() async {

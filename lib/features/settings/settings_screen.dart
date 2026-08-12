@@ -14,6 +14,7 @@ import '../../core/providers/production_flow_provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/services/biometric_service.dart';
 import '../../core/services/data_management_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -23,6 +24,7 @@ import '../corrections/conflict_review_screen.dart';
 import 'stock_management_screen.dart';
 import 'team_members_screen.dart';
 import 'app_update_widgets.dart';
+import 'work_reminders_screen.dart';
 
 Future<bool> _runSettingsAction(
   BuildContext context,
@@ -145,8 +147,10 @@ class _NotifPrefsNotifier extends Notifier<_NotifPrefs> {
     await _save(updater(val));
   }
 
-  Future<void> setEnabled(bool v) =>
-      _save(state.copyWith(enableNotifications: v));
+  Future<void> setEnabled(bool v) async {
+    await _save(state.copyWith(enableNotifications: v));
+    await NotificationService.instance.refreshWorkReminders();
+  }
   Future<void> setSound(bool v) => _save(state.copyWith(soundEnabled: v));
   Future<void> setVibration(bool v) =>
       _save(state.copyWith(vibrationEnabled: v));
@@ -232,6 +236,87 @@ class _SettingsTileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(child: child);
+}
+
+class _ThemeModeSelector extends StatelessWidget {
+  const _ThemeModeSelector({required this.mode, required this.onChanged});
+
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Appearance'),
+            subtitle: const Text('Choose how FactoryFlow looks on this device'),
+          ),
+          _ThemeChoice(
+            icon: Icons.brightness_auto_outlined,
+            title: 'Use phone setting',
+            subtitle: 'Follow your device light or dark mode',
+            selected: mode == ThemeMode.system,
+            onTap: () => onChanged(ThemeMode.system),
+          ),
+          _ThemeChoice(
+            icon: Icons.light_mode_outlined,
+            title: 'Light mode',
+            subtitle: 'Bright interface for daytime work',
+            selected: mode == ThemeMode.light,
+            onTap: () => onChanged(ThemeMode.light),
+          ),
+          _ThemeChoice(
+            icon: Icons.dark_mode_outlined,
+            title: 'Dark mode',
+            subtitle: 'Low-light interface for evening work',
+            selected: mode == ThemeMode.dark,
+            onTap: () => onChanged(ThemeMode.dark),
+          ),
+          const SizedBox(height: 4),
+          Divider(color: theme.dividerColor, height: 1),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeChoice extends StatelessWidget {
+  const _ThemeChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Icon(icon, color: selected ? scheme.primary : scheme.onSurfaceVariant),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      ),
+      selected: selected,
+      selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.38),
+      onTap: onTap,
+    );
+  }
 }
 
 class _BatchTraceabilityTile extends StatelessWidget {
@@ -511,8 +596,8 @@ class SettingsScreen extends ConsumerWidget {
             _masterTile(
               context,
               Icons.store_outlined,
-              'Vendors (FACO)',
-              'Plating vendors',
+              'Vendors',
+              'Manage external vendors',
               const _VendorsPage(),
             ),
             _masterTile(
@@ -542,36 +627,9 @@ class SettingsScreen extends ConsumerWidget {
           // ── APP SETTINGS ─────────────────────────────────────────────────
           const _SectionLabel('App Settings'),
           _SettingsTileCard(
-            child: ListTile(
-              minVerticalPadding: 10,
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Theme'),
-              subtitle: Text(
-                themeMode.name[0].toUpperCase() + themeMode.name.substring(1),
-              ),
-              trailing: SegmentedButton<ThemeMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: ThemeMode.light,
-                    icon: Icon(Icons.light_mode, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: ThemeMode.system,
-                    icon: Icon(Icons.brightness_auto, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: ThemeMode.dark,
-                    icon: Icon(Icons.dark_mode, size: 18),
-                  ),
-                ],
-                selected: {themeMode},
-                onSelectionChanged: (s) =>
-                    ref.read(themeModeProvider.notifier).setThemeMode(s.first),
-                style: const ButtonStyle(
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
+            child: _ThemeModeSelector(
+              mode: themeMode,
+              onChanged: ref.read(themeModeProvider.notifier).setThemeMode,
             ),
           ),
           _BatchTraceabilityTile(
@@ -753,7 +811,18 @@ class _NotificationsPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Notifications')),
       body: ListView(
         padding: const EdgeInsets.only(top: 10, bottom: 24),
-        children: [_NotificationsSection()],
+        children: [
+          _NotificationsSection(),
+          _SettingsNavigationTile(
+            icon: Icons.alarm_outlined,
+            title: 'Work reminders',
+            subtitle: 'Daily reminders with factory off-days',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const WorkRemindersPage()),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -798,12 +867,10 @@ class _NotificationsSection extends ConsumerWidget {
               value: prefs.productionAlerts,
               onChanged: notifier.setProductionAlerts,
             ),
-            SwitchListTile(
-              secondary: const Icon(Icons.cloud_sync_outlined),
-              title: const Text('Sync Status Alerts'),
-              subtitle: const Text('Cloud sync success or failure'),
-              value: prefs.syncAlerts,
-              onChanged: notifier.setSyncAlerts,
+            const ListTile(
+              leading: Icon(Icons.cloud_sync_outlined),
+              title: Text('Sync status alerts'),
+              subtitle: Text('Silent. Use the cloud icon to check sync status.'),
             ),
             SwitchListTile(
               secondary: const Icon(Icons.build_circle_outlined),
@@ -1503,7 +1570,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
   Widget build(BuildContext context) {
     final vendors = ref.watch(vendorsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Vendors (FACO / Plating)')),
+      appBar: AppBar(title: const Text('Vendors')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showEditDialog(null, null),
         child: const Icon(Icons.add),

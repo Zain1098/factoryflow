@@ -29,6 +29,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
   Timer? _pollTimer;
   StreamSubscription<AuthState>? _authSubscription;
   bool _checking = false;
+  bool _hasVerifiedAccess = false;
   bool _blockedAfterVerification = false;
 
   @override
@@ -41,13 +42,13 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
           event.event == AuthChangeEvent.tokenRefreshed ||
           event.event == AuthChangeEvent.userUpdated) {
         _blockedAfterVerification = false;
-        unawaited(_checkAccess());
+        unawaited(_checkAccess(background: _hasVerifiedAccess));
       }
     });
     unawaited(_checkAccess());
     _pollTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-        unawaited(_checkAccess());
+        unawaited(_checkAccess(background: true));
       }
     });
   }
@@ -62,24 +63,34 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_checkAccess());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkAccess(background: _hasVerifiedAccess));
+    }
   }
 
-  Future<void> _checkAccess() async {
+  Future<void> _checkAccess({bool background = false}) async {
     if (_checking || _blockedAfterVerification) return;
     final client = ref.read(supabaseClientProvider);
     final session = client?.auth.currentSession;
     if (client == null || session == null) {
-      ref.read(syncServiceProvider).stopPeriodicSync();
-      ref.read(appAccessProvider.notifier).set(
-        const AppAccessState(status: AppAccessStatus.allowed),
-      );
+      await _allowCachedSession();
+      return;
+    }
+
+    // A previously authenticated user can safely continue with the encrypted
+    // local profile and SQLite data while the network is unavailable. Remote
+    // access is checked again on reconnect; local writes remain queued until
+    // Supabase is reachable.
+    if (!await ref.read(syncServiceProvider).isOnline()) {
+      await _allowCachedSession();
       return;
     }
 
     _checking = true;
-    ref.read(syncServiceProvider).stopPeriodicSync();
-    ref.read(appAccessProvider.notifier).set(const AppAccessState.checking());
+    if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
+    if (!background) {
+      ref.read(appAccessProvider.notifier).set(const AppAccessState.checking());
+    }
     try {
       final profile = await _loadProfileAfterProvisioning(
         client,
@@ -92,13 +103,15 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
       // proof that the user is inactive. This keeps ERP routes and sync closed
       // until verification succeeds without signing a valid new session out.
       if (profile == null) {
-        ref.read(syncServiceProvider).stopPeriodicSync();
-        ref.read(appAccessProvider.notifier).set(const AppAccessState(
-          status: AppAccessStatus.unavailable,
-          title: 'Account setup is not complete',
-          message:
-              'We could not verify your app profile. Please retry in a moment or contact your administrator.',
-        ));
+        if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
+        if (!background) {
+          ref.read(appAccessProvider.notifier).set(const AppAccessState(
+            status: AppAccessStatus.unavailable,
+            title: 'Account setup is not complete',
+            message:
+                'We could not verify your app profile. Please retry in a moment or contact your administrator.',
+          ));
+        }
         return;
       }
 
@@ -107,13 +120,15 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
       if (client.auth.currentSession?.user.id != session.user.id) return;
       final profileVerification = verifyProfileActivity(profile['active']);
       if (profileVerification == AppProfileVerification.unresolved) {
-        ref.read(syncServiceProvider).stopPeriodicSync();
-        ref.read(appAccessProvider.notifier).set(const AppAccessState(
-          status: AppAccessStatus.unavailable,
-          title: 'App profile could not be verified',
-          message:
-              'We could not verify your account status. Please reconnect and try again.',
-        ));
+        if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
+        if (!background) {
+          ref.read(appAccessProvider.notifier).set(const AppAccessState(
+            status: AppAccessStatus.unavailable,
+            title: 'App profile could not be verified',
+            message:
+                'We could not verify your account status. Please reconnect and try again.',
+          ));
+        }
         return;
       }
       if (profileVerification == AppProfileVerification.inactive) {
@@ -148,25 +163,60 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
         return;
       }
 
-      ref.read(appAccessProvider.notifier).set(
-        const AppAccessState(status: AppAccessStatus.allowed),
-      );
+      final needsBootstrap = !_hasVerifiedAccess;
+      _hasVerifiedAccess = true;
+      if (!background || !ref.read(appAccessProvider).isAllowed) {
+        ref.read(appAccessProvider.notifier).set(
+          const AppAccessState(status: AppAccessStatus.allowed),
+        );
+      }
       final sync = ref.read(syncServiceProvider);
       sync.startPeriodicSync();
-      unawaited(sync.hydrateActiveWorkspace());
-      unawaited(
-        ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase(),
-      );
+      if (needsBootstrap) {
+        unawaited(sync.hydrateActiveWorkspace());
+        unawaited(
+          ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase(),
+        );
+      }
     } catch (_) {
-      ref.read(syncServiceProvider).stopPeriodicSync();
-      ref.read(appAccessProvider.notifier).set(const AppAccessState(
-        status: AppAccessStatus.unavailable,
-        title: 'App availability could not be verified',
-        message: 'We could not verify app availability. Please reconnect and try again.',
-      ));
+      // Connectivity plugins can report Wi-Fi/mobile availability even when
+      // the internet or Supabase endpoint is unreachable. Do not turn that
+      // transient background failure into a login/app-block screen when this
+      // device has a valid saved session and local ERP data.
+      if (await _allowCachedSession()) return;
+      if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
+      if (!background) {
+        ref.read(appAccessProvider.notifier).set(const AppAccessState(
+          status: AppAccessStatus.unavailable,
+          title: 'App availability could not be verified',
+          message: 'We could not verify app availability. Please reconnect and try again.',
+        ));
+      }
     } finally {
       _checking = false;
     }
+  }
+
+  Future<bool> _allowCachedSession() async {
+    final local = await ref.read(authRepositoryProvider).getLocalSession();
+    if (local == null) {
+      ref.read(syncServiceProvider).stopPeriodicSync();
+      ref.read(appAccessProvider.notifier).set(
+        const AppAccessState(status: AppAccessStatus.allowed),
+      );
+      return false;
+    }
+
+    if (!ref.read(appAccessProvider).isAllowed) {
+      ref.read(appAccessProvider.notifier).set(
+        const AppAccessState(status: AppAccessStatus.allowed),
+      );
+    }
+    // The connectivity listener starts immediately. It sends pending local
+    // writes when the connection returns; no user action or screen refresh is
+    // needed.
+    ref.read(syncServiceProvider).startPeriodicSync();
+    return true;
   }
 
   Future<Map<String, dynamic>?> _loadProfileAfterProvisioning(
