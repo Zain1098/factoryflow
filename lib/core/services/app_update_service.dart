@@ -96,6 +96,8 @@ class AppUpdateStatus {
 
   bool get hasUpdate =>
       decision == AppUpdateDecision.optional || decision == AppUpdateDecision.mandatory;
+
+  bool get isForced => decision == AppUpdateDecision.mandatory;
 }
 
 AppUpdateDecision evaluateAppUpdate({
@@ -110,12 +112,20 @@ AppUpdateDecision evaluateAppUpdate({
   return AppUpdateDecision.optional;
 }
 
+AppRelease? cachedForcedRelease({
+  required int installedCode,
+  required AppRelease? cachedRelease,
+}) {
+  return evaluateAppUpdate(installedCode: installedCode, release: cachedRelease) ==
+          AppUpdateDecision.mandatory
+      ? cachedRelease
+      : null;
+}
+
 class AppUpdateService {
   AppUpdateService(this._client);
   final SupabaseClient? _client;
   static const _cachedReleaseKey = 'factoryflow_cached_android_release';
-  static const _cachedReleaseAtKey = 'factoryflow_cached_android_release_at';
-  static const _cacheLifetime = Duration(hours: 24);
 
   Future<AppUpdateStatus> check() async {
     final installed = await InstalledAppVersion.fromPlatform();
@@ -157,10 +167,6 @@ class AppUpdateService {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_cachedReleaseKey, jsonEncode(response));
-      await preferences.setString(
-        _cachedReleaseAtKey,
-        DateTime.now().toIso8601String(),
-      );
     } catch (_) {
       // The update feature remains usable without a local metadata cache.
     }
@@ -169,19 +175,13 @@ class AppUpdateService {
   Future<AppRelease?> _loadMandatoryCachedRelease(int installedCode) async {
     try {
       final preferences = await SharedPreferences.getInstance();
-      final savedAt = DateTime.tryParse(
-        preferences.getString(_cachedReleaseAtKey) ?? '',
-      );
-      if (savedAt == null || DateTime.now().difference(savedAt) > _cacheLifetime) {
-        return null;
-      }
       final raw = preferences.getString(_cachedReleaseKey);
       if (raw == null) return null;
       final release = AppRelease.tryParse(jsonDecode(raw));
-      return evaluateAppUpdate(installedCode: installedCode, release: release) ==
-              AppUpdateDecision.mandatory
-          ? release
-          : null;
+      return cachedForcedRelease(
+        installedCode: installedCode,
+        cachedRelease: release,
+      );
     } catch (_) {
       return null;
     }

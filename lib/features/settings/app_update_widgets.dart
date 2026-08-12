@@ -15,12 +15,15 @@ class AppUpdateGate extends ConsumerStatefulWidget {
   ConsumerState<AppUpdateGate> createState() => _AppUpdateGateState();
 }
 
-class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
+class _AppUpdateGateState extends ConsumerState<AppUpdateGate>
+    with WidgetsBindingObserver {
   bool _started = false;
+  int? _optionalPromptedVersion;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     ref.listenManual<AppUpdateStatus?>(appUpdateProvider.select((state) => state.value),
         (_, status) {
       if (status?.hasUpdate == true && status?.release != null) {
@@ -30,7 +33,31 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
           isRequired: status.decision == AppUpdateDecision.mandatory,
         );
       }
+      final optionalRelease = status?.release;
+      if (status != null &&
+          status.decision == AppUpdateDecision.optional &&
+          optionalRelease != null &&
+          _optionalPromptedVersion != optionalRelease.versionCode) {
+        final AppUpdateStatus optionalStatus = status;
+        _optionalPromptedVersion = optionalRelease.versionCode;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showOptionalUpdate(optionalStatus);
+        });
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _started) {
+      ref.read(appUpdateProvider.notifier).checkInBackground();
+    }
   }
 
   void _checkAfterBootstrap() {
@@ -42,10 +69,32 @@ class _AppUpdateGateState extends ConsumerState<AppUpdateGate> {
     });
   }
 
+  Future<void> _showOptionalUpdate(AppUpdateStatus status) => showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Update available'),
+          content: _ReleaseDetails(status: status),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Later'),
+            ),
+            UpdateDownloadButton(
+              release: status.release!,
+              label: 'Update now',
+            ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider).value;
+    final update = ref.watch(appUpdateProvider).value;
     if (user != null) _checkAfterBootstrap();
+    if (update?.isForced == true && update?.release != null) {
+      return _ForcedUpdateGate(status: update!);
+    }
     return widget.child;
   }
 }
@@ -195,6 +244,44 @@ class _ReleaseDetails extends StatelessWidget {
     );
   }
 }
+
+class _ForcedUpdateGate extends StatelessWidget {
+  const _ForcedUpdateGate({required this.status});
+  final AppUpdateStatus status;
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        child: Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Icon(Icons.system_update_alt_rounded,
+                        size: 56, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 18),
+                    Text('Update required',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall),
+                    const SizedBox(height: 12),
+                    _ReleaseDetails(status: status, centered: true),
+                    const SizedBox(height: 24),
+                    UpdateDownloadButton(
+                      release: status.release!,
+                      label: 'Update now',
+                      expanded: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 
 class UpdateDownloadButton extends StatefulWidget {
   const UpdateDownloadButton({super.key, required this.release, required this.label, this.expanded = false});

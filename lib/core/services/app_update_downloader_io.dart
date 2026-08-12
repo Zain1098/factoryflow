@@ -39,8 +39,9 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
         },
         options: Options(
           responseType: ResponseType.bytes,
-          followRedirects: false,
-          validateStatus: (status) => status == 200,
+          followRedirects: true,
+          maxRedirects: 5,
+          validateStatus: (status) => status != null && status >= 200 && status < 300,
           receiveTimeout: const Duration(minutes: 3),
         ),
       );
@@ -59,7 +60,7 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
       );
       if (opened.type != ResultType.done) {
         return AppUpdateDownloadResult.failure(
-          'Android installer could not open: ${opened.message}',
+          'Android installer could not open. Allow FactoryFlow to install unknown apps in Android Settings, then retry.',
         );
       }
       return const AppUpdateDownloadResult.success();
