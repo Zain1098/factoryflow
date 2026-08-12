@@ -48,7 +48,7 @@ class DatabaseService {
         final savedQueue = saved['sync_queue'] as List<dynamic>? ?? const [];
         _syncQueue.addAll(savedQueue
             .whereType<Map>()
-            .map((row) => Map<String, dynamic>.from(row)));
+            .map((row) => Map<String, dynamic>.from(row)),);
         final maxId = _syncQueue
             .map((row) => row['id'] as int? ?? 0)
             .fold<int>(0, (max, id) => id > max ? id : max);
@@ -311,7 +311,7 @@ class DatabaseService {
           item['table_name'] == tableName &&
           item['record_id'] == recordId &&
           item['operation'] == 'update' &&
-          item['status'] == 'pending');
+          item['status'] == 'pending',);
     }
     _syncQueue.add({
       'id': _nextSyncId++,

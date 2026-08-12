@@ -226,7 +226,7 @@ class NotificationService {
 
   Future<AndroidScheduleMode> _reminderScheduleMode() async {
     try {
-      final android = await _plugin
+      final android = _plugin
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
       final canScheduleExactly = await android?.canScheduleExactNotifications();

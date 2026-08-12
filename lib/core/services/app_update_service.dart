@@ -129,7 +129,7 @@ class AppUpdateService {
 
   Future<AppUpdateStatus> check() async {
     final installed = await InstalledAppVersion.fromPlatform();
-    if (_client == null || _client!.auth.currentSession == null) {
+    if (_client == null || _client.auth.currentSession == null) {
       return AppUpdateStatus(
         installed: installed,
         release: null,
@@ -137,7 +137,7 @@ class AppUpdateService {
       );
     }
     try {
-      final response = await _client!
+      final response = await _client
           .rpc('platform_android_release')
           .timeout(const Duration(seconds: 8));
       final release = AppRelease.tryParse(response);

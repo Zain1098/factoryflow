@@ -46,9 +46,9 @@ Future<bool> _runSettingsAction(
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(
           content: Text(
-              'Could not save this change. Check workspace and try again.'),
+              'Could not save this change. Check workspace and try again.',),
           backgroundColor: Colors.red,
-        ));
+        ),);
     }
     return false;
   }
@@ -214,7 +214,7 @@ class _SettingsNavigationTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon,
-              color: iconColor ?? theme.colorScheme.primary, size: 20),
+              color: iconColor ?? theme.colorScheme.primary, size: 20,),
         ),
         title: Text(
           title,
@@ -222,7 +222,7 @@ class _SettingsNavigationTile extends StatelessWidget {
         ),
         subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Icon(Icons.chevron_right_rounded,
-            color: theme.colorScheme.onSurfaceVariant),
+            color: theme.colorScheme.onSurfaceVariant,),
         onTap: onTap,
       ),
     );
@@ -251,10 +251,10 @@ class _ThemeModeSelector extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         children: [
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('Appearance'),
-            subtitle: const Text('Choose how FactoryFlow looks on this device'),
+          const ListTile(
+            leading: Icon(Icons.palette_outlined),
+            title: Text('Appearance'),
+            subtitle: Text('Choose how FactoryFlow looks on this device'),
           ),
           _ThemeChoice(
             icon: Icons.brightness_auto_outlined,
@@ -350,7 +350,7 @@ class _BatchTraceabilityTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(Icons.qr_code_2_rounded,
-                  color: colors.primary, size: 20),
+                  color: colors.primary, size: 20,),
             ),
             IconButton(
               tooltip: 'About batch traceability',
@@ -375,7 +375,7 @@ void _showBatchTraceabilityInfo(BuildContext context) =>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Batch traceability',
-                style: Theme.of(sheetContext).textTheme.titleLarge),
+                style: Theme.of(sheetContext).textTheme.titleLarge,),
             const SizedBox(height: 8),
             const Text(
               'Production creates the original batch. BP, FACO, AP, RTV and dispatch retain the same linked batch. This switch only controls whether the saved code is shown after a Production entry; it never disables batch creation or source checks.',
@@ -930,7 +930,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1024,7 +1024,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       await _runSettingsAction(context, () => repo.insertOperator(resultName!));
     } else {
       await _runSettingsAction(
-          context, () => repo.updateOperator(id, resultName!));
+          context, () => repo.updateOperator(id, resultName!),);
     }
   }
 
@@ -1039,7 +1039,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateOperator(id),
-        successMessage: 'Operator removed from this device.');
+        successMessage: 'Operator removed from this device.',);
   }
 }
 
@@ -1063,7 +1063,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1157,7 +1157,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       await _runSettingsAction(context, () => repo.insertSupplier(resultName!));
     } else {
       await _runSettingsAction(
-          context, () => repo.updateSupplier(id, resultName!));
+          context, () => repo.updateSupplier(id, resultName!),);
     }
   }
 
@@ -1172,7 +1172,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateSupplier(id),
-        successMessage: 'Supplier removed from this device.');
+        successMessage: 'Supplier removed from this device.',);
   }
 }
 
@@ -1198,7 +1198,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1324,10 +1324,10 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
-          context, () => repo.insertPart(code: resultCode!, name: resultName!));
+          context, () => repo.insertPart(code: resultCode!, name: resultName!),);
     } else {
       await _runSettingsAction(context,
-          () => repo.updatePart(id, code: resultCode!, name: resultName!));
+          () => repo.updatePart(id, code: resultCode!, name: resultName!),);
     }
   }
 
@@ -1342,7 +1342,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivatePart(id),
-        successMessage: 'Part removed from this device.');
+        successMessage: 'Part removed from this device.',);
   }
 }
 
@@ -1368,7 +1368,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1387,9 +1387,9 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
               await _runSettingsAction(context, () async {
                 for (var i = 0; i < reordered.length; i++) {
                   await repo.reorderMachine(
-                      reordered[i]['id'] as String, i + 1);
+                      reordered[i]['id'] as String, i + 1,);
                 }
-              }, successMessage: 'Machine order saved on this device.');
+              }, successMessage: 'Machine order saved on this device.',);
             },
             itemBuilder: (context, i) {
               final m = list[i];
@@ -1533,12 +1533,12 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                 name: resultName!,
                 machineCode: resultCode!,
                 sequenceOrder: resultSeq ?? 1,
-              ));
+              ),);
     } else {
       await _runSettingsAction(
           context,
           () => repo.updateMachine(id,
-              name: resultName!, machineCode: resultCode!));
+              name: resultName!, machineCode: resultCode!,),);
     }
   }
 
@@ -1553,7 +1553,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateMachine(id),
-        successMessage: 'Machine removed from this device.');
+        successMessage: 'Machine removed from this device.',);
   }
 }
 
@@ -1579,7 +1579,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1675,10 +1675,10 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
-          context, () => repository.insertVendorByName(resultName!));
+          context, () => repository.insertVendorByName(resultName!),);
     } else {
       await _runSettingsAction(
-          context, () => repository.updateVendor(id, resultName!));
+          context, () => repository.updateVendor(id, resultName!),);
     }
   }
 
@@ -1693,7 +1693,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateVendor(id),
-        successMessage: 'Vendor removed from this device.');
+        successMessage: 'Vendor removed from this device.',);
   }
 }
 
@@ -1718,7 +1718,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
       ),
       body: customers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => EmptyState(
+        error: (error, _) => const EmptyState(
           message: 'Unable to load customers. Try again.',
           icon: Icons.error_outline,
         ),
@@ -1808,10 +1808,10 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
-          context, () => repository.insertCustomer(result));
+          context, () => repository.insertCustomer(result),);
     } else {
       await _runSettingsAction(
-          context, () => repository.updateCustomer(id, result));
+          context, () => repository.updateCustomer(id, result),);
     }
   }
 
@@ -1827,7 +1827,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateCustomer(id),
-        successMessage: 'Customer removed from this device.');
+        successMessage: 'Customer removed from this device.',);
   }
 }
 
@@ -1851,7 +1851,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1938,7 +1938,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       await _runSettingsAction(context, () => repo.insertDriver(resultName!));
     } else {
       await _runSettingsAction(
-          context, () => repo.updateDriver(id, resultName!));
+          context, () => repo.updateDriver(id, resultName!),);
     }
   }
 
@@ -1953,7 +1953,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateDriver(id),
-        successMessage: 'Driver removed from this device.');
+        successMessage: 'Driver removed from this device.',);
   }
 }
 
@@ -1979,7 +1979,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => const EmptyState(
             message: 'Unable to load this section. Try again.',
-            icon: Icons.error_outline),
+            icon: Icons.error_outline,),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -2072,10 +2072,10 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
-          context, () => repository.insertVehicle(resultPlate!));
+          context, () => repository.insertVehicle(resultPlate!),);
     } else {
       await _runSettingsAction(
-          context, () => repository.updateVehicle(id, resultPlate!));
+          context, () => repository.updateVehicle(id, resultPlate!),);
     }
   }
 
@@ -2090,7 +2090,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
     if (!confirmed) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateVehicle(id),
-        successMessage: 'Vehicle removed from this device.');
+        successMessage: 'Vehicle removed from this device.',);
   }
 }
 
@@ -2187,7 +2187,7 @@ class _DatabaseSyncStatusPage extends ConsumerStatefulWidget {
 
 class _DatabaseSyncStatusPageState
     extends ConsumerState<_DatabaseSyncStatusPage> {
-  bool _syncing = false;
+  final bool _syncing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -2672,13 +2672,13 @@ class _ProductionFlowPage extends ConsumerWidget {
                                       ? null
                                       : () {
                                           final updated = [
-                                            ...flow.requiredMachineIds
+                                            ...flow.requiredMachineIds,
                                           ];
                                           final moved = updated.removeAt(index);
                                           updated.insert(index - 1, moved);
                                           ref
                                               .read(productionFlowProvider
-                                                  .notifier)
+                                                  .notifier,)
                                               .setRequiredMachines(updated);
                                         },
                                 ),
@@ -2690,13 +2690,13 @@ class _ProductionFlowPage extends ConsumerWidget {
                                       ? null
                                       : () {
                                           final updated = [
-                                            ...flow.requiredMachineIds
+                                            ...flow.requiredMachineIds,
                                           ];
                                           final moved = updated.removeAt(index);
                                           updated.insert(index + 1, moved);
                                           ref
                                               .read(productionFlowProvider
-                                                  .notifier)
+                                                  .notifier,)
                                               .setRequiredMachines(updated);
                                         },
                                 ),

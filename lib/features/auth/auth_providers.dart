@@ -514,7 +514,7 @@ class AuthRepository {
     }
 
     final result = await _completeWorkspaceSetup(client, profileName, workspaceName, joinCode);
-    final workspaceId = (result as Map)['workspace_id'] as String;
+    final workspaceId = (result)['workspace_id'] as String;
     await db.upsertWorkspace(
       id: workspaceId,
       name: result['workspace_name'] as String? ?? workspaceName,
@@ -697,7 +697,7 @@ class AuthRepository {
           : (pendingWorkspace ?? 'My Workspace').trim(),
       pending?['join_code'] ?? '',
     );
-    final workspaceId = (result as Map)['workspace_id'] as String?;
+    final workspaceId = (result)['workspace_id'] as String?;
     if (workspaceId == null || workspaceId.isEmpty) return null;
     final user = await _fetchAppUser(client, userId);
     if (user != null) await _clearPendingSignup();

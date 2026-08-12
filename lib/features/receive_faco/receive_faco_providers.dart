@@ -47,51 +47,49 @@ class ReceiveFacoRepository {
     }
     double? dispatchedQty;
     bool shortageFlag = false;
-    if (dispatchRefId != null) {
-      final rows = _db.db.select(
-        'SELECT qty, batch_number FROM dispatch_to_facos '
-        'WHERE factory_id = ? AND id = ? AND part_id = ?',
-        [factoryId, dispatchRefId, partId],
+    final rows = _db.db.select(
+      'SELECT qty, batch_number FROM dispatch_to_facos '
+      'WHERE factory_id = ? AND id = ? AND part_id = ?',
+      [factoryId, dispatchRefId, partId],
+    );
+    if (rows.isEmpty) {
+      return const ReceiveFacoResult(
+        success: false,
+        error: 'The selected Faco dispatch is no longer available.',
       );
-      if (rows.isEmpty) {
-        return const ReceiveFacoResult(
-          success: false,
-          error: 'The selected Faco dispatch is no longer available.',
-        );
-      }
-      final dispatchBatch = rows.first['batch_number'] as String? ?? '';
-      if (dispatchBatch.isEmpty || dispatchBatch != batchNumber) {
-        return const ReceiveFacoResult(
-          success: false,
-          error:
-              'Select the original Faco dispatch; batch numbers cannot be entered manually.',
-        );
-      }
-      dispatchedQty = (rows.first['qty'] as num).toDouble();
-      final receivedRows = _db.db.select(
-        'SELECT COALESCE(SUM(qty_received), 0) AS received '
-        'FROM receive_from_facos '
-        'WHERE factory_id = ? AND dispatch_ref_id = ?',
-        [factoryId, dispatchRefId],
-      );
-      final alreadyReceived =
-          (receivedRows.first['received'] as num).toDouble();
-      final remaining = dispatchedQty - alreadyReceived;
-      if (remaining <= 0) {
-        return const ReceiveFacoResult(
-          success: false,
-          error: 'This Faco dispatch has already been received in full.',
-        );
-      }
-      if (qtyReceived > remaining) {
-        return ReceiveFacoResult(
-          success: false,
-          error:
-              'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
-        );
-      }
-      shortageFlag = qtyReceived < remaining;
     }
+    final dispatchBatch = rows.first['batch_number'] as String? ?? '';
+    if (dispatchBatch.isEmpty || dispatchBatch != batchNumber) {
+      return const ReceiveFacoResult(
+        success: false,
+        error:
+            'Select the original Faco dispatch; batch numbers cannot be entered manually.',
+      );
+    }
+    dispatchedQty = (rows.first['qty'] as num).toDouble();
+    final receivedRows = _db.db.select(
+      'SELECT COALESCE(SUM(qty_received), 0) AS received '
+      'FROM receive_from_facos '
+      'WHERE factory_id = ? AND dispatch_ref_id = ?',
+      [factoryId, dispatchRefId],
+    );
+    final alreadyReceived =
+        (receivedRows.first['received'] as num).toDouble();
+    final remaining = dispatchedQty - alreadyReceived;
+    if (remaining <= 0) {
+      return const ReceiveFacoResult(
+        success: false,
+        error: 'This Faco dispatch has already been received in full.',
+      );
+    }
+    if (qtyReceived > remaining) {
+      return ReceiveFacoResult(
+        success: false,
+        error:
+            'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
+      );
+    }
+    shortageFlag = qtyReceived < remaining;
 
     final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();

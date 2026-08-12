@@ -59,7 +59,7 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
         type: 'application/vnd.android.package-archive',
       );
       if (opened.type != ResultType.done) {
-        return AppUpdateDownloadResult.failure(
+        return const AppUpdateDownloadResult.failure(
           'Android installer could not open. Allow FactoryFlow to install unknown apps in Android Settings, then retry.',
         );
       }

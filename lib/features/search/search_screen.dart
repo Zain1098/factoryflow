@@ -121,7 +121,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text('Find a factory record',
-                      style: theme.textTheme.headlineSmall),
+                      style: theme.textTheme.headlineSmall,),
                   const SizedBox(height: 6),
                   Text(
                     'Choose what you have, then enter its number.',
@@ -287,12 +287,12 @@ class _QuickSearchTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Search by ${mode.label}',
-                        style: theme.textTheme.titleSmall),
+                        style: theme.textTheme.titleSmall,),
                     const SizedBox(height: 3),
                     Text(mode.hint,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
-                        )),
+                        ),),
                   ],
                 ),
               ),

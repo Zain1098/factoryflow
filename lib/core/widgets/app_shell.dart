@@ -95,7 +95,7 @@ class _AppShellState extends ConsumerState<AppShell>
                   backgroundColor:
                       Theme.of(context).colorScheme.surfaceContainerHighest,
                   leading: const Icon(Icons.cloud_off_outlined,
-                      color: Colors.orange),
+                      color: Colors.orange,),
                   content: Text(
                     pendingSync > 0
                         ? 'Offline — $pendingSync record(s) will sync when connected.'
@@ -174,7 +174,7 @@ class _AppShellState extends ConsumerState<AppShell>
 /// Compact, app-wide access to automatic cloud sync. Detailed pages are only
 /// needed where an administrator must resolve an actual conflict.
 class SyncStatusButton extends ConsumerWidget {
-  const SyncStatusButton({
+  const SyncStatusButton({super.key,
     required this.isOnline,
     required this.pendingCount,
     this.compact = false,
@@ -243,7 +243,7 @@ class SyncStatusButton extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Cloud Sync',
-                    style: Theme.of(context).textTheme.titleLarge),
+                    style: Theme.of(context).textTheme.titleLarge,),
                 const SizedBox(height: 8),
                 Text(
                   !isOnline
@@ -272,7 +272,7 @@ class SyncStatusButton extends ConsumerWidget {
                                       ? '${result.synced} record(s) synced.'
                                       : result.offline
                                           ? 'Still offline. Sync will retry automatically.'
-                                          : 'Sync is already up to date.'),
+                                          : 'Sync is already up to date.',),
                                 ),
                               );
                             },

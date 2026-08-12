@@ -7,7 +7,6 @@ import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../auth/auth_providers.dart';
-import '../../core/constants/user_roles.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
