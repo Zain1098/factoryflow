@@ -63,8 +63,8 @@ Supabase service-role key. Android always asks the user to confirm APK install.
 
 ### One-time server setup
 
-1. Apply `20260812133307_platform_android_release_publishing.sql` through the
-   normal Supabase migration workflow.
+1. The existing `platform_android_release()` RPC and `platform_app_releases`
+   table are already used; do not create a second update table.
 2. Deploy the Edge Function with `supabase functions deploy publish-android-release`.
 3. Set the same strong random value as `RELEASE_PUBLISH_TOKEN` in Supabase Edge
    Function secrets and GitHub Actions secrets. Never put it in Flutter code.

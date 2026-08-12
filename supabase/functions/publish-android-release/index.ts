@@ -51,14 +51,14 @@ Deno.serve(async (request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const release = {
-    channel: 'android', version_name: versionName, version_code: versionCode,
+    platform: 'android', version_name: versionName, version_code: versionCode,
     minimum_supported_version_code: minimumCode, download_url: fixedDownloadUrl,
     release_notes: releaseNotes, sha256, is_mandatory: isMandatory,
     published_at: new Date().toISOString(), published_by: 'github-actions',
   };
   const { error: releaseError } = await admin
     .from('platform_app_releases')
-    .upsert(release, { onConflict: 'channel' });
+    .upsert(release, { onConflict: 'platform' });
   if (releaseError) return json({ error: 'release_publish_failed' }, 500);
 
   const { error: auditError } = await admin.from('platform_audit_log').insert({
