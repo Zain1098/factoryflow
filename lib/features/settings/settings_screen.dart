@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -10,13 +11,60 @@ import '../../core/models/app_user.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/providers/batch_config_provider.dart';
 import '../../core/providers/production_flow_provider.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/services/biometric_service.dart';
 import '../../core/services/data_management_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../auth/account_settings_screen.dart';
 import '../corrections/corrections_screen.dart';
+import '../corrections/conflict_review_screen.dart';
+import 'stock_management_screen.dart';
+import 'team_members_screen.dart';
+import 'app_update_widgets.dart';
+import 'work_reminders_screen.dart';
+
+Future<bool> _runSettingsAction(
+  BuildContext context,
+  Future<void> Function() action, {
+  String successMessage =
+      'Saved on this device. Cloud sync will retry automatically.',
+}) async {
+  try {
+    await action();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(successMessage)));
+    }
+    return true;
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text(
+              'Could not save this change. Check workspace and try again.'),
+          backgroundColor: Colors.red,
+        ));
+    }
+    return false;
+  }
+}
+
+// ── App version provider ──────────────────────────────────────────────────────
+
+final _appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    // ignore: depend_on_referenced_packages
+    final info = await PackageInfo.fromPlatform();
+    return '${info.version}+${info.buildNumber}';
+  } catch (_) {
+    return AppConstants.appVersion;
+  }
+});
 
 // ── Biometric toggle provider ─────────────────────────────────────────────────────
 
@@ -91,16 +139,26 @@ class _NotifPrefsNotifier extends Notifier<_NotifPrefs> {
     state = prefs;
   }
 
-  Future<void> toggle(bool Function(_NotifPrefs) getter, _NotifPrefs Function(bool) updater, bool val) async {
+  Future<void> toggle(
+    bool Function(_NotifPrefs) getter,
+    _NotifPrefs Function(bool) updater,
+    bool val,
+  ) async {
     await _save(updater(val));
   }
 
-  Future<void> setEnabled(bool v) => _save(state.copyWith(enableNotifications: v));
+  Future<void> setEnabled(bool v) async {
+    await _save(state.copyWith(enableNotifications: v));
+    await NotificationService.instance.refreshWorkReminders();
+  }
   Future<void> setSound(bool v) => _save(state.copyWith(soundEnabled: v));
-  Future<void> setVibration(bool v) => _save(state.copyWith(vibrationEnabled: v));
-  Future<void> setProductionAlerts(bool v) => _save(state.copyWith(productionAlerts: v));
+  Future<void> setVibration(bool v) =>
+      _save(state.copyWith(vibrationEnabled: v));
+  Future<void> setProductionAlerts(bool v) =>
+      _save(state.copyWith(productionAlerts: v));
   Future<void> setSyncAlerts(bool v) => _save(state.copyWith(syncAlerts: v));
-  Future<void> setDowntimeAlerts(bool v) => _save(state.copyWith(downtimeAlerts: v));
+  Future<void> setDowntimeAlerts(bool v) =>
+      _save(state.copyWith(downtimeAlerts: v));
 }
 
 final _notifPrefsProvider =
@@ -115,14 +173,217 @@ Widget _masterTile(
   String subtitle,
   Widget page,
 ) {
-  return ListTile(
-    leading: Icon(icon),
-    title: Text(title),
-    subtitle: Text(subtitle),
-    trailing: const Icon(Icons.chevron_right),
-    onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
+  return _SettingsNavigationTile(
+    icon: icon,
+    title: title,
+    subtitle: subtitle,
+    onTap: () =>
+        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
   );
 }
+
+class _SettingsNavigationTile extends StatelessWidget {
+  const _SettingsNavigationTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.iconColor,
+    this.titleColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color? iconColor;
+  final Color? titleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: ListTile(
+        minVerticalPadding: 11,
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color:
+                (iconColor ?? theme.colorScheme.primary).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon,
+              color: iconColor ?? theme.colorScheme.primary, size: 20),
+        ),
+        title: Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(color: titleColor),
+        ),
+        subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: Icon(Icons.chevron_right_rounded,
+            color: theme.colorScheme.onSurfaceVariant),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _SettingsTileCard extends StatelessWidget {
+  const _SettingsTileCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Card(child: child);
+}
+
+class _ThemeModeSelector extends StatelessWidget {
+  const _ThemeModeSelector({required this.mode, required this.onChanged});
+
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Appearance'),
+            subtitle: const Text('Choose how FactoryFlow looks on this device'),
+          ),
+          _ThemeChoice(
+            icon: Icons.brightness_auto_outlined,
+            title: 'Use phone setting',
+            subtitle: 'Follow your device light or dark mode',
+            selected: mode == ThemeMode.system,
+            onTap: () => onChanged(ThemeMode.system),
+          ),
+          _ThemeChoice(
+            icon: Icons.light_mode_outlined,
+            title: 'Light mode',
+            subtitle: 'Bright interface for daytime work',
+            selected: mode == ThemeMode.light,
+            onTap: () => onChanged(ThemeMode.light),
+          ),
+          _ThemeChoice(
+            icon: Icons.dark_mode_outlined,
+            title: 'Dark mode',
+            subtitle: 'Low-light interface for evening work',
+            selected: mode == ThemeMode.dark,
+            onTap: () => onChanged(ThemeMode.dark),
+          ),
+          const SizedBox(height: 4),
+          Divider(color: theme.dividerColor, height: 1),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeChoice extends StatelessWidget {
+  const _ThemeChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: Icon(icon, color: selected ? scheme.primary : scheme.onSurfaceVariant),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      ),
+      selected: selected,
+      selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.38),
+      onTap: onTap,
+    );
+  }
+}
+
+class _BatchTraceabilityTile extends StatelessWidget {
+  const _BatchTraceabilityTile({
+    required this.showSavedBatchNumber,
+    required this.onShowSavedBatchNumberChanged,
+  });
+
+  final bool showSavedBatchNumber;
+  final ValueChanged<bool> onShowSavedBatchNumberChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      child: SwitchListTile.adaptive(
+        contentPadding: const EdgeInsets.fromLTRB(16, 7, 10, 7),
+        title: Text('Show saved batch code', style: theme.textTheme.titleSmall),
+        subtitle: const Text('Display it after a Production entry is saved'),
+        value: showSavedBatchNumber,
+        onChanged: onShowSavedBatchNumberChanged,
+        secondary: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.qr_code_2_rounded,
+                  color: colors.primary, size: 20),
+            ),
+            IconButton(
+              tooltip: 'About batch traceability',
+              icon: const Icon(Icons.info_outline_rounded, size: 19),
+              onPressed: () => _showBatchTraceabilityInfo(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _showBatchTraceabilityInfo(BuildContext context) =>
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Batch traceability',
+                style: Theme.of(sheetContext).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text(
+              'Production creates the original batch. BP, FACO, AP, RTV and dispatch retain the same linked batch. This switch only controls whether the saved code is shown after a Production entry; it never disables batch creation or source checks.',
+            ),
+          ],
+        ),
+      ),
+    );
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -159,9 +420,25 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    final user = ref.watch(currentUserProvider).value;
+    final userState = ref.watch(currentUserProvider);
+    if (userState.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (userState.hasError) {
+      return const Scaffold(
+        body: EmptyState(
+          message: 'Profile could not load. Please reopen Settings.',
+          icon: Icons.account_circle_outlined,
+        ),
+      );
+    }
+    final user = userState.value;
     final showBatchNumber = ref.watch(batchConfigProvider);
     final theme = Theme.of(context);
+    final canManageFactory = user?.role.canManageMasters ?? false;
+    final canApproveCorrections = user?.role.canApproveCorrections ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -169,6 +446,7 @@ class SettingsScreen extends ConsumerWidget {
         centerTitle: false,
       ),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
           // ── User Profile Card ────────────────────────────────────────────────
           if (user != null)
@@ -177,7 +455,10 @@ class SettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [theme.colorScheme.primaryContainer, theme.colorScheme.secondaryContainer],
+                  colors: [
+                    theme.colorScheme.primaryContainer,
+                    theme.colorScheme.secondaryContainer,
+                  ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -185,7 +466,12 @@ class SettingsScreen extends ConsumerWidget {
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const AccountSettingsScreen())),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AccountSettingsScreen(),
+                  ),
+                ),
                 child: Row(
                   children: [
                     _buildAvatar(context, user),
@@ -194,82 +480,162 @@ class SettingsScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(user.name, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(
+                            user.name,
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
                           const SizedBox(height: 2),
-                          Text(user.email, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          Text(
+                            user.email,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                           const SizedBox(height: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               user.role.value.toUpperCase(),
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: theme.colorScheme.primary, letterSpacing: 1),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                                letterSpacing: 1,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(
+                      Icons.chevron_right,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ],
                 ),
               ),
             ),
 
           // ── PRODUCTION ────────────────────────────────────────────────────
-          const _SectionLabel('Production'),
-          ListTile(
-            leading: const Icon(Icons.track_changes_outlined),
-            title: const Text('Daily Production Targets'),
-            subtitle: const Text('Part-wise & day-wise targets'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionTargetsPage())),
-          ),
-          ListTile(
-            leading: const Icon(Icons.account_tree_outlined),
-            title: const Text('Multi-Machine Flow'),
-            subtitle: const Text('Machine sequence, WIP & dispatch rules'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _ProductionFlowPage())),
-          ),
-          const Divider(),
+          if (canManageFactory) ...[
+            const _SectionLabel('Factory Setup'),
+            _SettingsNavigationTile(
+              icon: Icons.groups_2_outlined,
+              title: 'Team Members',
+              subtitle: 'Invite people and control role-based access',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const TeamMembersScreen(),
+                ),
+              ),
+            ),
+            _SettingsNavigationTile(
+              icon: Icons.track_changes_outlined,
+              title: 'Daily Production Targets',
+              subtitle: 'Part-wise and day-wise targets',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _ProductionTargetsPage(),
+                ),
+              ),
+            ),
+            _SettingsNavigationTile(
+              icon: Icons.account_tree_outlined,
+              title: 'Production Flow',
+              subtitle: 'Machine sequence, WIP and dispatch rules',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _ProductionFlowPage(),
+                ),
+              ),
+            ),
+            const Divider(),
 
-          // ── MASTER DATA ──────────────────────────────────────────────────
-          const _SectionLabel('Master Data'),
-          _masterTile(context, Icons.category_outlined, 'Parts', 'Add, edit or remove parts', const _PartsPage()),
-          _masterTile(context, Icons.precision_manufacturing_outlined, 'Machines', 'Add, reorder & set machine sequence', const _MachinesPage()),
-          _masterTile(context, Icons.people_outline, 'Operators', 'Add or remove operators', const _OperatorsPage()),
-          _masterTile(context, Icons.local_shipping_outlined, 'Suppliers', 'Material suppliers', const _SuppliersPage()),
-          _masterTile(context, Icons.store_outlined, 'Vendors (Faco)', 'Plating vendors', const _VendorsPage()),
-          _masterTile(context, Icons.person_outlined, 'Drivers', 'Add or remove drivers', const _DriversPage()),
-          _masterTile(context, Icons.directions_car_outlined, 'Vehicles', 'Number plates', const _VehiclesPage()),
-          const Divider(),
+            // ── MASTER DATA ──────────────────────────────────────────────────
+            const _SectionLabel('Master Data'),
+            _masterTile(
+              context,
+              Icons.category_outlined,
+              'Parts',
+              'Add, edit or remove parts',
+              const _PartsPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.precision_manufacturing_outlined,
+              'Machines',
+              'Add, reorder & set machine sequence',
+              const _MachinesPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.people_outline,
+              'Operators',
+              'Add or remove operators',
+              const _OperatorsPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.local_shipping_outlined,
+              'Suppliers',
+              'Material suppliers',
+              const _SuppliersPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.store_outlined,
+              'Vendors',
+              'Manage external vendors',
+              const _VendorsPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.business_outlined,
+              'Customers',
+              'Final dispatch customers',
+              const _CustomersPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.person_outlined,
+              'Drivers',
+              'Add or remove drivers',
+              const _DriversPage(),
+            ),
+            _masterTile(
+              context,
+              Icons.directions_car_outlined,
+              'Vehicles',
+              'Number plates',
+              const _VehiclesPage(),
+            ),
+            const Divider(),
+          ],
 
           // ── APP SETTINGS ─────────────────────────────────────────────────
           const _SectionLabel('App Settings'),
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: const Text('Theme'),
-            subtitle: Text(themeMode.name[0].toUpperCase() + themeMode.name.substring(1)),
-            trailing: SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 18)),
-                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto, size: 18)),
-                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
-              ],
-              selected: {themeMode},
-              onSelectionChanged: (s) => ref.read(themeModeProvider.notifier).setThemeMode(s.first),
-              style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact),
+          _SettingsTileCard(
+            child: _ThemeModeSelector(
+              mode: themeMode,
+              onChanged: ref.read(themeModeProvider.notifier).setThemeMode,
             ),
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.qr_code_2_outlined),
-            title: const Text('Batch Number Tracking'),
-            subtitle: const Text('Show batch numbers on entries'),
-            value: showBatchNumber,
-            onChanged: (val) => ref.read(batchConfigProvider.notifier).toggle(val),
+          _BatchTraceabilityTile(
+            showSavedBatchNumber: showBatchNumber,
+            onShowSavedBatchNumberChanged: (value) =>
+                ref.read(batchConfigProvider.notifier).toggle(value),
           ),
           Consumer(
             builder: (context, ref, _) {
@@ -279,72 +645,134 @@ class SettingsScreen extends ConsumerWidget {
                 future: svc.isAvailable(),
                 builder: (context, snap) {
                   final available = snap.data ?? false;
-                  return SwitchListTile(
-                    secondary: const Icon(Icons.fingerprint),
-                    title: const Text('Biometric Lock'),
-                    subtitle: Text(available ? 'Fingerprint / face unlock' : 'Not available on this device'),
-                    value: biometricAsync.value ?? false,
-                    onChanged: available ? (val) async { await svc.setEnabled(val); ref.invalidate(_biometricEnabledProvider); } : null,
+                  return _SettingsTileCard(
+                    child: SwitchListTile(
+                      secondary: const Icon(Icons.fingerprint),
+                      title: const Text('Biometric Lock'),
+                      subtitle: Text(
+                        available
+                            ? 'Fingerprint / face unlock'
+                            : 'Not available on this device',
+                      ),
+                      value: biometricAsync.value ?? false,
+                      onChanged: available
+                          ? (val) async {
+                              if (val && !await svc.authenticate()) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Biometric lock was not enabled because authentication was cancelled.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+                              await svc.setEnabled(val);
+                              ref.invalidate(_biometricEnabledProvider);
+                            }
+                          : null,
+                    ),
                   );
                 },
               );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.notifications_none_outlined),
-            title: const Text('Notifications'),
-            subtitle: const Text('Alerts, sound & vibration preferences'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _NotificationsPage())),
+          _SettingsNavigationTile(
+            icon: Icons.notifications_none_outlined,
+            title: 'Notifications',
+            subtitle: 'Alerts, sound & vibration preferences',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const _NotificationsPage(),
+              ),
+            ),
           ),
+          const AppUpdateSettingsSection(),
           const Divider(),
 
           // ── SYSTEM ───────────────────────────────────────────────────────
           const _SectionLabel('System'),
-          ListTile(
-            leading: const Icon(Icons.gavel_outlined),
-            title: const Text('Correction Requests'),
-            subtitle: const Text('Review, approve or reject edit requests'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const CorrectionsScreen())),
-          ),
-          ListTile(
-            leading: const Icon(Icons.cloud_sync_outlined),
-            title: const Text('Cloud Sync Status'),
-            subtitle: const Text('Pending queue & sync history'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _DatabaseSyncStatusPage())),
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_sweep_outlined, color: Colors.orange),
-            title: const Text('Erase Data'),
-            subtitle: const Text('Clear transaction records'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const _EraseDataPage())),
-          ),
+          if (canApproveCorrections) ...[
+            _SettingsNavigationTile(
+              icon: Icons.gavel_outlined,
+              title: 'Correction Requests',
+              subtitle: 'Review, approve or reject edit requests',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const CorrectionsScreen(),
+                ),
+              ),
+            ),
+            _SettingsNavigationTile(
+              icon: Icons.warning_amber_rounded,
+              iconColor: Colors.orange,
+              title: 'Sync Conflicts',
+              subtitle: 'Review and resolve failed sync records',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const ConflictReviewScreen(),
+                ),
+              ),
+            ),
+          ],
+          if (canManageFactory)
+            _SettingsNavigationTile(
+              icon: Icons.inventory_2_outlined,
+              title: 'Stock Management',
+              subtitle: 'Review balances and post adjustments',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const StockManagementScreen(),
+                ),
+              ),
+            ),
+          if (canManageFactory)
+            _SettingsNavigationTile(
+              icon: Icons.delete_sweep_outlined,
+              iconColor: Colors.orange,
+              title: 'Erase Local Data',
+              subtitle: 'Admin-only recovery and reset controls',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _EraseDataPage(),
+                ),
+              ),
+            ),
           if (user != null)
-            ListTile(
-              leading: const Icon(Icons.no_accounts_outlined, color: Colors.red),
-              title: const Text('Delete My Account', style: TextStyle(color: Colors.red)),
-              subtitle: const Text('Remove access and clear local data'),
+            _SettingsNavigationTile(
+              icon: Icons.no_accounts_outlined,
+              iconColor: Colors.red,
+              titleColor: Colors.red,
+              title: 'Delete My Account',
+              subtitle: 'Remove access and clear local data',
               onTap: () => _confirmDeleteAccount(context, ref, user),
             ),
           const Divider(),
 
           // ── ABOUT ────────────────────────────────────────────────────────
           const _SectionLabel('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('ProFlow Manufacturing ERP'),
-            subtitle: Text('FactoryFlow v1.0.0'),
+          Consumer(
+            builder: (context, ref, _) {
+              final version = ref.watch(_appVersionProvider).value ??
+                  AppConstants.appVersion;
+              return ListTile(
+                leading: const Icon(Icons.info_outline),
+                title: const Text('ProFlow Manufacturing ERP'),
+                subtitle: Text('FactoryFlow v$version'),
+              );
+            },
           ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-            onTap: () async {
-              await ref.read(currentUserProvider.notifier).signOut();
-              if (context.mounted) context.go('/login');
-            },
+            onTap: () => _signOut(context, ref),
           ),
           const SizedBox(height: 24),
         ],
@@ -355,6 +783,25 @@ class SettingsScreen extends ConsumerWidget {
 
 // ─── Notifications Page ───────────────────────────────────────────────────────
 
+Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+  final pending = await ref.read(databaseServiceProvider).countPendingSync();
+  if (!context.mounted) return;
+  if (pending > 0) {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Unsynced Work on This Device',
+      message:
+          '$pending record(s) are still waiting to sync. Signing out now may '
+          'make this work unavailable until you sign in on this device again.',
+      confirmLabel: 'Sign Out Anyway',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+  }
+  await ref.read(currentUserProvider.notifier).signOut();
+  if (context.mounted) context.go('/login');
+}
+
 class _NotificationsPage extends ConsumerWidget {
   const _NotificationsPage();
 
@@ -362,8 +809,20 @@ class _NotificationsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
-      body: SingleChildScrollView(
-        child: _NotificationsSection(),
+      body: ListView(
+        padding: const EdgeInsets.only(top: 10, bottom: 24),
+        children: [
+          _NotificationsSection(),
+          _SettingsNavigationTile(
+            icon: Icons.alarm_outlined,
+            title: 'Work reminders',
+            subtitle: 'Daily reminders with factory off-days',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const WorkRemindersPage()),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -377,51 +836,52 @@ class _NotificationsSection extends ConsumerWidget {
     final prefs = ref.watch(_notifPrefsProvider);
     final notifier = ref.read(_notifPrefsProvider.notifier);
 
-    return Column(
-      children: [
-        SwitchListTile(
-          secondary: const Icon(Icons.notifications_active_outlined),
-          title: const Text('Enable Notifications'),
-          subtitle: const Text('Turn on/off all app notifications'),
-          value: prefs.enableNotifications,
-          onChanged: notifier.setEnabled,
-        ),
-        if (prefs.enableNotifications) ...[
+    return Card(
+      child: Column(
+        children: [
           SwitchListTile(
-            secondary: const Icon(Icons.volume_up_outlined),
-            title: const Text('Notification Sound'),
-            value: prefs.soundEnabled,
-            onChanged: notifier.setSound,
+            secondary: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Enable Notifications'),
+            subtitle: const Text('Turn on/off all app notifications'),
+            value: prefs.enableNotifications,
+            onChanged: notifier.setEnabled,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.vibration_outlined),
-            title: const Text('Vibration'),
-            value: prefs.vibrationEnabled,
-            onChanged: notifier.setVibration,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.precision_manufacturing_outlined),
-            title: const Text('Production Alerts'),
-            subtitle: const Text('Target miss, shift completion'),
-            value: prefs.productionAlerts,
-            onChanged: notifier.setProductionAlerts,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.cloud_sync_outlined),
-            title: const Text('Sync Status Alerts'),
-            subtitle: const Text('Cloud sync success or failure'),
-            value: prefs.syncAlerts,
-            onChanged: notifier.setSyncAlerts,
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.build_circle_outlined),
-            title: const Text('Machine Downtime Alerts'),
-            subtitle: const Text('Breakdowns and maintenance events'),
-            value: prefs.downtimeAlerts,
-            onChanged: notifier.setDowntimeAlerts,
-          ),
+          if (prefs.enableNotifications) ...[
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined),
+              title: const Text('Notification Sound'),
+              value: prefs.soundEnabled,
+              onChanged: notifier.setSound,
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.vibration_outlined),
+              title: const Text('Vibration'),
+              value: prefs.vibrationEnabled,
+              onChanged: notifier.setVibration,
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.precision_manufacturing_outlined),
+              title: const Text('Production Alerts'),
+              subtitle: const Text('Target miss, shift completion'),
+              value: prefs.productionAlerts,
+              onChanged: notifier.setProductionAlerts,
+            ),
+            const ListTile(
+              leading: Icon(Icons.cloud_sync_outlined),
+              title: Text('Sync status alerts'),
+              subtitle: Text('Silent. Use the cloud icon to check sync status.'),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.build_circle_outlined),
+              title: const Text('Machine Downtime Alerts'),
+              subtitle: const Text('Breakdowns and maintenance events'),
+              value: prefs.downtimeAlerts,
+              onChanged: notifier.setDowntimeAlerts,
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -439,10 +899,10 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
       ),
     );
   }
@@ -468,7 +928,9 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       ),
       body: operators.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -491,11 +953,17 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => _showEditDialog(op['id'] as String, op['name'] as String),
+                      onPressed: () => _showEditDialog(
+                        op['id'] as String,
+                        op['name'] as String,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(op['id'] as String, op['name'] as String),
+                      onPressed: () => _confirmDelete(
+                        op['id'] as String,
+                        op['name'] as String,
+                      ),
                     ),
                   ],
                 ),
@@ -553,9 +1021,10 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertOperator(resultName!);
+      await _runSettingsAction(context, () => repo.insertOperator(resultName!));
     } else {
-      await repo.updateOperator(id, resultName!);
+      await _runSettingsAction(
+          context, () => repo.updateOperator(id, resultName!));
     }
   }
 
@@ -568,7 +1037,9 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateOperator(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateOperator(id),
+        successMessage: 'Operator removed from this device.');
   }
 }
 
@@ -590,7 +1061,9 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       ),
       body: suppliers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -606,7 +1079,8 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
               final name = supplier['name'] as String;
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.tertiaryContainer,
                   child: Text(name[0].toUpperCase()),
                 ),
                 title: Text(name),
@@ -680,9 +1154,10 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertSupplier(resultName!);
+      await _runSettingsAction(context, () => repo.insertSupplier(resultName!));
     } else {
-      await repo.updateSupplier(id, resultName!);
+      await _runSettingsAction(
+          context, () => repo.updateSupplier(id, resultName!));
     }
   }
 
@@ -695,7 +1170,9 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateSupplier(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateSupplier(id),
+        successMessage: 'Supplier removed from this device.');
   }
 }
 
@@ -719,7 +1196,9 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       ),
       body: parts.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -734,10 +1213,14 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
               final p = list[i];
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primaryContainer,
                   child: Text(
                     p['code'] as String,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 title: Text(p['name'] as String),
@@ -755,7 +1238,10 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(p['id'] as String, p['name'] as String),
+                      onPressed: () => _confirmDelete(
+                        p['id'] as String,
+                        p['name'] as String,
+                      ),
                     ),
                   ],
                 ),
@@ -767,7 +1253,11 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     );
   }
 
-  Future<void> _showEditDialog(String? id, String? currentCode, String? currentName) async {
+  Future<void> _showEditDialog(
+    String? id,
+    String? currentCode,
+    String? currentName,
+  ) async {
     String? resultCode;
     String? resultName;
     await showDialog<void>(
@@ -778,11 +1268,15 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) return;
+              if (codeCtrl.text.trim().isEmpty ||
+                  nameCtrl.text.trim().isEmpty) {
+                return;
+              }
               resultCode = codeCtrl.text.trim();
               resultName = nameCtrl.text.trim();
               Navigator.pop(ctx);
             }
+
             return AlertDialog(
               title: Text(id == null ? 'Add Part' : 'Edit Part'),
               content: SingleChildScrollView(
@@ -829,9 +1323,11 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
     if (resultCode == null || resultName == null) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertPart(code: resultCode!, name: resultName!);
+      await _runSettingsAction(
+          context, () => repo.insertPart(code: resultCode!, name: resultName!));
     } else {
-      await repo.updatePart(id, code: resultCode!, name: resultName!);
+      await _runSettingsAction(context,
+          () => repo.updatePart(id, code: resultCode!, name: resultName!));
     }
   }
 
@@ -844,7 +1340,9 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivatePart(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivatePart(id),
+        successMessage: 'Part removed from this device.');
   }
 }
 
@@ -868,7 +1366,9 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       ),
       body: machines.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -884,23 +1384,32 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
               final item = reordered.removeAt(oldIndex);
               reordered.insert(newIndex, item);
               final repo = ref.read(masterDataRepositoryProvider);
-              for (var i = 0; i < reordered.length; i++) {
-                await repo.reorderMachine(reordered[i]['id'] as String, i + 1);
-              }
+              await _runSettingsAction(context, () async {
+                for (var i = 0; i < reordered.length; i++) {
+                  await repo.reorderMachine(
+                      reordered[i]['id'] as String, i + 1);
+                }
+              }, successMessage: 'Machine order saved on this device.');
             },
             itemBuilder: (context, i) {
               final m = list[i];
               return ListTile(
                 key: ValueKey(m['id']),
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.secondaryContainer,
                   child: Text(
                     m['machine_code'] as String? ?? '?',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 title: Text(m['name'] as String),
-                subtitle: Text('Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}'),
+                subtitle: Text(
+                  'Code: ${m['machine_code'] ?? '—'} · Seq: ${m['sequence_order']}',
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -915,7 +1424,10 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () => _confirmDelete(m['id'] as String, m['name'] as String),
+                      onPressed: () => _confirmDelete(
+                        m['id'] as String,
+                        m['name'] as String,
+                      ),
                     ),
                     const Icon(Icons.drag_handle, color: Colors.grey),
                   ],
@@ -929,7 +1441,10 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
   }
 
   Future<void> _showEditDialog(
-    String? id, String? currentName, String? currentCode, int? currentSeq,
+    String? id,
+    String? currentName,
+    String? currentCode,
+    int? currentSeq,
   ) async {
     String? resultName;
     String? resultCode;
@@ -939,16 +1454,21 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       builder: (ctx) {
         final nameCtrl = TextEditingController(text: currentName ?? '');
         final codeCtrl = TextEditingController(text: currentCode ?? '');
-        final seqCtrl = TextEditingController(text: currentSeq?.toString() ?? '');
+        final seqCtrl =
+            TextEditingController(text: currentSeq?.toString() ?? '');
         return StatefulBuilder(
           builder: (ctx, setState) {
             void submit() {
-              if (nameCtrl.text.trim().isEmpty || codeCtrl.text.trim().isEmpty) return;
+              if (nameCtrl.text.trim().isEmpty ||
+                  codeCtrl.text.trim().isEmpty) {
+                return;
+              }
               resultName = nameCtrl.text.trim();
               resultCode = codeCtrl.text.trim().toUpperCase();
               resultSeq = int.tryParse(seqCtrl.text.trim()) ?? 1;
               Navigator.pop(ctx);
             }
+
             return AlertDialog(
               title: Text(id == null ? 'Add Machine' : 'Edit Machine'),
               content: SingleChildScrollView(
@@ -1007,13 +1527,18 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
 
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertMachine(
-        name: resultName!,
-        machineCode: resultCode!,
-        sequenceOrder: resultSeq ?? 1,
-      );
+      await _runSettingsAction(
+          context,
+          () => repo.insertMachine(
+                name: resultName!,
+                machineCode: resultCode!,
+                sequenceOrder: resultSeq ?? 1,
+              ));
     } else {
-      await repo.updateMachine(id, name: resultName!, machineCode: resultCode!);
+      await _runSettingsAction(
+          context,
+          () => repo.updateMachine(id,
+              name: resultName!, machineCode: resultCode!));
     }
   }
 
@@ -1026,7 +1551,9 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateMachine(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateMachine(id),
+        successMessage: 'Machine removed from this device.');
   }
 }
 
@@ -1043,14 +1570,16 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
   Widget build(BuildContext context) {
     final vendors = ref.watch(vendorsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Vendors (Faco / Plating)')),
+      appBar: AppBar(title: const Text('Vendors')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showEditDialog(null, null),
         child: const Icon(Icons.add),
       ),
       body: vendors.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1063,16 +1592,29 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final v = list[i];
-              final name = v['name'] as String? ?? v['company_name'] as String? ?? '—';
+              final name =
+                  v['name'] as String? ?? v['company_name'] as String? ?? '—';
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.tertiaryContainer,
                   child: const Icon(Icons.store_outlined, size: 20),
                 ),
                 title: Text(name),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _confirmDelete(v['id'] as String, name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit vendor',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(v['id'] as String, name),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate vendor',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(v['id'] as String, name),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1110,7 +1652,10 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1127,9 +1672,14 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
     );
     if (resultName == null || resultName!.isEmpty) return;
     // Insert using masterDataRepository — vendors table already exists in DB
-    final db = ref.read(masterDataRepositoryProvider);
-    // We insert directly as vendor (name field)
-    await db.insertVendorByName(resultName!);
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await _runSettingsAction(
+          context, () => repository.insertVendorByName(resultName!));
+    } else {
+      await _runSettingsAction(
+          context, () => repository.updateVendor(id, resultName!));
+    }
   }
 
   Future<void> _confirmDelete(String id, String name) async {
@@ -1141,11 +1691,145 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateVendor(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateVendor(id),
+        successMessage: 'Vendor removed from this device.');
   }
 }
 
 // ─── Drivers Page ─────────────────────────────────────────────────────────────
+
+class _CustomersPage extends ConsumerStatefulWidget {
+  const _CustomersPage();
+
+  @override
+  ConsumerState<_CustomersPage> createState() => _CustomersPageState();
+}
+
+class _CustomersPageState extends ConsumerState<_CustomersPage> {
+  @override
+  Widget build(BuildContext context) {
+    final customers = ref.watch(customersProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Customers')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showEditDialog(),
+        child: const Icon(Icons.add),
+      ),
+      body: customers.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => EmptyState(
+          message: 'Unable to load customers. Try again.',
+          icon: Icons.error_outline,
+        ),
+        data: (items) {
+          if (items.isEmpty) {
+            return const EmptyState(
+              message: 'No customers yet.\nTap + to add one.',
+              icon: Icons.business_outlined,
+            );
+          }
+          return ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final name = item['name'] as String? ?? 'Unnamed customer';
+              return ListTile(
+                leading: const CircleAvatar(
+                  child: Icon(Icons.business_outlined, size: 18),
+                ),
+                title: Text(name),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit customer',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _showEditDialog(
+                        id: item['id'] as String,
+                        currentName: name,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate customer',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(
+                        item['id'] as String,
+                        name,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditDialog({
+    String? id,
+    String? currentName,
+  }) async {
+    final controller = TextEditingController(text: currentName ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(id == null ? 'Add Customer' : 'Edit Customer'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Customer Name'),
+          onSubmitted: (value) {
+            final name = value.trim();
+            if (name.isNotEmpty) Navigator.pop(context, name);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) Navigator.pop(context, name);
+            },
+            child: Text(id == null ? 'Add' : 'Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await _runSettingsAction(
+          context, () => repository.insertCustomer(result));
+    } else {
+      await _runSettingsAction(
+          context, () => repository.updateCustomer(id, result));
+    }
+  }
+
+  Future<void> _confirmDelete(String id, String name) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Deactivate Customer',
+      message:
+          'Deactivate "$name"? Existing dispatch history will be preserved.',
+      confirmLabel: 'Deactivate',
+      isDestructive: true,
+    );
+    if (!confirmed) return;
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateCustomer(id),
+        successMessage: 'Customer removed from this device.');
+  }
+}
 
 class _DriversPage extends ConsumerStatefulWidget {
   const _DriversPage();
@@ -1165,7 +1849,9 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       ),
       body: drivers.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1228,7 +1914,10 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
@@ -1246,9 +1935,10 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
     if (resultName == null || resultName!.isEmpty) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
-      await repo.insertDriver(resultName!);
+      await _runSettingsAction(context, () => repo.insertDriver(resultName!));
     } else {
-      await repo.updateDriver(id, resultName!);
+      await _runSettingsAction(
+          context, () => repo.updateDriver(id, resultName!));
     }
   }
 
@@ -1261,7 +1951,9 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateDriver(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateDriver(id),
+        successMessage: 'Driver removed from this device.');
   }
 }
 
@@ -1285,7 +1977,9 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       ),
       body: vehicles.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+        error: (e, _) => const EmptyState(
+            message: 'Unable to load this section. Try again.',
+            icon: Icons.error_outline),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -1300,11 +1994,25 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
               final v = list[i];
               final plate = v['number_plate'] as String? ?? '—';
               return ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.directions_car_outlined, size: 18)),
+                leading: const CircleAvatar(
+                  child: Icon(Icons.directions_car_outlined, size: 18),
+                ),
                 title: Text(plate),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _confirmDelete(v['id'] as String, plate),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Edit vehicle',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () =>
+                          _showEditDialog(v['id'] as String, plate),
+                    ),
+                    IconButton(
+                      tooltip: 'Deactivate vehicle',
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
+                      onPressed: () => _confirmDelete(v['id'] as String, plate),
+                    ),
+                  ],
                 ),
               );
             },
@@ -1323,7 +2031,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
         return StatefulBuilder(
           builder: (ctx, setState) {
             return AlertDialog(
-              title: const Text('Add Vehicle'),
+              title: Text(id == null ? 'Add Vehicle' : 'Edit Vehicle'),
               content: SingleChildScrollView(
                 child: TextField(
                   controller: ctrl,
@@ -1342,14 +2050,17 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
                 FilledButton(
                   onPressed: () {
                     if (ctrl.text.trim().isEmpty) return;
                     resultPlate = ctrl.text.trim();
                     Navigator.pop(ctx);
                   },
-                  child: const Text('Add'),
+                  child: Text(id == null ? 'Add' : 'Save'),
                 ),
               ],
             );
@@ -1358,7 +2069,14 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       },
     );
     if (resultPlate == null || resultPlate!.isEmpty) return;
-    await ref.read(masterDataRepositoryProvider).insertVehicle(resultPlate!);
+    final repository = ref.read(masterDataRepositoryProvider);
+    if (id == null) {
+      await _runSettingsAction(
+          context, () => repository.insertVehicle(resultPlate!));
+    } else {
+      await _runSettingsAction(
+          context, () => repository.updateVehicle(id, resultPlate!));
+    }
   }
 
   Future<void> _confirmDelete(String id, String plate) async {
@@ -1370,7 +2088,9 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       isDestructive: true,
     );
     if (!confirmed) return;
-    await ref.read(masterDataRepositoryProvider).deactivateVehicle(id);
+    await _runSettingsAction(context,
+        () => ref.read(masterDataRepositoryProvider).deactivateVehicle(id),
+        successMessage: 'Vehicle removed from this device.');
   }
 }
 
@@ -1457,12 +2177,22 @@ Future<void> _confirmDeleteAccount(
 
 // ─── Database & Sync Status Page ──────────────────────────────────────────────
 
-class _DatabaseSyncStatusPage extends ConsumerWidget {
+class _DatabaseSyncStatusPage extends ConsumerStatefulWidget {
   const _DatabaseSyncStatusPage();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pendingCount = ref.watch(pendingSyncCountProvider).value ?? 0;
+  ConsumerState<_DatabaseSyncStatusPage> createState() =>
+      _DatabaseSyncStatusPageState();
+}
+
+class _DatabaseSyncStatusPageState
+    extends ConsumerState<_DatabaseSyncStatusPage> {
+  bool _syncing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingState = ref.watch(pendingSyncCountProvider);
+    final pendingCount = pendingState.value;
     final isOnline = ref.watch(isOnlineProvider);
     final theme = Theme.of(context);
 
@@ -1486,7 +2216,11 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.storage_rounded, color: Colors.blue, size: 28),
+                      const Icon(
+                        Icons.storage_rounded,
+                        color: Colors.blue,
+                        size: 28,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1494,18 +2228,23 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           children: [
                             Text(
                               'Local App Database',
-                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 2),
                             const Text(
-                              'Engine: SQLite (Native High Speed)',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                              'Engine: Local device storage',
+                              style:
+                                  TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.green.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
@@ -1513,9 +2252,20 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_circle, size: 14, color: Colors.green),
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.green,
+                            ),
                             SizedBox(width: 4),
-                            Text('Active & Saved', style: TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold)),
+                            Text(
+                              'Active & Saved',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1523,7 +2273,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Data Guarantee: All machines, parts, and production logs are IMMEDIATELY saved in your device SQLite database. Your data is 100% safe even when offline.',
+                    'Changes are saved locally first, so you can keep working offline. Cloud sync will retry when the account and connection are ready.',
                     style: TextStyle(fontSize: 13, height: 1.4),
                   ),
                 ],
@@ -1547,7 +2297,9 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                   Row(
                     children: [
                       Icon(
-                        isOnline ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                        isOnline
+                            ? Icons.cloud_done_outlined
+                            : Icons.cloud_off_outlined,
                         color: isOnline ? Colors.indigo : Colors.grey,
                         size: 28,
                       ),
@@ -1558,11 +2310,15 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                           children: [
                             Text(
                               'Cloud Sync (Supabase)',
-                              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             Text(
                               isOnline ? 'Network Connected' : 'Offline Mode',
-                              style: TextStyle(fontSize: 12, color: isOnline ? Colors.indigo : Colors.grey),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isOnline ? Colors.indigo : Colors.grey,
+                              ),
                             ),
                           ],
                         ),
@@ -1576,13 +2332,19 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                       const Text('Pending Sync Items in Queue:'),
                       Chip(
                         label: Text(
-                          '$pendingCount records',
+                          pendingCount == null
+                              ? 'Checking…'
+                              : '$pendingCount pending',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: pendingCount > 0 ? Colors.orange.shade800 : Colors.green.shade800,
+                            color: (pendingCount ?? 0) > 0
+                                ? Colors.orange.shade800
+                                : Colors.green.shade800,
                           ),
                         ),
-                        backgroundColor: pendingCount > 0 ? Colors.orange.withValues(alpha: 0.15) : Colors.green.withValues(alpha: 0.15),
+                        backgroundColor: (pendingCount ?? 0) > 0
+                            ? Colors.orange.withValues(alpha: 0.15)
+                            : Colors.green.withValues(alpha: 0.15),
                       ),
                     ],
                   ),
@@ -1591,14 +2353,17 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                        final res = await ref.read(syncServiceProvider).syncPending();
+                        final res =
+                            await ref.read(syncServiceProvider).syncPending();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
                                 res.synced > 0
                                     ? 'Successfully synced ${res.synced} records to cloud database.'
-                                    : (res.offline ? 'Offline — Device is not connected to internet.' : 'Local database is fully up to date.'),
+                                    : (res.offline
+                                        ? 'Offline — Device is not connected to internet.'
+                                        : 'Local database is fully up to date.'),
                               ),
                             ),
                           );
@@ -1629,9 +2394,7 @@ class _DatabaseSyncStatusPage extends ConsumerWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Why did "Sync Failed" appear earlier?\n'
-                    'Cloud sync runs in the background when cloud account is connected. '
-                    'If cloud sync is unreachable, local SQLite storage keeps all your machine & setting entries safe on this device!',
+                    'If sync fails, your local change stays on this device. Reconnect the account or internet, then use “Sync pending now”. Conflicts need an admin review.',
                     style: TextStyle(fontSize: 12, height: 1.4),
                   ),
                 ),
@@ -1674,6 +2437,46 @@ class _ProductionFlowPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
+          Text(
+            'Company Production KPI',
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'This single company rule is used by every dashboard KPI, report, and production alert.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          RadioListTile<ProductionCountingMode>(
+            contentPadding: EdgeInsets.zero,
+            value: ProductionCountingMode.completedOutput,
+            groupValue: flow.countingMode,
+            onChanged: (mode) {
+              if (mode != null) {
+                ref.read(productionFlowProvider.notifier).setCountingMode(mode);
+              }
+            },
+            title: const Text('Completed PCS (Recommended)'),
+            subtitle: const Text(
+              'Count only final-machine good output. Three stages making 450 PCS count as 450 PCS.',
+            ),
+          ),
+          RadioListTile<ProductionCountingMode>(
+            contentPadding: EdgeInsets.zero,
+            value: ProductionCountingMode.stageWorkload,
+            groupValue: flow.countingMode,
+            onChanged: (mode) {
+              if (mode != null) {
+                ref.read(productionFlowProvider.notifier).setCountingMode(mode);
+              }
+            },
+            title: const Text('Stage Workload (All Machine Outputs)'),
+            subtitle: const Text(
+              'Count each stage output. Three stages making 450 PCS show as 1,350 PCS workload.',
+            ),
+          ),
+          const Divider(),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
@@ -1684,118 +2487,269 @@ class _ProductionFlowPage extends ConsumerWidget {
                   : 'Disabled — Single machine direct production mode',
             ),
             value: flow.enabled,
-            onChanged: (v) => ref.read(productionFlowProvider.notifier).setEnabled(v),
+            onChanged: (v) async {
+              final notifier = ref.read(productionFlowProvider.notifier);
+              if (v && flow.requiredMachineIds.isEmpty) {
+                final orderedMachines = [
+                  ...?machines.value,
+                ]..sort(
+                    (a, b) => ((a['sequence_order'] as num?)?.toInt() ?? 0)
+                        .compareTo((b['sequence_order'] as num?)?.toInt() ?? 0),
+                  );
+                if (orderedMachines.isNotEmpty) {
+                  await notifier.setRequiredMachines(
+                    orderedMachines
+                        .map((machine) => machine['id'] as String)
+                        .toList(growable: false),
+                  );
+                }
+              }
+              await notifier.setEnabled(v);
+            },
           ),
           if (flow.enabled) ...[
             const Divider(),
             const SizedBox(height: 8),
             Text(
               'Production Mode',
-              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             RadioListTile<ProductionMode>(
               value: ProductionMode.multiStageSequential,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+                if (m != null) {
+                  ref
+                      .read(productionFlowProvider.notifier)
+                      .setProductionMode(m);
+                }
               },
               title: const Text('Multi-Stage Sequential Flow (Recommended)'),
-              subtitle: const Text('Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.'),
+              subtitle: const Text(
+                'Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.',
+              ),
             ),
             RadioListTile<ProductionMode>(
               value: ProductionMode.directSingleStage,
               groupValue: flow.productionMode,
               onChanged: (m) {
-                if (m != null) ref.read(productionFlowProvider.notifier).setProductionMode(m);
+                if (m != null) {
+                  ref
+                      .read(productionFlowProvider.notifier)
+                      .setProductionMode(m);
+                }
               },
               title: const Text('Direct Single-Stage Mode'),
-              subtitle: const Text('Every machine entry immediately counts as completed final production.'),
-            ),
-            const Divider(),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.block_outlined, color: Colors.orange),
-              title: const Text('Require Final Machine Completion for Vendor Dispatch'),
-              subtitle: const Text('Prevent vendor dispatch for batches that have not completed the final sequence machine.'),
-              value: flow.requireFinalMachineForDispatch,
-              onChanged: (v) => ref.read(productionFlowProvider.notifier).setRequireFinalMachineForDispatch(v),
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Required Machine Sequence (select in order M1 -> M2 -> M3)',
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              subtitle: const Text(
+                'Every machine entry immediately counts as completed final production.',
               ),
             ),
-            machines.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('Error: $e'),
-              data: (list) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: list.map((m) {
-                        final id = m['id'] as String;
-                        final name = m['name'] as String;
-                        final seqIdx = flow.getMachineSequenceIndex(id);
-                        final isSelected = flow.requiredMachineIds.contains(id);
-
-                        return FilterChip(
-                          avatar: isSelected
-                              ? CircleAvatar(
-                                  radius: 10,
-                                  backgroundColor: theme.colorScheme.primary,
-                                  child: Text(
-                                    '$seqIdx',
-                                    style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                                  ),
-                                )
-                              : null,
-                          label: Text(isSelected ? '$name (Seq $seqIdx)' : name),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            final updated = [...flow.requiredMachineIds];
-                            if (selected) {
-                              updated.add(id);
-                            } else {
-                              updated.remove(id);
-                            }
-                            ref.read(productionFlowProvider.notifier).setRequiredMachines(updated);
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                );
-              },
-            ),
-            if (flow.requiredMachineIds.isNotEmpty) ...[
-              const SizedBox(height: 16),
+            if (flow.productionMode == ProductionMode.directSingleStage) ...[
+              const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.08),
+                  color: theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
-                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
+                child: const Text(
+                  'Direct mode does not use a machine route or WIP. Use it only when each machine creates a separate finished product. For one part moving through several machines, select Multi-Stage Sequential Flow above.',
+                  style: TextStyle(fontSize: 13),
                 ),
               ),
+            ],
+            if (flow.productionMode == ProductionMode.multiStageSequential) ...[
+              const Divider(),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary:
+                    const Icon(Icons.block_outlined, color: Colors.orange),
+                title: const Text(
+                  'Require Final Machine Completion for Vendor Dispatch',
+                ),
+                subtitle: const Text(
+                  'Prevent vendor dispatch for batches that have not completed the final sequence machine.',
+                ),
+                value: flow.requireFinalMachineForDispatch,
+                onChanged: (v) => ref
+                    .read(productionFlowProvider.notifier)
+                    .setRequireFinalMachineForDispatch(v),
+              ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Required Machine Sequence (select in order M1 -> M2 -> M3)',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              machines.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) =>
+                    const Text('Machines could not load. Try again.'),
+                data: (list) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: list.map((m) {
+                          final id = m['id'] as String;
+                          final name = m['name'] as String;
+                          final seqIdx = flow.getMachineSequenceIndex(id);
+                          final isSelected =
+                              flow.requiredMachineIds.contains(id);
+
+                          return FilterChip(
+                            avatar: isSelected
+                                ? CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: theme.colorScheme.primary,
+                                    child: Text(
+                                      '$seqIdx',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                            label:
+                                Text(isSelected ? '$name (Seq $seqIdx)' : name),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              final updated = [...flow.requiredMachineIds];
+                              if (selected) {
+                                updated.add(id);
+                              } else {
+                                updated.remove(id);
+                              }
+                              ref
+                                  .read(productionFlowProvider.notifier)
+                                  .setRequiredMachines(updated);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      if (flow.requiredMachineIds.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Route order',
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        ...flow.requiredMachineIds.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final id = entry.value;
+                          final machine = list.firstWhere(
+                            (item) => item['id'] == id,
+                            orElse: () =>
+                                <String, dynamic>{'name': 'Unknown machine'},
+                          );
+                          final name =
+                              machine['name'] as String? ?? 'Unknown machine';
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: CircleAvatar(
+                              radius: 13,
+                              child: Text('${index + 1}'),
+                            ),
+                            title: Text(name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Move earlier',
+                                  icon: const Icon(Icons.arrow_upward),
+                                  onPressed: index == 0
+                                      ? null
+                                      : () {
+                                          final updated = [
+                                            ...flow.requiredMachineIds
+                                          ];
+                                          final moved = updated.removeAt(index);
+                                          updated.insert(index - 1, moved);
+                                          ref
+                                              .read(productionFlowProvider
+                                                  .notifier)
+                                              .setRequiredMachines(updated);
+                                        },
+                                ),
+                                IconButton(
+                                  tooltip: 'Move later',
+                                  icon: const Icon(Icons.arrow_downward),
+                                  onPressed: index ==
+                                          flow.requiredMachineIds.length - 1
+                                      ? null
+                                      : () {
+                                          final updated = [
+                                            ...flow.requiredMachineIds
+                                          ];
+                                          final moved = updated.removeAt(index);
+                                          updated.insert(index + 1, moved);
+                                          ref
+                                              .read(productionFlowProvider
+                                                  .notifier)
+                                              .setRequiredMachines(updated);
+                                        },
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ],
+                  );
+                },
+              ),
+              if (flow.validationError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '${flow.validationError} Select at least one active machine.',
+                  style: TextStyle(
+                    color: theme.colorScheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              if (flow.requiredMachineIds.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ],
@@ -1824,8 +2778,13 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
   }
 
   Future<void> _loadCounts() async {
-    final counts =
-        await ref.read(dataManagementServiceProvider).getSectionCounts();
+    final factoryId =
+        ref.read(databaseServiceProvider).activeWorkspaceId.trim();
+    final counts = factoryId.isEmpty
+        ? <EraseSection, int>{}
+        : await ref
+            .read(dataManagementServiceProvider)
+            .getSectionCounts(factoryId);
     if (mounted) {
       setState(() {
         _counts = counts;
@@ -1856,10 +2815,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     await _loadCounts();
     setState(() => _working = false);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${section.label} erased.'),
-        backgroundColor: Colors.orange,
-      ),);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${section.label} erased.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -1893,10 +2854,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     await _loadCounts();
     setState(() => _working = false);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('All transaction data erased.'),
-        backgroundColor: Colors.orange,
-      ),);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All transaction data erased.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -1918,12 +2881,16 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         color: Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: Colors.orange.withValues(alpha: 0.4),),
+                          color: Colors.orange.withValues(alpha: 0.4),
+                        ),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.info_outline,
-                              color: Colors.orange, size: 18,),
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.orange,
+                            size: 18,
+                          ),
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -1951,10 +2918,15 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
                         title: Text(s.label),
                         subtitle: Text('$count records'),
                         trailing: TextButton.icon(
-                          icon: const Icon(Icons.delete_outline,
-                              size: 16, color: Colors.red,),
-                          label: const Text('Erase',
-                              style: TextStyle(color: Colors.red),),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 16,
+                            color: Colors.red,
+                          ),
+                          label: const Text(
+                            'Erase',
+                            style: TextStyle(color: Colors.red),
+                          ),
                           onPressed: (_working || count == 0)
                               ? null
                               : () => _eraseSection(s),
@@ -2000,10 +2972,12 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
 class _ProductionTargetsPage extends ConsumerStatefulWidget {
   const _ProductionTargetsPage();
   @override
-  ConsumerState<_ProductionTargetsPage> createState() => _ProductionTargetsPageState();
+  ConsumerState<_ProductionTargetsPage> createState() =>
+      _ProductionTargetsPageState();
 }
 
-class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> {
+class _ProductionTargetsPageState
+    extends ConsumerState<_ProductionTargetsPage> {
   static const _dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // partId → {dayOfWeek → {id, qty}}
@@ -2079,7 +3053,12 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
       return;
     }
     final id = existing?['id'] as String? ?? const Uuid().v4();
-    db.upsertTarget(id: id, partId: _selectedPartId!, dayOfWeek: day, targetQty: qty);
+    db.upsertTarget(
+      id: id,
+      partId: _selectedPartId!,
+      dayOfWeek: day,
+      targetQty: qty,
+    );
     _targetMap.putIfAbsent(_selectedPartId!, () => {});
     _targetMap[_selectedPartId!]![day] = {'id': id, 'qty': qty};
   }
@@ -2087,12 +3066,14 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
   /// Fill all 7 days with the value from the first non-empty field, or show dialog.
   void _applyToAllDays() {
     final firstVal = _ctrls.map((c) => int.tryParse(c.text.trim())).firstWhere(
-      (v) => v != null && v > 0,
-      orElse: () => null,
-    );
+          (v) => v != null && v > 0,
+          orElse: () => null,
+        );
     if (firstVal == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a target for at least one day first.')),
+        const SnackBar(
+          content: Text('Enter a target for at least one day first.'),
+        ),
       );
       return;
     }
@@ -2109,20 +3090,24 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     if (_parts.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Daily Production Targets')),
         body: const EmptyState(
-          message: 'No parts found.\nAdd parts first in Settings → Master Data → Parts.',
+          message:
+              'No parts found.\nAdd parts first in Settings → Master Data → Parts.',
           icon: Icons.category_outlined,
         ),
       );
     }
 
     final dayMap = _targetMap[_selectedPartId] ?? {};
-    final totalWeekTarget = dayMap.values.fold(0, (s, v) => s + ((v['qty'] as int?) ?? 0));
+    final totalWeekTarget =
+        dayMap.values.fold(0, (s, v) => s + ((v['qty'] as int?) ?? 0));
 
     return Scaffold(
       appBar: AppBar(
@@ -2140,10 +3125,12 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
           // Part selector tabs
           if (_parts.length > 1)
             Container(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              color: theme.colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.4),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: _parts.map((p) {
                     final pid = p['id'] as String;
@@ -2172,18 +3159,26 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                    color: theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: theme.colorScheme.primary),
+                      Icon(
+                        Icons.info_outline,
+                        size: 16,
+                        color: theme.colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Set target per day. Leave blank = no target that day. '
                           'Tap "Apply to All Days" to copy one value to all 7 days instantly.',
-                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],
@@ -2225,7 +3220,8 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                                   'Today',
                                   style: TextStyle(
                                     fontSize: 9,
-                                    color: theme.colorScheme.onPrimary.withValues(alpha: 0.8),
+                                    color: theme.colorScheme.onPrimary
+                                        .withValues(alpha: 0.8),
                                   ),
                                 ),
                             ],
@@ -2260,12 +3256,22 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                                 setState(() {});
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text('+50', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+                                child: const Text(
+                                  '+50',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -2273,17 +3279,28 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                               onTap: () {
                                 final v = int.tryParse(_ctrls[day].text) ?? 0;
                                 final newV = (v - 50).clamp(0, 99999);
-                                _ctrls[day].text = newV > 0 ? newV.toString() : '';
+                                _ctrls[day].text =
+                                    newV > 0 ? newV.toString() : '';
                                 _saveDay(day);
                                 setState(() {});
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.red.withValues(alpha: 0.10),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text('-50', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                                child: const Text(
+                                  '-50',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -2297,8 +3314,19 @@ class _ProductionTargetsPageState extends ConsumerState<_ProductionTargetsPage> 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Weekly Total Target', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                    Text('$totalWeekTarget PCS', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.primary, fontSize: 16)),
+                    Text(
+                      'Weekly Total Target',
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '$totalWeekTarget PCS',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                        fontSize: 16,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 32),

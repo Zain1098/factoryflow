@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,7 +10,8 @@ class AccountSettingsScreen extends ConsumerStatefulWidget {
   const AccountSettingsScreen({super.key});
 
   @override
-  ConsumerState<AccountSettingsScreen> createState() => _AccountSettingsScreenState();
+  ConsumerState<AccountSettingsScreen> createState() =>
+      _AccountSettingsScreenState();
 }
 
 class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
@@ -51,9 +51,10 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     if (picked == null) return;
 
     setState(() => _isUploadingImage = true);
-    final error = await ref.read(accountSettingsProvider.notifier).uploadAndUpdateAvatar(
-          picked.path,
-        );
+    final error =
+        await ref.read(accountSettingsProvider.notifier).uploadAndUpdateAvatar(
+              picked.path,
+            );
     if (!mounted) return;
     setState(() => _isUploadingImage = false);
 
@@ -70,7 +71,8 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     if (newName == ref.read(currentUserProvider).value?.name) return;
 
     setState(() => _isSavingName = true);
-    final error = await ref.read(accountSettingsProvider.notifier).updateName(newName);
+    final error =
+        await ref.read(accountSettingsProvider.notifier).updateName(newName);
     if (!mounted) return;
     setState(() => _isSavingName = false);
 
@@ -94,7 +96,9 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     }
 
     setState(() => _isSendingEmailOtp = true);
-    final error = await ref.read(accountSettingsProvider.notifier).sendEmailChangeOtp(newEmail);
+    final error = await ref
+        .read(accountSettingsProvider.notifier)
+        .sendEmailChangeOtp(newEmail);
     if (!mounted) return;
     setState(() => _isSendingEmailOtp = false);
 
@@ -112,7 +116,9 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
           newValue: newEmail,
           onVerified: () {
             Navigator.pop(context);
-            _showSuccess('Email changed successfully to $newEmail.');
+            _showSuccess(
+              'Security code accepted. Confirm the email sent to $newEmail to finish the change.',
+            );
           },
         ),
       ),
@@ -121,14 +127,15 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
 
   Future<void> _changePassword() async {
     final newPassword = _newPasswordController.text.trim();
-    if (newPassword.length < 6) {
-      _showError('Password must be at least 6 characters.');
+    if (newPassword.length < 8) {
+      _showError('Password must be at least 8 characters.');
       return;
     }
 
     setState(() => _isSendingPasswordOtp = true);
-    final error =
-        await ref.read(accountSettingsProvider.notifier).sendPasswordChangeOtp(newPassword);
+    final error = await ref
+        .read(accountSettingsProvider.notifier)
+        .sendPasswordChangeOtp(newPassword);
     if (!mounted) return;
     setState(() => _isSendingPasswordOtp = false);
 
@@ -159,32 +166,44 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.error_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: Theme.of(context).colorScheme.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: const Color(0xFF2A9D8F),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF2A9D8F),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
@@ -196,55 +215,77 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Account Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.only(top: 12, bottom: 28),
         children: [
           // ── Avatar Section ──
-          Center(
-            child: Stack(
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Stack(
               children: [
                 CircleAvatar(
-                  radius: 56,
+                  radius: 36,
                   backgroundColor: theme.colorScheme.primaryContainer,
                   child: _buildAvatarContent(user),
                 ),
                 Positioned(
-                  bottom: 0,
-                  right: 0,
+                  bottom: -2,
+                  right: -2,
                   child: Material(
                     color: theme.colorScheme.primary,
                     borderRadius: BorderRadius.circular(20),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: _isUploadingImage ? null : _pickAndUploadAvatar,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(7),
                         child: _isUploadingImage
                             ? const SizedBox(
-                                width: 20,
-                                height: 20,
+                                width: 16,
+                                height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                            : const Icon(
+                                Icons.camera_alt,
+                                color: Colors.white,
+                                size: 17,
+                              ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Tap to change photo',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                  ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(user?.name ?? 'Your profile',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 3),
+                        Text(user?.email ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant)),
+                        const SizedBox(height: 5),
+                        Text('Tap camera to update photo',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.primary)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 24),
 
           // ── Account Info Card ──
           Card(
@@ -327,11 +368,14 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.email_outlined, size: 18),
                         label: Text(
-                          _isSendingEmailOtp ? 'Sending OTP...' : 'Change Email',
+                          _isSendingEmailOtp
+                              ? 'Sending OTP...'
+                              : 'Change Email',
                         ),
                       ),
                     ),
@@ -379,16 +423,20 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: FilledButton.tonalIcon(
-                        onPressed: _isSendingPasswordOtp ? null : _changePassword,
+                        onPressed:
+                            _isSendingPasswordOtp ? null : _changePassword,
                         icon: _isSendingPasswordOtp
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.lock_reset_outlined, size: 18),
                         label: Text(
-                          _isSendingPasswordOtp ? 'Sending OTP...' : 'Change Password',
+                          _isSendingPasswordOtp
+                              ? 'Sending OTP...'
+                              : 'Change Password',
                         ),
                       ),
                     ),
@@ -502,8 +550,18 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
 
   String _formatDate(DateTime dt) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}, '
         '${dt.hour.toString().padLeft(2, '0')}:'

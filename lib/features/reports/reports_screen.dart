@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'report_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
+import '../../core/services/export_service.dart';
 
 // ─── Reports Hub ──────────────────────────────────────────────────────────────
 
@@ -13,46 +14,91 @@ class ReportsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
 
     final sections = [
       _ReportSection('Production', Colors.teal, [
-        _ReportTile('Daily Production', Icons.today, Colors.teal,
-            'Day-wise output, target & efficiency',
-            () => _push(context, const _DailyProductionReport()),),
-        _ReportTile('Machine-wise', Icons.precision_manufacturing, Colors.blue,
-            'Output & downtime per machine',
-            () => _push(context, const _MachineReport()),),
-        _ReportTile('Operator-wise', Icons.person_outline, Colors.indigo,
-            'Output & avg per operator',
-            () => _push(context, const _OperatorReport()),),
-        _ReportTile('Machine Downtime', Icons.build_outlined, Colors.orange,
-            'Breakdown & maintenance log',
-            () => _push(context, const _DowntimeReport()),),
+        _ReportTile(
+          'Daily Production',
+          Icons.today,
+          Colors.teal,
+          'Day-wise output, target & efficiency',
+          () => _push(context, const _DailyProductionReport()),
+        ),
+        _ReportTile(
+          'Machine-wise',
+          Icons.precision_manufacturing,
+          Colors.blue,
+          'Output & downtime per machine',
+          () => _push(context, const _MachineReport()),
+        ),
+        _ReportTile(
+          'Operator-wise',
+          Icons.person_outline,
+          Colors.indigo,
+          'Output & avg per operator',
+          () => _push(context, const _OperatorReport()),
+        ),
+        _ReportTile(
+          'Machine Downtime',
+          Icons.build_outlined,
+          Colors.orange,
+          'Breakdown & maintenance log',
+          () => _push(context, const _DowntimeReport()),
+        ),
       ]),
       _ReportSection('Quality', Colors.red, [
-        _ReportTile('Reject Analysis', Icons.cancel_outlined, Colors.red,
-            'BP + AP rejection by part & date',
-            () => _push(context, const _RejectReport()),),
-        _ReportTile('RTV Analysis', Icons.undo, Colors.deepOrange,
-            'Return to vendor summary & status',
-            () => _push(context, const _RtvReport()),),
-        _ReportTile('Hold Material', Icons.back_hand_outlined, Colors.redAccent,
-            'BP QC hold & active RTV aging',
-            () => _push(context, const _HoldReport()),),
+        _ReportTile(
+          'Reject Analysis',
+          Icons.cancel_outlined,
+          Colors.red,
+          'BP + AP rejection by part & date',
+          () => _push(context, const _RejectReport()),
+        ),
+        _ReportTile(
+          'RTV Analysis',
+          Icons.undo,
+          Colors.deepOrange,
+          'Return to vendor summary & status',
+          () => _push(context, const _RtvReport()),
+        ),
+        _ReportTile(
+          'Hold Material',
+          Icons.back_hand_outlined,
+          Colors.redAccent,
+          'BP QC hold & active RTV aging',
+          () => _push(context, const _HoldReport()),
+        ),
       ]),
       _ReportSection('Inventory & Dispatch', Colors.green, [
-        _ReportTile('Live Stock', Icons.inventory_2_outlined, Colors.green,
-            'Current stock at every stage',
-            () => _push(context, const _LiveStockReport()),),
-        _ReportTile('Faco Pending', Icons.pending_outlined, Colors.amber,
-            'Material still at Faco vendor',
-            () => _push(context, const _FacoPendingReport()),),
-        _ReportTile('Dispatch Report', Icons.send_outlined, Colors.purple,
-            'Final dispatch to customers',
-            () => _push(context, const _DispatchReport()),),
-        _ReportTile('Inventory Movement', Icons.swap_horiz, Colors.blueGrey,
-            'Full stock ledger movement',
-            () => _push(context, const _LedgerReport()),),
+        _ReportTile(
+          'Live Stock',
+          Icons.inventory_2_outlined,
+          Colors.green,
+          'Current stock at every stage',
+          () => _push(context, const LiveStockReport()),
+        ),
+        _ReportTile(
+          'Faco Pending',
+          Icons.pending_outlined,
+          Colors.amber,
+          'Material still at Faco vendor',
+          () => _push(context, const _FacoPendingReport()),
+        ),
+        _ReportTile(
+          'Dispatch Report',
+          Icons.send_outlined,
+          Colors.purple,
+          'Final dispatch to customers',
+          () => _push(context, const _DispatchReport()),
+        ),
+        _ReportTile(
+          'Inventory Movement',
+          Icons.swap_horiz,
+          Colors.blueGrey,
+          'Full stock ledger movement',
+          () => _push(context, const _LedgerReport()),
+        ),
       ]),
     ];
 
@@ -71,13 +117,23 @@ class ReportsScreen extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          _ReportsHero(
+            range: range,
+            onChooseRange: () => _pickRange(context, ref, range),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'QUICK RANGE',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 1.1,
+            ),
+          ),
           _DateRangeChips(range: range),
-          for (final section in sections) ...[
-            _SectionHeader(section.title, section.color),
-            ...section.tiles.map((t) => _ReportListTile(tile: t)),
-          ],
+          const SizedBox(height: 14),
+          for (final section in sections) _ReportSectionCard(section: section),
         ],
       ),
     );
@@ -90,7 +146,10 @@ class ReportsScreen extends ConsumerWidget {
   String _shortDate(DateTime d) => DateFormat('dd MMM').format(d);
 
   Future<void> _pickRange(
-      BuildContext context, WidgetRef ref, DateRange current,) async {
+    BuildContext context,
+    WidgetRef ref,
+    DateRange current,
+  ) async {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2024),
@@ -99,12 +158,67 @@ class ReportsScreen extends ConsumerWidget {
     );
     if (picked != null) {
       ref.read(reportDateRangeProvider.notifier).set(
-            DateRange(picked.start, picked.end),);
+            DateRange(picked.start, picked.end),
+          );
     }
   }
 }
 
 // ─── Date Range Quick Chips ───────────────────────────────────────────────────
+
+class _ReportsHero extends StatelessWidget {
+  const _ReportsHero({required this.range, required this.onChooseRange});
+
+  final DateRange range;
+  final VoidCallback onChooseRange;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: scheme.primary,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(Icons.analytics_outlined, color: scheme.onPrimary),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Factory insights', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 3),
+                Text(
+                  '${DateFormat('dd MMM').format(range.from)} - ${DateFormat('dd MMM yyyy').format(range.to)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton.filledTonal(
+            tooltip: 'Choose report dates',
+            onPressed: onChooseRange,
+            icon: const Icon(Icons.calendar_month_outlined, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _DateRangeChips extends ConsumerWidget {
   const _DateRangeChips({required this.range});
@@ -121,18 +235,34 @@ class _DateRangeChips extends ConsumerWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.only(top: 8),
       child: Row(
         children: presets.map((p) {
           final isSelected =
               range.fromStr == p.$2.fromStr && range.toStr == p.$2.toStr;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
+            child: ChoiceChip(
               label: Text(p.$1),
               selected: isSelected,
               onSelected: (_) =>
                   ref.read(reportDateRangeProvider.notifier).set(p.$2),
+              selectedColor: Theme.of(context).colorScheme.primary,
+              labelStyle: TextStyle(
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(11),
+                side: BorderSide(
+                  color: isSelected
+                      ? Colors.transparent
+                      : Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
             ),
           );
         }).toList(),
@@ -143,26 +273,49 @@ class _DateRangeChips extends ConsumerWidget {
 
 // ─── Section Header ───────────────────────────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title, this.color);
-  final String title;
-  final Color color;
+class _ReportSectionCard extends StatelessWidget {
+  const _ReportSectionCard({required this.section});
+  final _ReportSection section;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
         children: [
-          Container(width: 4, height: 16,
-              decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),),
-          const SizedBox(width: 8),
-          Text(title.toUpperCase(),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: section.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(section.title, style: theme.textTheme.titleSmall),
+                const Spacer(),
+                Text(
+                  '${section.tiles.length} REPORTS',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...section.tiles.map((tile) => _ReportListTile(tile: tile)),
         ],
       ),
     );
@@ -175,24 +328,54 @@ class _ReportListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: tile.color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: tile.onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: tile.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(tile.icon, color: tile.color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tile.title, style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 3),
+                    Text(
+                      tile.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
         ),
-        child: Icon(tile.icon, color: tile.color, size: 20),
       ),
-      title: Text(tile.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(tile.subtitle,
-          style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,),),
-      trailing: Icon(Icons.chevron_right,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,),
-      onTap: tile.onTap,
     );
   }
 }
@@ -207,7 +390,13 @@ class _ReportSection {
 }
 
 class _ReportTile {
-  const _ReportTile(this.title, this.icon, this.color, this.subtitle, this.onTap);
+  const _ReportTile(
+    this.title,
+    this.icon,
+    this.color,
+    this.subtitle,
+    this.onTap,
+  );
   final String title;
   final IconData icon;
   final Color color;
@@ -225,6 +414,7 @@ class _ReportPage extends ConsumerWidget {
     required this.tableHeader,
     required this.rows,
     required this.emptyMessage,
+    this.onExport,
   });
 
   final String title;
@@ -233,6 +423,9 @@ class _ReportPage extends ConsumerWidget {
   final List<String> tableHeader;
   final List<List<String>> rows;
   final String emptyMessage;
+
+  /// Optional export callback. When provided, shows a FAB for export.
+  final VoidCallback? onExport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -253,24 +446,49 @@ class _ReportPage extends ConsumerWidget {
           ),
         ],
       ),
+      floatingActionButton: onExport != null
+          ? FloatingActionButton.extended(
+              onPressed: onExport,
+              icon: const Icon(Icons.ios_share_rounded),
+              label: const Text('Export'),
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+            )
+          : null,
       body: rows.isEmpty
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 56,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),),
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 56,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                  ),
                   const SizedBox(height: 12),
-                  Text(emptyMessage,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,),),
+                  Text(
+                    emptyMessage,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ],
               ),
             )
           : Column(
               children: [
                 if (summaryCards.isNotEmpty) _SummaryRow(summaryCards, color),
-                Expanded(child: _DataTable(header: tableHeader, rows: rows, color: color)),
+                Expanded(
+                  child: _ReportDataCards(
+                    header: tableHeader,
+                    rows: rows,
+                    color: color,
+                    hasExportAction: onExport != null,
+                  ),
+                ),
               ],
             ),
     );
@@ -288,31 +506,57 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
       color: color.withValues(alpha: 0.06),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Row(
-        children: cards
-            .map((c) => Expanded(
-                  child: Column(
-                    children: [
-                      Text(c.value,
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: color,),),
-                      const SizedBox(height: 2),
-                      Text(c.label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,),),
-                    ],
+      child: SizedBox(
+        height: 92,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+          itemCount: cards.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final card = cards[index];
+            return Container(
+              width: 132,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: color.withValues(alpha: 0.18)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    card.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      color: color,
+                    ),
                   ),
-                ),)
-            .toList(),
+                  const SizedBox(height: 3),
+                  Text(
+                    card.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -326,36 +570,139 @@ class _SummaryCard {
 
 // ─── Data Table ───────────────────────────────────────────────────────────────
 
-class _DataTable extends StatelessWidget {
-  const _DataTable({required this.header, required this.rows, required this.color});
+class _ReportDataCards extends StatelessWidget {
+  const _ReportDataCards({
+    required this.header,
+    required this.rows,
+    required this.color,
+    required this.hasExportAction,
+  });
   final List<String> header;
   final List<List<String>> rows;
+  final Color color;
+  final bool hasExportAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(16, 14, 16, hasExportAction ? 96 : 28),
+      itemCount: rows.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) => _ReportDataCard(
+        header: header,
+        row: rows[index],
+        color: color,
+      ),
+    );
+  }
+}
+
+class _ReportDataCard extends StatelessWidget {
+  const _ReportDataCard({
+    required this.header,
+    required this.row,
+    required this.color,
+  });
+
+  final List<String> header;
+  final List<String> row;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SingleChildScrollView(
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(color.withValues(alpha: 0.1)),
-          headingTextStyle: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-              color: color,),
-          dataTextStyle: theme.textTheme.bodySmall,
-          columnSpacing: 20,
-          horizontalMargin: 16,
-          columns: header
-              .map((h) => DataColumn(label: Text(h)))
-              .toList(),
-          rows: rows
-              .map((r) => DataRow(
-                    cells: r.map((c) => DataCell(Text(c))).toList(),
-                  ),)
-              .toList(),
-        ),
+    final scheme = theme.colorScheme;
+    final title = row.isEmpty ? '' : row.first;
+    final fields = List.generate(
+      row.length > 1 ? row.length - 1 : 0,
+      (index) => (header[index + 1], row[index + 1]),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: scheme.onSurface,
+            ),
+          ),
+          if (fields.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: fields
+                  .map(
+                    (field) => _ReportMetric(
+                      label: field.$1,
+                      value: field.$2,
+                      color: color,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportMetric extends StatelessWidget {
+  const _ReportMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(minWidth: 116),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -363,7 +710,8 @@ class _DataTable extends StatelessWidget {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-String _n(double v) => v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
+String _n(double v) =>
+    v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
 String _pct(double v) => '${v.toStringAsFixed(1)}%';
 String _mins(int m) => m >= 60 ? '${(m / 60).toStringAsFixed(1)}h' : '${m}m';
 
@@ -383,29 +731,61 @@ class _DailyProductionReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(dailyProductionReportProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       return _ReportPage(
         title: 'Daily Production',
         color: Colors.teal,
         summaryCards: [
-          _SummaryCard('Total Prod', _n(data.totalProd)),
-          _SummaryCard('BP Reject', _n(data.totalBpReject)),
-          _SummaryCard('Good Qty', _n(data.totalGood)),
+          _SummaryCard('Finished OK', _n(data.totalGood)),
+          _SummaryCard('All-stage Reject', _n(data.totalBpReject)),
+          _SummaryCard('Final Input', _n(data.totalProd)),
           _SummaryCard('Avg Eff.', _pct(data.avgEfficiency)),
           _SummaryCard('Rej %', _pct(data.overallRejectPct)),
         ],
-        tableHeader: const ['Date', 'Production', 'BP Rej', 'Good', 'Target', 'Eff %', 'Rej %'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _n(r.target),
-              _pct(r.efficiency),
-              _pct(r.rejectPct),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Final Input',
+          'All Rej',
+          'Finished OK',
+          'Target',
+          'Eff %',
+          'Rej %',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _n(r.target),
+                _pct(r.efficiency),
+                _pct(r.rejectPct),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No production data for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportProductionReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportProductionReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -431,16 +811,28 @@ class _MachineReport extends ConsumerWidget {
           _SummaryCard('Machines', '${data.length}'),
           _SummaryCard('Total Downtime', _mins(totalDt)),
         ],
-        tableHeader: const ['Machine', 'Production', 'BP Rej', 'Good', 'Rej %', 'Downtime', 'Days'],
-        rows: data.map((r) => [
-              r.machineName,
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _pct(r.rejectPct),
-              _mins(r.downtimeMinutes),
-              '${r.runDays}',
-            ],).toList(),
+        tableHeader: const [
+          'Machine',
+          'Production',
+          'BP Rej',
+          'Good',
+          'Rej %',
+          'Downtime',
+          'Days',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.machineName,
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _pct(r.rejectPct),
+                _mins(r.downtimeMinutes),
+                '${r.runDays}',
+              ],
+            )
+            .toList(),
         emptyMessage: 'No machine data for selected range',
       );
     });
@@ -465,16 +857,28 @@ class _OperatorReport extends ConsumerWidget {
           _SummaryCard('Total Prod', _n(totalProd)),
           _SummaryCard('Operators', '${data.length}'),
         ],
-        tableHeader: const ['Operator', 'Production', 'BP Rej', 'Good', 'Rej %', 'Days', 'Avg/Day'],
-        rows: data.map((r) => [
-              r.operatorName,
-              _n(r.totalProduction),
-              _n(r.bpReject),
-              _n(r.goodQty),
-              _pct(r.rejectPct),
-              '${r.runDays}',
-              _n(r.avgPerDay),
-            ],).toList(),
+        tableHeader: const [
+          'Operator',
+          'Production',
+          'BP Rej',
+          'Good',
+          'Rej %',
+          'Days',
+          'Avg/Day',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.operatorName,
+                _n(r.totalProduction),
+                _n(r.bpReject),
+                _n(r.goodQty),
+                _pct(r.rejectPct),
+                '${r.runDays}',
+                _n(r.avgPerDay),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No operator data for selected range',
       );
     });
@@ -489,6 +893,7 @@ class _DowntimeReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(downtimeReportProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalMins = data.fold(0, (s, r) => s + r.durationMinutes);
@@ -499,16 +904,48 @@ class _DowntimeReport extends ConsumerWidget {
           _SummaryCard('Total Events', '${data.length}'),
           _SummaryCard('Total Downtime', _mins(totalMins)),
         ],
-        tableHeader: const ['Date', 'Machine', 'Start', 'End', 'Duration', 'Reason'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.machineName,
-              r.startTime,
-              r.endTime ?? 'Ongoing',
-              _mins(r.durationMinutes),
-              r.reason.length > 20 ? '${r.reason.substring(0, 20)}…' : r.reason,
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Machine',
+          'Start',
+          'End',
+          'Duration',
+          'Reason',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.machineName,
+                r.startTime,
+                r.endTime ?? 'Ongoing',
+                _mins(r.durationMinutes),
+                r.reason.length > 20
+                    ? '${r.reason.substring(0, 20)}…'
+                    : r.reason,
+              ],
+            )
+            .toList(),
         emptyMessage: 'No downtime events for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportDowntimeReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportDowntimeReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -522,12 +959,14 @@ class _RejectReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(rejectAnalysisProvider);
+    final range = ref.watch(reportDateRangeProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalBp = data.fold(0.0, (s, r) => s + r.bpReject);
       final totalAp = data.fold(0.0, (s, r) => s + r.apReject);
       final totalProd = data.fold(0.0, (s, r) => s + r.production);
-      final overallPct = totalProd > 0 ? ((totalBp + totalAp) / totalProd * 100) : 0.0;
+      final overallPct =
+          totalProd > 0 ? ((totalBp + totalAp) / totalProd * 100) : 0.0;
       return _ReportPage(
         title: 'Reject Analysis',
         color: Colors.red,
@@ -537,17 +976,50 @@ class _RejectReport extends ConsumerWidget {
           _SummaryCard('Total Rej', _n(totalBp + totalAp)),
           _SummaryCard('Overall %', _pct(overallPct)),
         ],
-        tableHeader: const ['Date', 'Part', 'Production', 'BP Rej', 'AP Rej', 'Total', 'Rej %'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              _n(r.production),
-              _n(r.bpReject),
-              _n(r.apReject),
-              _n(r.totalReject),
-              _pct(r.rejectPct),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Production',
+          'BP Rej',
+          'AP Rej',
+          'Total',
+          'Rej %',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                _n(r.production),
+                _n(r.bpReject),
+                _n(r.apReject),
+                _n(r.totalReject),
+                _pct(r.rejectPct),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No reject data for selected range',
+        onExport: data.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportQualityReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportQualityReport(
+                    context: context,
+                    rows: data,
+                    fromDate: range.fromStr,
+                    toDate: range.toStr,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -571,16 +1043,32 @@ class _RtvReport extends ConsumerWidget {
           _SummaryCard('Pending', '${data.pendingCount}'),
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Vendor', 'Qty', 'Status', 'Exp. Return', 'Cycle'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 10 ? '${r.partName.substring(0, 10)}…' : r.partName,
-              r.vendorName.length > 10 ? '${r.vendorName.substring(0, 10)}…' : r.vendorName,
-              _n(r.rtvQty),
-              r.status,
-              r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
-              '#${r.cycleNumber}',
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Vendor',
+          'Qty',
+          'Status',
+          'Exp. Return',
+          'Cycle',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 10
+                    ? '${r.partName.substring(0, 10)}…'
+                    : r.partName,
+                r.vendorName.length > 10
+                    ? '${r.vendorName.substring(0, 10)}…'
+                    : r.vendorName,
+                _n(r.rtvQty),
+                r.status,
+                r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
+                '#${r.cycleNumber}',
+              ],
+            )
+            .toList(),
         emptyMessage: 'No RTV data for selected range',
       );
     });
@@ -604,15 +1092,30 @@ class _DispatchReport extends ConsumerWidget {
           _SummaryCard('Total Dispatched', _n(data.totalDispatched)),
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Customer', 'Qty', 'Challan', 'Vehicle'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              r.customerName.length > 12 ? '${r.customerName.substring(0, 12)}…' : r.customerName,
-              _n(r.dispatchQty),
-              r.challanNumber.isEmpty ? '—' : r.challanNumber,
-              r.vehicleNumber.isEmpty ? '—' : r.vehicleNumber,
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Customer',
+          'Qty',
+          'Challan',
+          'Vehicle',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                r.customerName.length > 12
+                    ? '${r.customerName.substring(0, 12)}…'
+                    : r.customerName,
+                _n(r.dispatchQty),
+                r.challanNumber.isEmpty ? '—' : r.challanNumber,
+                r.vehicleNumber.isEmpty ? '—' : r.vehicleNumber,
+              ],
+            )
+            .toList(),
         emptyMessage: 'No dispatch data for selected range',
       );
     });
@@ -637,15 +1140,30 @@ class _FacoPendingReport extends ConsumerWidget {
           _SummaryCard('Total Pending', _n(totalPending)),
           _SummaryCard('Parts', '${data.length}'),
         ],
-        tableHeader: const ['Part', 'Vendor', 'Dispatched', 'Received', 'Pending', 'Since'],
-        rows: data.map((r) => [
-              r.partName.length > 12 ? '${r.partName.substring(0, 12)}…' : r.partName,
-              r.vendorName.length > 10 ? '${r.vendorName.substring(0, 10)}…' : r.vendorName,
-              _n(r.dispatched),
-              _n(r.received),
-              _n(r.pending),
-              _fmtDate(r.oldestDate),
-            ],).toList(),
+        tableHeader: const [
+          'Part',
+          'Vendor',
+          'Dispatched',
+          'Received',
+          'Pending',
+          'Since',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                r.partName.length > 12
+                    ? '${r.partName.substring(0, 12)}…'
+                    : r.partName,
+                r.vendorName.length > 10
+                    ? '${r.vendorName.substring(0, 10)}…'
+                    : r.vendorName,
+                _n(r.dispatched),
+                _n(r.received),
+                _n(r.pending),
+                _fmtDate(r.oldestDate),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No pending material at Faco',
       );
     });
@@ -654,35 +1172,71 @@ class _FacoPendingReport extends ConsumerWidget {
 
 // ─── 9. Live Stock ────────────────────────────────────────────────────────────
 
-class _LiveStockReport extends ConsumerWidget {
-  const _LiveStockReport();
+class LiveStockReport extends ConsumerWidget {
+  const LiveStockReport({super.key, this.partId});
+
+  final String? partId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(liveStockReportProvider);
     return _loadingOrError(async, () {
       final data = async.value!;
-      final totalAll = data.fold(0.0, (s, r) => s + r.totalStock);
+      final filteredData = partId == null
+          ? data
+          : data.where((row) => row.partId == partId).toList();
+      final totalAll = filteredData.fold(0.0, (s, r) => s + r.totalStock);
       return _ReportPage(
-        title: 'Live Stock',
+        title: partId == null ? 'Live Stock' : 'Part Live Stock',
         color: Colors.green,
         summaryCards: [
           _SummaryCard('Total Stock', _n(totalAll)),
-          _SummaryCard('Parts', '${data.length}'),
+          _SummaryCard('Parts', '${filteredData.length}'),
         ],
-        tableHeader: const ['Part', 'Raw', 'BP', 'Faco', 'Pend AP', 'Appr AP', 'AP Rej', 'RTV', 'Total'],
-        rows: data.map((r) => [
-              r.partCode.isNotEmpty ? r.partCode : r.partName.substring(0, r.partName.length.clamp(0, 10)),
-              _n(r.rawMaterial),
-              _n(r.bpStock),
-              _n(r.atFaco),
-              _n(r.pendingAp),
-              _n(r.approvedAp),
-              _n(r.apRejected),
-              _n(r.rtvStock),
-              _n(r.totalStock),
-            ],).toList(),
+        tableHeader: const [
+          'Part',
+          'Raw',
+          'BP',
+          'Faco',
+          'Pend AP',
+          'Appr AP',
+          'AP Rej',
+          'RTV',
+          'Total',
+        ],
+        rows: filteredData
+            .map(
+              (r) => [
+                r.partCode.isNotEmpty
+                    ? r.partCode
+                    : r.partName.substring(0, r.partName.length.clamp(0, 10)),
+                _n(r.rawMaterial),
+                _n(r.bpStock),
+                _n(r.atFaco),
+                _n(r.pendingAp),
+                _n(r.approvedAp),
+                _n(r.apRejected),
+                _n(r.rtvStock),
+                _n(r.totalStock),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No stock data available',
+        onExport: filteredData.isEmpty
+            ? null
+            : () => ExportSheet.show(
+                  context: context,
+                  onExcel: () => ExportService.exportStockReport(
+                    context: context,
+                    rows: filteredData,
+                    format: ExportFormat.excel,
+                  ),
+                  onPdf: () => ExportService.exportStockReport(
+                    context: context,
+                    rows: filteredData,
+                    format: ExportFormat.pdf,
+                  ),
+                ),
       );
     });
   }
@@ -704,16 +1258,30 @@ class _LedgerReport extends ConsumerWidget {
         summaryCards: [
           _SummaryCard('Entries', '${data.length}'),
         ],
-        tableHeader: const ['Date', 'Part', 'Stage', 'In/Out', 'Qty', 'Balance', 'Source'],
-        rows: data.map((r) => [
-              _fmtDate(r.date),
-              r.partName.length > 10 ? '${r.partName.substring(0, 10)}…' : r.partName,
-              _stageLabel(r.stage),
-              r.direction == 'in' ? '▲ IN' : '▼ OUT',
-              _n(r.qty),
-              _n(r.runningBalance),
-              _tableLabel(r.refTable),
-            ],).toList(),
+        tableHeader: const [
+          'Date',
+          'Part',
+          'Stage',
+          'In/Out',
+          'Qty',
+          'Balance',
+          'Source',
+        ],
+        rows: data
+            .map(
+              (r) => [
+                _fmtDate(r.date),
+                r.partName.length > 10
+                    ? '${r.partName.substring(0, 10)}…'
+                    : r.partName,
+                _stageLabel(r.stage),
+                r.direction == 'in' ? '▲ IN' : '▼ OUT',
+                _n(r.qty),
+                _n(r.runningBalance),
+                _tableLabel(r.refTable),
+              ],
+            )
+            .toList(),
         emptyMessage: 'No ledger entries for selected range',
       );
     });
@@ -781,7 +1349,8 @@ class _HoldReport extends ConsumerWidget {
         ),
         body: reportAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+          error: (e, _) =>
+              EmptyState(message: 'Error: $e', icon: Icons.error_outline),
           data: (data) {
             return TabBarView(
               children: [
@@ -795,7 +1364,11 @@ class _HoldReport extends ConsumerWidget {
     );
   }
 
-  Widget _buildBpHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+  Widget _buildBpHoldTab(
+    BuildContext context,
+    HoldMaterialReportData data,
+    ThemeData theme,
+  ) {
     if (data.bpHoldList.isEmpty) {
       return const EmptyState(
         message: 'No material currently on BP QC Hold.',
@@ -822,12 +1395,26 @@ class _HoldReport extends ConsumerWidget {
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-                  child: const Icon(Icons.build_circle_outlined, color: Colors.redAccent),
+                  child: const Icon(
+                    Icons.build_circle_outlined,
+                    color: Colors.redAccent,
+                  ),
                 ),
                 title: Row(
                   children: [
-                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                    Expanded(
+                      child: Text(
+                        '${r.partCode} – ${r.partName}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Text(
+                      '${r.qty.toInt()} PCS',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.redAccent,
+                      ),
+                    ),
                   ],
                 ),
                 subtitle: Padding(
@@ -845,7 +1432,11 @@ class _HoldReport extends ConsumerWidget {
     );
   }
 
-  Widget _buildRtvHoldTab(BuildContext context, HoldMaterialReportData data, ThemeData theme) {
+  Widget _buildRtvHoldTab(
+    BuildContext context,
+    HoldMaterialReportData data,
+    ThemeData theme,
+  ) {
     if (data.rtvHoldList.isEmpty) {
       return const EmptyState(
         message: 'No active RTV (Post-Plating) Hold.',
@@ -869,7 +1460,9 @@ class _HoldReport extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (context, i) {
               final r = data.rtvHoldList[i];
-              final ageColor = r.agingDays > 10 ? Colors.red : (r.agingDays > 5 ? Colors.orange : Colors.green);
+              final ageColor = r.agingDays > 10
+                  ? Colors.red
+                  : (r.agingDays > 5 ? Colors.orange : Colors.green);
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: Colors.orange.withValues(alpha: 0.1),
@@ -877,8 +1470,19 @@ class _HoldReport extends ConsumerWidget {
                 ),
                 title: Row(
                   children: [
-                    Expanded(child: Text('${r.partCode} – ${r.partName}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                    Text('${r.qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                    Expanded(
+                      child: Text(
+                        '${r.partCode} – ${r.partName}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Text(
+                      '${r.qty.toInt()} PCS',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
                   ],
                 ),
                 subtitle: Padding(
@@ -888,14 +1492,21 @@ class _HoldReport extends ConsumerWidget {
                     children: [
                       Text('Vendor: ${r.vendorName} · Status: ${r.status}'),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: ageColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           '${r.agingDays}d aging',
-                          style: TextStyle(color: ageColor, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: ageColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -932,9 +1543,23 @@ class _HoldReport extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
               ],
             ),
           ),

@@ -16,7 +16,8 @@ class OtpVerificationScreen extends ConsumerStatefulWidget {
   final VoidCallback onVerified;
 
   @override
-  ConsumerState<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
+  ConsumerState<OtpVerificationScreen> createState() =>
+      _OtpVerificationScreenState();
 }
 
 class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
@@ -54,8 +55,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
   Future<void> _verify() async {
     final code = _otpController.text.trim();
-    if (code.length != 6) {
-      setState(() => _error = 'Enter a valid 6-digit OTP code.');
+    if (!RegExp(r'^\d{6,10}$').hasMatch(code)) {
+      setState(() => _error = 'Enter a valid 6 to 10 digit security code.');
       return;
     }
 
@@ -66,12 +67,15 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
 
     String? error;
     if (widget.purpose == 'email_change') {
-      error = await ref.read(accountSettingsProvider.notifier).verifyEmailChangeOtp(
-            code,
-            widget.newValue,
-          );
+      error =
+          await ref.read(accountSettingsProvider.notifier).verifyEmailChangeOtp(
+                code,
+                widget.newValue,
+              );
     } else {
-      error = await ref.read(accountSettingsProvider.notifier).verifyPasswordChangeOtp(
+      error = await ref
+          .read(accountSettingsProvider.notifier)
+          .verifyPasswordChangeOtp(
             code,
             widget.newValue,
           );
@@ -127,11 +131,11 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
               controller: _otpController,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
-              maxLength: 6,
+              maxLength: 10,
               enabled: !_isVerifying,
               decoration: InputDecoration(
-                hintText: '000000',
-                labelText: 'OTP Code',
+                hintText: '0000000000',
+                labelText: 'Security code (6–10 digits)',
                 counterText: '',
                 prefixIcon: const Icon(Icons.pin_outlined),
                 border: OutlineInputBorder(
@@ -147,7 +151,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
             if (_error != null) ...[
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.errorContainer,
                   borderRadius: BorderRadius.circular(10),
@@ -192,7 +197,8 @@ class _OtpVerificationScreenState extends ConsumerState<OtpVerificationScreen> {
                     )
                   : const Text(
                       'Verify OTP',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
             ),
           ],

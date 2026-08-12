@@ -1,10 +1,12 @@
 /// Stock pipeline stages per PRD Ch. 7.1
 enum StockStage {
   rawMaterial('raw_material', 'Raw Material'),
-  bpStock('bp_stock', 'BP Stock'),
-  atFaco('at_faco', 'At Faco'),
+  bpStock('bp_stock', 'Own BP Stock'),
+  bpHold('bp_hold', 'BP Hold / Inspection'),
+  bpRejected('bp_rejected', 'BP Rejected'),
+  atFaco('at_faco', 'FACO Thal (At Vendor)'),
   pendingAp('pending_ap', 'Pending AP Inspection'),
-  approvedAp('approved_ap', 'Approved AP Stock'),
+  approvedAp('approved_ap', 'Own Finished (AP OK)'),
   apRejected('ap_rejected', 'AP Rejected'),
   rtvStock('rtv_stock', 'RTV Stock');
 
@@ -19,6 +21,13 @@ enum StockStage {
     return null;
   }
 }
+
+/// A production WIP location is tied to the machine that produced it instead
+/// of a hard-coded machine name. This keeps the stock flow correct if the
+/// factory later changes its production sequence.
+String productionWipStage(String machineId) => 'production_wip_$machineId';
+
+const kProductionRejectedStage = 'production_rejected';
 
 enum LedgerDirection {
   in_('IN'),

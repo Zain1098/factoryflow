@@ -2,6 +2,116 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+/// Compact reusable header for top-level operational screens.
+class CompactScreenHeader extends StatelessWidget {
+  const CompactScreenHeader({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    this.trailing,
+  });
+
+  final String eyebrow;
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  eyebrow.toUpperCase(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(title, style: theme.textTheme.headlineSmall),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+class SoftActionTile extends StatelessWidget {
+  const SoftActionTile({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surface
+                      .withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: color, size: 19),
+              ),
+              const Spacer(),
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Text('Open', style: Theme.of(context).textTheme.labelMedium),
+                  const Spacer(),
+                  const Icon(Icons.arrow_forward_rounded, size: 16),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── App Form Field ───────────────────────────────────────────────────────────
 class AppFormField extends StatelessWidget {
   const AppFormField({
@@ -52,6 +162,7 @@ class AppFormField extends StatelessWidget {
         hintText: hint,
         prefixIcon: prefixIcon,
         suffixIcon: suffixIcon,
+        alignLabelWithHint: maxLines > 1,
       ),
     );
   }
@@ -68,6 +179,7 @@ class NumberFormField extends StatelessWidget {
     this.hint,
     this.allowDecimal = true,
     this.prefixIcon,
+    this.readOnly = false,
   });
 
   final String label;
@@ -77,11 +189,13 @@ class NumberFormField extends StatelessWidget {
   final String? hint;
   final bool allowDecimal;
   final Widget? prefixIcon;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
+      readOnly: readOnly,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(
@@ -125,10 +239,12 @@ class AppDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<T>(
+      isExpanded: true,
       initialValue: value,
       items: items,
       onChanged: onChanged,
-      validator: validator ?? (isRequired ? (v) => v == null ? 'Required' : null : null),
+      validator: validator ??
+          (isRequired ? (v) => v == null ? 'Required' : null : null),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint ?? 'Select $label',
@@ -147,14 +263,97 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8, left: 4),
-      child: Text(
-        title.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
+      padding: const EdgeInsets.only(top: 20, bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.05,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Divider(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Consistent elevated surface for entry-only information such as dates,
+/// quick summaries, and selected stock. It deliberately owns no state, so it
+/// can be adopted across entry screens without changing their workflows.
+class EntryInfoSurface extends StatelessWidget {
+  const EntryInfoSurface({super.key, required this.child, this.padding});
+
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: padding ?? const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.8),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: theme.shadowColor.withValues(
+              alpha: theme.brightness == Brightness.dark ? 0.08 : 0.025,
+            ),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Standard scrolling shell for operational forms. The animated bottom inset
+/// keeps the active field and save area reachable when the mobile keyboard is
+/// visible, while preserving each screen's existing form state and callbacks.
+class EntryFormScroll extends StatelessWidget {
+  const EntryFormScroll({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: padding.add(const EdgeInsets.only(bottom: 112)),
+        child: child,
       ),
     );
   }
@@ -263,8 +462,9 @@ class KpiTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final effectiveColor =
-        isAlert ? theme.colorScheme.error : (color ?? theme.colorScheme.secondary);
+    final effectiveColor = isAlert
+        ? theme.colorScheme.error
+        : (color ?? theme.colorScheme.secondary);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -316,7 +516,11 @@ class SyncBadge extends StatelessWidget {
       ),
       child: Text(
         '$count pending sync',
-        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -337,21 +541,43 @@ class SaveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
-      onPressed: isLoading ? null : onPressed,
-      icon: isLoading
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-            )
-          : const Icon(Icons.save_outlined),
-      label: Text(label),
+    return EntryInfoSurface(
+      padding: const EdgeInsets.all(6),
+      child: FilledButton.icon(
+        onPressed: isLoading ? null : onPressed,
+        icon: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.save_outlined),
+        label: Text(label),
+      ),
     );
   }
 }
 
 // ─── Error Banner ─────────────────────────────────────────────────────────────
+String userFacingError(String message) {
+  final normalized = message.replaceFirst(RegExp(r'^Exception:\s*'), '');
+  if (normalized.contains('PostgrestException') ||
+      normalized.contains('SocketException') ||
+      normalized.contains('Failed host lookup') ||
+      normalized.contains('TimeoutException')) {
+    return 'Could not complete this request. Check your connection and try again.';
+  }
+  if (normalized.startsWith('Error:')) {
+    return 'Could not load this section. Please try again.';
+  }
+  return normalized.length > 180
+      ? '${normalized.substring(0, 177)}…'
+      : normalized;
+}
+
 class ErrorBanner extends StatelessWidget {
   const ErrorBanner(this.message, {super.key});
   final String message;
@@ -364,15 +590,22 @@ class ErrorBanner extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: 0.25),
+        ),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer, size: 18),
+          Icon(
+            Icons.error_outline,
+            color: theme.colorScheme.onErrorContainer,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              message,
+              userFacingError(message),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onErrorContainer,
               ),
@@ -396,7 +629,7 @@ class SuccessBanner extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(
         color: Colors.green.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
       ),
       child: Row(
@@ -406,7 +639,10 @@ class SuccessBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -466,10 +702,15 @@ Future<bool> showConfirmDialog(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           style: isDestructive
-              ? FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error)
+              ? FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                )
               : null,
           onPressed: () => Navigator.pop(ctx, true),
           child: Text(confirmLabel),
@@ -539,47 +780,81 @@ class RecordDateTimePicker extends StatelessWidget {
         ? DateFormat('dd MMM yyyy, hh:mm a').format(value)
         : DateFormat('dd MMM yyyy').format(value);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: isCustom
-            ? Border.all(color: Colors.orange.withValues(alpha: 0.6))
-            : null,
-      ),
-      child: Row(
-        children: [
-          Icon(showTime ? Icons.access_time : Icons.calendar_today, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label)),
-          if (isCustom)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(4),
+    final theme = Theme.of(context);
+    return EntryInfoSurface(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      // This control appears inside scroll views and bottom sheets. A Row with
+      // an Expanded label fails if an ancestor is measuring at intrinsic width,
+      // producing "BoxConstraints forces an infinite width" and a blank page.
+      // Wrap has no flex child, so it stays safe on every screen size.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final labelMaxWidth = constraints.hasBoundedWidth
+              ? (constraints.maxWidth - 120).clamp(120.0, 260.0).toDouble()
+              : 240.0;
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: (isCustom
+                              ? Colors.orange
+                              : theme.colorScheme.primary)
+                          .withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      showTime ? Icons.access_time : Icons.calendar_today,
+                      size: 17,
+                      color: isCustom
+                          ? Colors.orange.shade800
+                          : theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: labelMaxWidth),
+                    child: Text(label, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
               ),
-              child: const Text(
-                'Custom',
-                style: TextStyle(color: Colors.orange, fontSize: 11),
+              if (isCustom)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Custom',
+                    style: TextStyle(color: Colors.orange, fontSize: 11),
+                  ),
+                )
+              else
+                const Text(
+                  'Auto',
+                  style: TextStyle(color: Colors.green, fontSize: 12),
+                ),
+              InkResponse(
+                onTap: () => _pick(context),
+                radius: 22,
+                child: Icon(
+                  Icons.edit_calendar_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
               ),
-            )
-          else
-            const Text(
-              'Auto',
-              style: TextStyle(color: Colors.green, fontSize: 12),
-            ),
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: () => _pick(context),
-            borderRadius: BorderRadius.circular(4),
-            child: const Padding(
-              padding: EdgeInsets.all(4),
-              child: Icon(Icons.edit_calendar_outlined, size: 18),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

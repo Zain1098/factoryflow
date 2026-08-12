@@ -131,7 +131,7 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
     final parts = ref.watch(partsProvider);
     final suppliers = ref.watch(suppliersProvider);
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Form(
         key: _formKey,
@@ -353,7 +353,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
     final suppliers = ref.watch(suppliersProvider);
     final shortfall = _shortfall;
 
-    return SingleChildScrollView(
+    return EntryFormScroll(
       padding: const EdgeInsets.all(16),
       child: Form(
         key: _formKey,

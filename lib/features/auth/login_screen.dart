@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/network/sync_service.dart';
 import 'auth_providers.dart';
+import 'signup_verification_screen.dart';
+import 'reset_password_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -20,10 +22,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _passwordCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _workspaceCtrl = TextEditingController();
+  final _joinCodeCtrl = TextEditingController();
   bool _obscure = true;
   bool _isResetting = false;
   bool _isSignUp = false;
-
   late final AnimationController _anim;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -57,6 +59,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _passwordCtrl.dispose();
     _nameCtrl.dispose();
     _workspaceCtrl.dispose();
+    _joinCodeCtrl.dispose();
     _anim.dispose();
     super.dispose();
   }
@@ -65,16 +68,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final email = _emailCtrl.text.trim().toLowerCase();
     if (_isSignUp) {
-      await ref.read(currentUserProvider.notifier).signUp(
-            email: _emailCtrl.text.trim(),
-            password: _passwordCtrl.text,
-            profileName: _nameCtrl.text.trim(),
-            workspaceName: _workspaceCtrl.text.trim(),
-          );
+      final verificationRequired =
+          await ref.read(currentUserProvider.notifier).signUp(
+                email: email,
+                password: _passwordCtrl.text,
+                profileName: _nameCtrl.text.trim(),
+                workspaceName: _workspaceCtrl.text.trim(),
+                joinCode: _joinCodeCtrl.text.trim(),
+              );
+      if (!mounted) return;
+      final signUpState = ref.read(currentUserProvider);
+      if (verificationRequired && !signUpState.hasError) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SignupVerificationScreen(
+              email: email,
+              profileName: _nameCtrl.text.trim(),
+              workspaceName: _workspaceCtrl.text.trim(),
+              joinCode: _joinCodeCtrl.text.trim(),
+            ),
+          ),
+        );
+        return;
+      }
     } else {
       await ref.read(currentUserProvider.notifier).signIn(
-            _emailCtrl.text.trim(),
+            email,
             _passwordCtrl.text,
           );
     }
@@ -98,15 +119,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _forgotPassword() async {
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
     if (email.isEmpty || !_validEmail(email)) {
       _showError('Enter a valid email first, then tap Forgot Password.');
       return;
     }
     setState(() => _isResetting = true);
     try {
-      await ref.read(authRepositoryProvider).sendPasswordResetEmail(email);
-      if (mounted) _showSuccess('Reset email sent to $email');
+      await ref.read(authRepositoryProvider).sendPasswordResetOtp(email);
+      if (!mounted) return;
+      // Navigate to OTP + new password screen
+      final success = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => ResetPasswordScreen(email: email),
+        ),
+      );
+      if (mounted && success == true) {
+        _showSuccess('Password updated! Please sign in.');
+      }
     } catch (e) {
       if (mounted) _showError(_friendlyError(e));
     } finally {
@@ -119,6 +149,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   String _friendlyError(Object? e) {
     final msg = e?.toString() ?? '';
     debugPrint('🔴 AUTH ERROR: $msg'); // always log to terminal
+    if (msg.contains('over_email_send_rate_limit') ||
+        msg.contains('rate_limit') ||
+        msg.contains('Email rate limit') ||
+        msg.contains('429')) {
+      return 'Email rate limit reached (3 per hour for default SMTP). Please wait a few minutes or check your spam folder.';
+    }
     if (msg.contains('Invalid login') || msg.contains('invalid_credentials')) {
       return 'Incorrect email or password.';
     }
@@ -142,12 +178,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (msg.contains('weak_password') || msg.contains('6 characters')) {
       return 'Password must be at least 6 characters.';
     }
-    if (msg.contains('does not exist') || msg.contains('permission denied') || msg.contains('function')) {
+    if (msg.contains('does not exist') ||
+        msg.contains('permission denied') ||
+        msg.contains('function')) {
       return 'Server setup incomplete — Supabase migrations not applied. Contact developer.';
     }
     // Show actual error in debug, generic for release
     if (kDebugMode) return msg;
-    return _isSignUp ? 'Sign up failed. Please try again.' : 'Sign in failed. Please try again.';
+    return _isSignUp
+        ? 'Sign up failed. Please try again.'
+        : 'Sign in failed. Please try again.';
   }
 
   bool _validEmail(String e) =>
@@ -155,33 +195,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.error_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: Theme.of(context).colorScheme.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-      duration: const Duration(seconds: 4),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   void _showSuccess(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(msg)),
-      ],),
-      backgroundColor: const Color(0xFF2A9D8F),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-    ),);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF2A9D8F),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   // ── Build ──────────────────────────────────────────────────────────────
@@ -199,25 +251,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: isDark
                 ? [
-                    const Color(0xFF12151A),
-                    const Color(0xFF1A2233),
-                    const Color(0xFF12151A),
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primary.withValues(alpha: 0.32),
+                    theme.colorScheme.surface,
                   ]
                 : [
-                    const Color(0xFFF0F4FF),
-                    const Color(0xFFFFFFFF),
-                    const Color(0xFFEEF2FF),
+                    theme.colorScheme.primary.withValues(alpha: 0.14),
+                    theme.colorScheme.surface,
+                    theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
                   ],
           ),
         ),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
               child: FadeTransition(
                 opacity: _fade,
                 child: SlideTransition(
@@ -227,7 +279,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: Column(
                       children: [
                         _buildHeader(theme),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 28),
 
                         if (showOfflineMode) _buildOfflineBanner(theme),
                         if (showOfflineMode) const SizedBox(height: 16),
@@ -237,15 +289,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         if (_hasLocalSession && showOfflineMode)
                           const SizedBox(height: 16),
 
-                        _buildCard(theme, isDark, isLoading, connected && isOnline),
+                        _buildCard(
+                          theme,
+                          isDark,
+                          isLoading,
+                          connected && isOnline,
+                        ),
                         const SizedBox(height: 12),
 
-                        // Divider + Google button
-                        if (!_isSignUp) ...[
-                          _buildDividerWithText(theme, 'or'),
-                          const SizedBox(height: 12),
-                          _buildGoogleButton(theme, isLoading),
-                        ],
+                        _buildDividerWithText(theme, 'or continue with'),
+                        const SizedBox(height: 12),
+                        _buildGoogleButton(theme, isLoading, connected),
                         const SizedBox(height: 12),
 
                         // Toggle sign-in / sign-up
@@ -258,15 +312,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   : "Don't have an account? ",
                               style: theme.textTheme.bodySmall,
                             ),
-                            GestureDetector(
-                              onTap: () => setState(() => _isSignUp = !_isSignUp),
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _isSignUp = !_isSignUp),
+                              style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                minimumSize: const Size(48, 40),
+                              ),
                               child: Text(
                                 _isSignUp ? 'Sign In' : 'Create Account',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
                               ),
                             ),
                           ],
@@ -305,23 +360,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildGoogleButton(ThemeData theme, bool isLoading) {
+  Widget _buildGoogleButton(
+    ThemeData theme,
+    bool isLoading,
+    bool connected,
+  ) {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: isLoading ? null : _signInWithGoogle,
+        onPressed: isLoading || !connected ? null : _signInWithGoogle,
         icon: Image.network(
           'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
           height: 20,
           width: 20,
-          errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata, size: 24),
+          errorBuilder: (_, __, ___) =>
+              const Icon(Icons.g_mobiledata, size: 24),
         ),
         label: const Text('Continue with Google'),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(double.infinity, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           side: BorderSide(
             color: theme.colorScheme.outline.withValues(alpha: 0.4),
@@ -335,26 +395,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return Column(
       children: [
         Container(
-          width: 84,
-          height: 84,
+          width: 72,
+          height: 72,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF3D5A80), Color(0xFF5C7A9E)],
+              colors: [
+                theme.colorScheme.primary,
+                theme.colorScheme.secondary,
+              ],
             ),
             borderRadius: BorderRadius.circular(22),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF3D5A80).withValues(alpha: 0.35),
+                color: theme.colorScheme.primary.withValues(alpha: 0.35),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
-          child: const Icon(Icons.factory_rounded, size: 42, color: Colors.white),
+          child:
+              const Icon(Icons.factory_rounded, size: 36, color: Colors.white),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Text(
           AppConstants.appName,
           style: theme.textTheme.headlineLarge?.copyWith(
@@ -362,19 +426,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            'Manufacturing ERP',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
+        const SizedBox(height: 4),
+        Text(
+          _isSignUp
+              ? 'Create your factory workspace'
+              : 'Manufacturing ERP',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -459,27 +517,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  Widget _buildCard(ThemeData theme, bool isDark, bool isLoading, bool connected) {
+  Widget _buildCard(
+    ThemeData theme,
+    bool isDark,
+    bool isLoading,
+    bool connected,
+  ) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E2329) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(
           color: isDark
               ? Colors.white.withValues(alpha: 0.08)
-              : const Color(0xFF3D5A80).withValues(alpha: 0.1),
+              : theme.colorScheme.primary.withValues(alpha: 0.14),
         ),
         boxShadow: [
           BoxShadow(
             color: isDark
                 ? Colors.black.withValues(alpha: 0.35)
-                : const Color(0xFF3D5A80).withValues(alpha: 0.07),
+                : theme.colorScheme.primary.withValues(alpha: 0.10),
             blurRadius: 28,
             offset: const Offset(0, 10),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
       child: Form(
         key: _formKey,
         child: Column(
@@ -504,7 +567,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
 
             // Sign-up only fields
             if (_isSignUp) ...[
@@ -515,7 +578,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 decoration: InputDecoration(
                   labelText: 'Your Name',
                   prefixIcon: const Icon(Icons.person_outline),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Name is required' : null,
@@ -526,12 +591,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 textInputAction: TextInputAction.next,
                 enabled: !isLoading,
                 decoration: InputDecoration(
-                  labelText: 'Company / Workspace Name',
+                  labelText: 'Company / Workspace Name (new company)',
                   prefixIcon: const Icon(Icons.business_outlined),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Workspace name is required' : null,
+                validator: (v) => _joinCodeCtrl.text.trim().isEmpty &&
+                        (v == null || v.trim().isEmpty)
+                    ? 'Enter company name or a join code'
+                    : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _joinCodeCtrl,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.characters,
+                enabled: !isLoading,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: 'Team join code (if invited)',
+                  hintText: 'Example: A1B2C3D4',
+                  prefixIcon: const Icon(Icons.key_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (v) => v != null && v.trim().isNotEmpty &&
+                        !RegExp(r'^[A-Za-z0-9]{8}$').hasMatch(v.trim())
+                    ? 'Enter the 8-character join code'
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Use either a new company name or the one-time code from your Owner. A join code connects this mobile to the existing company.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 14),
             ],
@@ -546,7 +642,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 labelText: 'Email Address',
                 hintText: 'you@example.com',
                 prefixIcon: const Icon(Icons.email_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Email is required';
@@ -565,7 +662,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               decoration: InputDecoration(
                 labelText: 'Password',
                 prefixIcon: const Icon(Icons.lock_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscure
@@ -577,7 +675,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               ),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Password is required';
-                if (v.length < 6) return 'Minimum 6 characters';
+                if (_isSignUp && v.length < 8) {
+                  return 'Use at least 8 characters for a new account';
+                }
                 return null;
               },
             ),
@@ -586,9 +686,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: (isLoading || _isResetting) ? null : _forgotPassword,
+                  onPressed:
+                      (isLoading || _isResetting) ? null : _forgotPassword,
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: _isResetting
@@ -610,7 +712,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             const SizedBox(height: 8),
 
             FilledButton(
-              onPressed: isLoading ? null : _submit,
+              onPressed: isLoading || (_isSignUp && !connected)
+                  ? null
+                  : _submit,
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
                 shape: RoundedRectangleBorder(
@@ -630,7 +734,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          _isSignUp ? 'Create Account' : 'Sign In',
+                          _isSignUp && !connected
+                              ? 'Internet required for signup'
+                              : _isSignUp
+                                  ? 'Create Account'
+                                  : 'Sign In',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -647,7 +755,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-Widget _buildFooter(ThemeData theme) {
+  Widget _buildFooter(ThemeData theme) {
     return Text(
       '© ${DateTime.now().year} FactoryFlow · Secure Manufacturing ERP',
       textAlign: TextAlign.center,

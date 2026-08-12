@@ -9,7 +9,8 @@ const _uuid = Uuid();
 
 // ─── Master Data Revision Counter ────────────────────────────────────────────
 // Incrementing this invalidates ALL master data providers at once.
-final masterDataRevProvider = NotifierProvider<_RevNotifier, int>(_RevNotifier.new);
+final masterDataRevProvider =
+    NotifierProvider<_RevNotifier, int>(_RevNotifier.new);
 
 class _RevNotifier extends Notifier<int> {
   @override
@@ -24,12 +25,14 @@ final partsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(databaseServiceProvider).getActiveParts();
 });
 
-final machinesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final machinesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getActiveMachines();
 });
 
-final suppliersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final suppliersProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getActiveSuppliers();
 });
@@ -39,17 +42,20 @@ final vendorsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(databaseServiceProvider).getActiveVendors();
 });
 
-final customersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final customersProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getActiveCustomers();
 });
 
-final operatorsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final operatorsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getActiveOperators();
 });
 
-final vehiclesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final vehiclesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getVehicles();
 });
@@ -57,6 +63,29 @@ final vehiclesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async 
 final driversProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(masterDataRevProvider);
   return ref.watch(databaseServiceProvider).getDrivers();
+});
+
+final shiftsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveShifts();
+});
+
+final bpRejectReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveBpRejectReasons();
+});
+
+final apRejectReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveApRejectReasons();
+});
+
+final rtvReasonsProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(masterDataRevProvider);
+  return ref.watch(databaseServiceProvider).getActiveRtvReasons();
 });
 
 // ─── Master Data Repository ───────────────────────────────────────────────────
@@ -70,153 +99,205 @@ class MasterDataRepository {
 
   void _bump() => _ref.read(masterDataRevProvider.notifier).bump();
 
-  Future<String> insertPart(
-      {required String code, required String name, String uom = 'PCS',}) async {
+  String get _factoryId {
+    final value = _db.activeWorkspaceId.trim();
+    if (value.isEmpty) {
+      throw StateError('No active company workspace is selected.');
+    }
+    return value;
+  }
+
+  Future<void> _queueUpsert(
+    String table,
+    String id,
+    Map<String, dynamic> values,
+  ) {
+    return _sync.queueInsert(
+      tableName: table,
+      recordId: id,
+      payload: {
+        'id': id,
+        'factory_id': _factoryId,
+        ...values,
+      },
+    );
+  }
+
+  Future<void> _queueUpdate(
+    String table,
+    String id,
+    Map<String, dynamic> values,
+  ) {
+    return _sync.queueUpdate(
+      tableName: table,
+      recordId: id,
+      payload: {
+        'id': id,
+        'factory_id': _factoryId,
+        ...values,
+      },
+    );
+  }
+
+  Future<void> _deactivate(String table, String id) async {
+    _db.db.execute(
+      'UPDATE $table SET active = 0 WHERE id = ? AND factory_id = ?',
+      [id, _factoryId],
+    );
+    await _queueUpdate(table, id, {'active': false});
+    _bump();
+  }
+
+  Future<String> insertPart({
+    required String code,
+    required String name,
+    String uom = 'PCS',
+  }) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'code': code,
       'name': name,
       'uom': uom,
       'active': 1,
     };
     await _db.insertRecord('parts', data);
-    await _sync.queueInsert(tableName: 'parts', recordId: id, payload: data);
+    await _queueUpsert('parts', id, {
+      'code': code,
+      'name': name,
+      'uom': uom,
+      'active': true,
+    });
     _bump();
     return id;
   }
 
-  Future<void> updatePart(String id,
-      {required String code, required String name,}) async {
+  Future<void> updatePart(
+    String id, {
+    required String code,
+    required String name,
+  }) async {
     _db.db.execute(
-        'UPDATE parts SET code = ?, name = ? WHERE id = ?', [code, name, id],);
-    await _sync.queueInsert(
-        tableName: 'parts',
-        recordId: id,
-        payload: {
-          'id': id,
-          'factory_id': _db.activeWorkspaceId,
-          'code': code,
-          'name': name,
-        },);
+      'UPDATE parts SET code = ?, name = ? WHERE id = ? AND factory_id = ?',
+      [code, name, id, _factoryId],
+    );
+    await _queueUpdate('parts', id, {'code': code, 'name': name});
     _bump();
   }
 
   Future<void> deactivatePart(String id) async {
-    _db.db.execute('UPDATE parts SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('parts', id);
   }
 
   Future<String> insertOperator(String name) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'name': name,
       'active': 1,
     };
     await _db.insertRecord('operators', data);
-    await _sync.queueInsert(
-        tableName: 'operators', recordId: id, payload: data,);
+    await _queueUpsert('operators', id, {'name': name, 'active': true});
     _bump();
     return id;
   }
 
   Future<void> updateOperator(String id, String name) async {
-    _db.db.execute('UPDATE operators SET name = ? WHERE id = ?', [name, id]);
-    await _sync.queueInsert(
-        tableName: 'operators',
-        recordId: id,
-        payload: {
-          'id': id,
-          'factory_id': _db.activeWorkspaceId,
-          'name': name,
-        },);
+    _db.db.execute(
+      'UPDATE operators SET name = ? WHERE id = ? AND factory_id = ?',
+      [name, id, _factoryId],
+    );
+    await _queueUpdate('operators', id, {'name': name});
     _bump();
   }
 
   Future<void> deactivateOperator(String id) async {
-    _db.db.execute('UPDATE operators SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('operators', id);
   }
 
   Future<String> insertSupplier(String name) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'name': name,
       'active': 1,
     };
     await _db.insertRecord('suppliers', data);
-    await _sync.queueInsert(tableName: 'suppliers', recordId: id, payload: data);
+    await _queueUpsert('suppliers', id, {'name': name, 'active': true});
     _bump();
     return id;
   }
 
   Future<void> updateSupplier(String id, String name) async {
-    _db.db.execute('UPDATE suppliers SET name = ? WHERE id = ?', [name, id]);
-    await _sync.queueInsert(
-        tableName: 'suppliers',
-        recordId: id,
-        payload: {
-          'id': id,
-          'factory_id': _db.activeWorkspaceId,
-          'name': name,
-        },);
+    _db.db.execute(
+      'UPDATE suppliers SET name = ? WHERE id = ? AND factory_id = ?',
+      [name, id, _factoryId],
+    );
+    await _queueUpdate('suppliers', id, {'name': name});
     _bump();
   }
 
   Future<void> deactivateSupplier(String id) async {
-    _db.db.execute('UPDATE suppliers SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('suppliers', id);
   }
 
-  Future<String> insertMachine(
-      {required String name,
-      required String machineCode,
-      required int sequenceOrder,}) async {
+  Future<String> insertMachine({
+    required String name,
+    required String machineCode,
+    required int sequenceOrder,
+  }) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'name': name,
       'machine_code': machineCode,
       'sequence_order': sequenceOrder,
       'active': 1,
     };
     await _db.insertRecord('machines', data);
-    await _sync.queueInsert(tableName: 'machines', recordId: id, payload: data);
+    await _queueUpsert('machines', id, {
+      'name': name,
+      'machine_code': machineCode,
+      'sequence_order': sequenceOrder,
+      'active': true,
+    });
     _bump();
     return id;
   }
 
-  Future<void> updateMachine(String id,
-      {required String name, required String machineCode,}) async {
+  Future<void> updateMachine(
+    String id, {
+    required String name,
+    required String machineCode,
+  }) async {
     _db.db.execute(
-        'UPDATE machines SET name = ?, machine_code = ? WHERE id = ?',
-        [name, machineCode, id],);
-    await _sync.queueInsert(
-        tableName: 'machines',
-        recordId: id,
-        payload: {
-          'id': id,
-          'factory_id': _db.activeWorkspaceId,
-          'name': name,
-          'machine_code': machineCode,
-        },);
+      'UPDATE machines SET name = ?, machine_code = ? '
+      'WHERE id = ? AND factory_id = ?',
+      [name, machineCode, id, _factoryId],
+    );
+    await _queueUpdate(
+      'machines',
+      id,
+      {'name': name, 'machine_code': machineCode},
+    );
     _bump();
   }
 
   Future<void> deactivateMachine(String id) async {
-    _db.db.execute('UPDATE machines SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('machines', id);
   }
 
   Future<void> reorderMachine(String id, int sequenceOrder) async {
-    _db.db.execute('UPDATE machines SET sequence_order = ? WHERE id = ?',
-        [sequenceOrder, id],);
+    _db.db.execute(
+      'UPDATE machines SET sequence_order = ? '
+      'WHERE id = ? AND factory_id = ?',
+      [sequenceOrder, id, _factoryId],
+    );
+    await _queueUpdate('machines', id, {'sequence_order': sequenceOrder});
     _bump();
   }
 
@@ -224,12 +305,12 @@ class MasterDataRepository {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'name': name,
       'active': 1,
     };
     await _db.insertRecord('vendors', data);
-    await _sync.queueInsert(tableName: 'vendors', recordId: id, payload: data);
+    await _queueUpsert('vendors', id, {'name': name, 'active': true});
     _bump();
     return id;
   }
@@ -238,60 +319,58 @@ class MasterDataRepository {
   Future<String> insertVendorByName(String name) => insertVendor(name);
 
   Future<void> updateVendor(String id, String name) async {
-    _db.db.execute('UPDATE vendors SET name = ? WHERE id = ?', [name, id]);
-    await _sync.queueInsert(
-      tableName: 'vendors',
-      recordId: id,
-      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'name': name},
+    _db.db.execute(
+      'UPDATE vendors SET name = ? WHERE id = ? AND factory_id = ?',
+      [name, id, _factoryId],
     );
+    await _queueUpdate('vendors', id, {'name': name});
     _bump();
   }
 
   Future<void> deactivateVendor(String id) async {
-    _db.db.execute('UPDATE vendors SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('vendors', id);
   }
 
   Future<void> updateDriver(String id, String name) async {
-    _db.db.execute('UPDATE drivers SET name = ? WHERE id = ?', [name, id]);
-    await _sync.queueInsert(
-      tableName: 'drivers',
-      recordId: id,
-      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'name': name},
+    _db.db.execute(
+      'UPDATE drivers SET name = ? WHERE id = ? AND factory_id = ?',
+      [name, id, _factoryId],
     );
+    await _queueUpdate('drivers', id, {'name': name});
     _bump();
   }
 
   Future<void> deactivateDriver(String id) async {
-    _db.db.execute('UPDATE drivers SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('drivers', id);
   }
 
   Future<void> updateVehicle(String id, String numberPlate) async {
-    _db.db.execute('UPDATE vehicles SET number_plate = ? WHERE id = ?', [numberPlate, id]);
-    await _sync.queueInsert(
-      tableName: 'vehicles',
-      recordId: id,
-      payload: {'id': id, 'factory_id': _db.activeWorkspaceId, 'number_plate': numberPlate},
+    _db.db.execute(
+      'UPDATE vehicles SET number_plate = ? WHERE id = ? AND factory_id = ?',
+      [numberPlate, id, _factoryId],
     );
+    await _queueUpdate('vehicles', id, {'number_plate': numberPlate});
     _bump();
   }
 
   Future<void> deactivateVehicle(String id) async {
-    _db.db.execute('UPDATE vehicles SET active = 0 WHERE id = ?', [id]);
-    _bump();
+    await _deactivate('vehicles', id);
   }
 
   Future<String> insertVehicle(String numberPlate) async {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'number_plate': numberPlate,
       'active': 1,
     };
     await _db.insertRecord('vehicles', data);
-    await _sync.queueInsert(tableName: 'vehicles', recordId: id, payload: data);
+    await _queueUpsert(
+      'vehicles',
+      id,
+      {'number_plate': numberPlate, 'active': true},
+    );
     _bump();
     return id;
   }
@@ -300,15 +379,40 @@ class MasterDataRepository {
     final id = _uuid.v4();
     final data = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': _factoryId,
       'name': name,
       'active': 1,
     };
     await _db.insertRecord('drivers', data);
-    await _sync.queueInsert(tableName: 'drivers', recordId: id, payload: data);
+    await _queueUpsert('drivers', id, {'name': name, 'active': true});
     _bump();
     return id;
   }
+
+  Future<String> insertCustomer(String name) async {
+    final id = _uuid.v4();
+    final data = {
+      'id': id,
+      'factory_id': _factoryId,
+      'name': name,
+      'active': 1,
+    };
+    await _db.insertRecord('customers', data);
+    await _queueUpsert('customers', id, {'name': name, 'active': true});
+    _bump();
+    return id;
+  }
+
+  Future<void> updateCustomer(String id, String name) async {
+    _db.db.execute(
+      'UPDATE customers SET name = ? WHERE id = ? AND factory_id = ?',
+      [name, id, _factoryId],
+    );
+    await _queueUpdate('customers', id, {'name': name});
+    _bump();
+  }
+
+  Future<void> deactivateCustomer(String id) => _deactivate('customers', id);
 
   // ── Supabase remote sync for master tables ──
   Future<void> syncMasterDataFromSupabase() async {
@@ -316,8 +420,9 @@ class MasterDataRepository {
       final client = Supabase.instance.client;
       final factoryId = _db.activeWorkspaceId;
       const tables = [
-        'parts', 'machines', 'suppliers', 'vendors',
-        'customers', 'operators', 'vehicles', 'drivers',
+        'parts', 'machines', 'suppliers', 'vendors', 'customers',
+        'operators', 'vehicles', 'drivers',
+        'shifts', 'bp_reject_reasons', 'ap_reject_reasons', 'rtv_reasons',
       ];
       for (final table in tables) {
         final rows = await client
@@ -329,7 +434,7 @@ class MasterDataRepository {
           await _db.insertRecord(table, _convertBool(row));
         }
       }
-      _bump(); // refresh all providers after remote sync
+      _bump();
     } catch (_) {
       // Offline — use local cache
     }

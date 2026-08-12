@@ -1,0 +1,93 @@
+name: Release Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: Android version name, for example 1.2.0
+        required: true
+        type: string
+      release_notes:
+        description: User-visible release notes
+        required: true
+        type: string
+      minimum_supported_version_code:
+        description: Lowest build number allowed to keep using the app
+        required: true
+        type: string
+      mandatory:
+        description: Require this update immediately
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_REPOSITORY: Zain1098/factoryflow_app_release_version
+      FIXED_APK_URL: https://github.com/Zain1098/factoryflow_app_release_version/releases/download/factoryflow/app-release.apk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Restore signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+      - name: Create signing properties
+        env:
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          printf 'storeFile=release-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+      - name: Build release APK
+        env:
+          MINIMUM_SUPPORTED_VERSION_CODE: ${{ inputs.minimum_supported_version_code }}
+        run: |
+          [[ "$MINIMUM_SUPPORTED_VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "minimum_supported_version_code must be a positive integer"; exit 1; }
+          (( MINIMUM_SUPPORTED_VERSION_CODE <= ${{ github.run_number }} )) || { echo "minimum_supported_version_code cannot exceed this build number"; exit 1; }
+          flutter pub get
+          flutter build apk --release \
+            --build-name="${{ inputs.version_name }}" \
+            --build-number="${{ github.run_number }}"
+          cp build/app/outputs/flutter-apk/app-release.apk app-release.apk
+          sha256sum app-release.apk | awk '{print $1}' > app-release.apk.sha256
+      - name: Publish fixed APK asset
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          gh release view factoryflow --repo "$RELEASE_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create factoryflow --repo "$RELEASE_REPOSITORY" --title "FactoryFlow" --notes "FactoryFlow Android releases"
+          gh release upload factoryflow app-release.apk --repo "$RELEASE_REPOSITORY" --clobber
+      - name: Publish signed release policy to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          RELEASE_PUBLISH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          MINIMUM_SUPPORTED_VERSION_CODE: ${{ inputs.minimum_supported_version_code }}
+          MANDATORY: ${{ inputs.mandatory }}
+        run: |
+          SHA256=$(cat app-release.apk.sha256)
+          curl --fail-with-body --request POST "$SUPABASE_URL/functions/v1/publish-android-release" \
+            --header "apikey: $SUPABASE_ANON_KEY" \
+            --header "Content-Type: application/json" \
+            --header "x-release-publish-token: $RELEASE_PUBLISH_TOKEN" \
+            --data "$(jq -n \
+              --arg version_name "$VERSION_NAME" \
+              --argjson version_code "${{ github.run_number }}" \
+              --argjson minimum_supported_version_code "$MINIMUM_SUPPORTED_VERSION_CODE" \
+              --arg release_notes "$RELEASE_NOTES" \
+              --arg sha256 "$SHA256" \
+              --argjson is_mandatory "$MANDATORY" \
+              '{version_name:$version_name,version_code:$version_code,minimum_supported_version_code:$minimum_supported_version_code,release_notes:$release_notes,sha256:$sha256,is_mandatory:$is_mandatory}')"

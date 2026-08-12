@@ -1,16 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/services/alert_producer_service.dart';
 
 const _uuid = Uuid();
 
 class MachineDowntimeRepository {
-  MachineDowntimeRepository(this._db, this._sync);
+  MachineDowntimeRepository(this._db, this._sync, this._alerts);
 
   final DatabaseService _db;
   final SyncService _sync;
+  final AlertProducerService _alerts;
 
   Future<DowntimeResult> save({
     required String machineId,
@@ -22,18 +26,28 @@ class MachineDowntimeRepository {
     required String createdBy,
     DateTime? recordedAt,
   }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return const DowntimeResult(
+        success: false,
+        error: 'No active factory workspace is selected.',
+      );
+    }
+
     // Validate end_time > start_time (PRD 4.3)
     if (endTime != null && endTime.isNotEmpty) {
       final start = _parseTime(startTime);
       final end = _parseTime(endTime);
       if (end != null && start != null && !end.isAfter(start)) {
-        return const DowntimeResult(success: false, error: 'End time must be after start time');
+        return const DowntimeResult(
+            success: false, error: 'End time must be after start time',);
       }
     }
 
     final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();
-    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
     int? durationMinutes;
     if (endTime != null && endTime.isNotEmpty) {
@@ -46,7 +60,7 @@ class MachineDowntimeRepository {
 
     final record = {
       'id': id,
-      'factory_id': _db.activeWorkspaceId,
+      'factory_id': factoryId,
       'machine_id': machineId,
       'date': dateStr,
       'start_time': startTime,
@@ -59,20 +73,39 @@ class MachineDowntimeRepository {
       'sync_status': 'pending',
     };
 
-    await _db.insertRecord('machine_downtimes', record);
-    await _sync.queueInsert(tableName: 'machine_downtimes', recordId: id, payload: record);
+    try {
+      await _db.runInTransaction(() async {
+        await _db.insertRecord('machine_downtimes', record);
+        await _sync.queueInsert(
+          tableName: 'machine_downtimes',
+          recordId: id,
+          payload: record,
+          triggerSync: false,
+        );
+      });
+    } catch (_) {
+      return const DowntimeResult(
+        success: false,
+        error: 'Downtime could not be saved. Please retry.',
+      );
+    }
 
+    await _sync.schedulePendingSync();
+    unawaited(_alerts.checkOpenDowntime());
     return DowntimeResult(success: true, recordId: id);
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
       'SELECT md.*, m.name as machine_name, o.name as operator_name '
       'FROM machine_downtimes md '
-      'LEFT JOIN machines m ON m.id = md.machine_id '
-      'LEFT JOIN operators o ON o.id = md.operator_id '
+      'LEFT JOIN machines m ON m.id = md.machine_id AND m.factory_id = md.factory_id '
+      'LEFT JOIN operators o ON o.id = md.operator_id AND o.factory_id = md.factory_id '
+      'WHERE md.factory_id = ? '
       'ORDER BY md.date DESC, md.start_time DESC LIMIT ?',
-      [limit],
+      [factoryId, limit],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
@@ -81,19 +114,27 @@ class MachineDowntimeRepository {
     final parts = timeStr.split(':');
     if (parts.length < 2) return null;
     final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day,
-        int.tryParse(parts[0]) ?? 0, int.tryParse(parts[1]) ?? 0,);
+    return DateTime(
+      now.year,
+      now.month,
+      now.day,
+      int.tryParse(parts[0]) ?? 0,
+      int.tryParse(parts[1]) ?? 0,
+    );
   }
 }
 
-final machineDowntimeRepositoryProvider = Provider<MachineDowntimeRepository>((ref) {
+final machineDowntimeRepositoryProvider =
+    Provider<MachineDowntimeRepository>((ref) {
   return MachineDowntimeRepository(
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
+    ref.watch(alertProducerServiceProvider),
   );
 });
 
-final machineDowntimeListProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final machineDowntimeListProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(machineDowntimeRepositoryProvider).getRecent();
 });
 

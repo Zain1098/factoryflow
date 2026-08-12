@@ -28,15 +28,18 @@ class AppUser extends Equatable {
   final DateTime? sessionCreatedAt;
 
   factory AppUser.fromJson(Map<String, dynamic> json) {
+    final email = json['email'] as String? ?? '';
     return AppUser(
       id: json['id'] as String,
       factoryId: json['factory_id'] as String,
-      name: json['name'] as String,
-      email: json['email'] as String? ?? '',
+      name: json['name'] as String? ??
+          (email.contains('@') ? email.split('@').first : 'User'),
+      email: email,
       phone: json['phone'] as String?,
       avatarUrl: json['avatar_url'] as String?,
       authProvider: json['auth_provider'] as String? ?? 'email',
-      role: UserRole.fromValue(json['role'] as String) ?? UserRole.management,
+      role: UserRole.fromValue(json['role'] as String? ?? '') ??
+          UserRole.management,
       active: json['active'] as bool? ?? true,
       sessionCreatedAt: json['session_created_at'] != null
           ? DateTime.tryParse(json['session_created_at'] as String)
