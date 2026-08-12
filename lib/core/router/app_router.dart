@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../access/app_access_state.dart';
 import '../constants/user_roles.dart';
 import '../../features/auth/auth_providers.dart';
 import '../../features/auth/login_screen.dart';
@@ -20,6 +21,7 @@ import '../../features/search/search_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/corrections/corrections_screen.dart';
+import '../../features/admin_control/admin_control_screen.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/shared_widgets.dart';
 
@@ -39,12 +41,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = userAsync.value != null;
       final isLoading = userAsync.isLoading;
       final isLoginRoute = state.matchedLocation == '/login';
+      final isAccessGateRoute = state.matchedLocation == '/access-gate';
+      final access = ref.read(appAccessProvider);
 
       // Don't redirect while loading initial session
       if (isLoading) return null;
 
       // Not logged in → go to login
       if (!isLoggedIn && !isLoginRoute) return '/login';
+
+      // The root gate owns the blocking UI. Keeping the router on a blank
+      // route means deep links cannot build protected ERP screens underneath
+      // a pending, failed, maintenance, or blocked access decision.
+      if (isLoggedIn && !isLoginRoute && !isAccessGateRoute &&
+          !access.isAllowed) {
+        return '/access-gate';
+      }
+
+      if (isLoggedIn && isAccessGateRoute && access.isAllowed) {
+        return '/dashboard';
+      }
 
       // Logged in → skip login screen
       if (isLoggedIn && isLoginRoute) return '/dashboard';
@@ -65,6 +81,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
+      GoRoute(path: '/access-gate', builder: (_, __) => const SizedBox.shrink()),
+      GoRoute(path: '/admin-control', builder: (_, __) => const AdminControlScreen()),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
         routes: [
@@ -171,15 +189,20 @@ class _AuthChangeNotifier extends ChangeNotifier {
     _recoverySub = ref.listen<bool>(passwordRecoveryPendingProvider, (_, __) {
       notifyListeners();
     });
+    _accessSub = ref.listen<AppAccessState>(appAccessProvider, (_, __) {
+      notifyListeners();
+    });
   }
 
   late final ProviderSubscription<AsyncValue<dynamic>> _sub;
   late final ProviderSubscription<bool> _recoverySub;
+  late final ProviderSubscription<AppAccessState> _accessSub;
 
   @override
   void dispose() {
     _sub.close();
     _recoverySub.close();
+    _accessSub.close();
     super.dispose();
   }
 }

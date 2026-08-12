@@ -22,6 +22,7 @@ import '../corrections/corrections_screen.dart';
 import '../corrections/conflict_review_screen.dart';
 import 'stock_management_screen.dart';
 import 'team_members_screen.dart';
+import 'app_update_widgets.dart';
 
 Future<bool> _runSettingsAction(
   BuildContext context,
@@ -631,6 +632,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          const AppUpdateSettingsSection(),
           const Divider(),
 
           // ── SYSTEM ───────────────────────────────────────────────────────

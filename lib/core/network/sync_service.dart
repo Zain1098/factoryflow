@@ -8,11 +8,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../constants/app_constants.dart';
+import '../access/app_access_state.dart';
 import '../database/database_service.dart';
 import '../services/notification_service.dart';
 
 final syncServiceProvider = Provider<SyncService>((ref) {
-  return SyncService(ref.watch(databaseServiceProvider));
+  return SyncService(
+    ref.watch(databaseServiceProvider),
+    accessAllowed: () => ref.read(appAccessProvider).isAllowed,
+  );
 });
 
 /// Polls pending sync count every 30 s — only when provider is alive.
@@ -59,15 +63,19 @@ class SyncService {
   SyncService(
     this._db, {
     Future<bool> Function()? onlineCheck,
-  }) : _onlineCheck = onlineCheck;
+    bool Function()? accessAllowed,
+  })  : _onlineCheck = onlineCheck,
+        _accessAllowed = accessAllowed;
 
   final DatabaseService _db;
   final Future<bool> Function()? _onlineCheck;
+  final bool Function()? _accessAllowed;
   Timer? _syncTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
 
   void startPeriodicSync() {
+    if (_accessAllowed?.call() != true) return;
     if (_syncTimer != null) return;
     _syncTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -119,6 +127,7 @@ class SyncService {
   /// Pending local records are never overwritten; normal upload remains the
   /// source of truth for offline work made on this device.
   Future<int> hydrateActiveWorkspace() async {
+    if (_accessAllowed?.call() != true) return 0;
     if (!await isOnline() || !await isSupabaseReady()) return 0;
     if (await _db.countPendingSync() > 0) return 0;
     final factoryId = _db.activeWorkspaceId.trim();
@@ -152,6 +161,7 @@ class SyncService {
   }
 
   Future<SyncResult> syncPending() async {
+    if (_accessAllowed?.call() != true) return const SyncResult(skipped: true);
     if (_isSyncing) return const SyncResult(skipped: true);
     if (!await isOnline()) return const SyncResult(offline: true);
     if (!await isSupabaseReady()) return const SyncResult(skipped: true);
@@ -566,7 +576,7 @@ class SyncService {
   /// Starts a best-effort sync after the caller's local transaction commits.
   Future<void> schedulePendingSync() async {
     try {
-      if (await isOnline()) {
+      if (_accessAllowed?.call() == true && await isOnline()) {
         unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
       }
     } catch (_) {

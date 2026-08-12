@@ -857,15 +857,13 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   }
 
   void _onLoginSuccess() {
-    ref.read(syncServiceProvider).startPeriodicSync();
-    _syncMasterDataIfOnline();
-    unawaited(ref.read(syncServiceProvider).hydrateActiveWorkspace());
+    // AppAccessGate starts all protected bootstrap work only after it has
+    // verified this session's active profile and maintenance state.
   }
 
   void _onSessionRestored() {
-    ref.read(syncServiceProvider).startPeriodicSync();
-    unawaited(ref.read(syncServiceProvider).hydrateActiveWorkspace());
-    _syncMasterDataIfOnline();
+    // A cached session must not make ERP data or sync available before the
+    // remote access decision made by AppAccessGate.
   }
 
   void _syncMasterDataIfOnline() {

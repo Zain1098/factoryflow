@@ -32,6 +32,9 @@ dependencies:
   # 13.x supports Flutter's AGP 9 built-in Kotlin migration.
   share_plus: ^13.3.0
   package_info_plus: ^10.2.1
+  crypto: ^3.0.6
+  dio: ^5.9.0
+  open_filex: ^4.7.0
   google_fonts: ^6.2.1
 
 dev_dependencies:

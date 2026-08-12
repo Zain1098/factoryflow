@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
+import 'core/access/app_access_gate.dart';
 import 'core/database/database_service.dart';
 import 'core/router/app_router.dart';
 import 'core/services/biometric_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/auth_providers.dart';
+import 'features/settings/app_update_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,7 +74,11 @@ class FactoryFlowApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
-      builder: (context, child) => _BiometricGuard(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AppAccessGate(
+        child: _BiometricGuard(
+          child: AppUpdateGate(child: child ?? const SizedBox.shrink()),
+        ),
+      ),
     );
   }
 }
