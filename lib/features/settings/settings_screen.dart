@@ -2419,21 +2419,29 @@ class _ProductionFlowPage extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Multi-Machine Flow & Rules')),
+      appBar: AppBar(title: const Text('Machine Sequence')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(10),
+              color: theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: const Text(
-              'Customize how parts move through machines in your factory. '
-              'In Multi-Stage mode (e.g. M1 -> M2 -> M3), half-processed parts remain in BP/WIP stock '
-              'and cannot be dispatched to vendors until the final machine finishes.',
-              style: TextStyle(fontSize: 13),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.alt_route_rounded, color: theme.colorScheme.primary),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Set the order in which one part moves through your machines. '
+                    'Each machine takes stock from the previous step. Only the last machine makes ready stock.',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -2480,7 +2488,7 @@ class _ProductionFlowPage extends ConsumerWidget {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
-            title: const Text('Enable Multi-Machine Sequence Routing'),
+            title: const Text('Use a machine sequence'),
             subtitle: Text(
               flow.enabled
                   ? 'Active — Multi-stage WIP tracking enabled'
@@ -2511,7 +2519,7 @@ class _ProductionFlowPage extends ConsumerWidget {
             const Divider(),
             const SizedBox(height: 8),
             Text(
-              'Production Mode',
+              '1. Choose how this factory produces',
               style: theme.textTheme.titleSmall
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
@@ -2526,9 +2534,9 @@ class _ProductionFlowPage extends ConsumerWidget {
                       .setProductionMode(m);
                 }
               },
-              title: const Text('Multi-Stage Sequential Flow (Recommended)'),
+              title: const Text('One part goes through several machines'),
               subtitle: const Text(
-                'Parts pass through Machine 1 -> 2 -> 3. Output is in BP/WIP stock until final machine finishes.',
+                'Recommended when a part moves from one machine to the next before it is ready.',
               ),
             ),
             RadioListTile<ProductionMode>(
@@ -2541,7 +2549,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                       .setProductionMode(m);
                 }
               },
-              title: const Text('Direct Single-Stage Mode'),
+              title: const Text('Each machine makes a finished product'),
               subtitle: const Text(
                 'Every machine entry immediately counts as completed final production.',
               ),
@@ -2555,7 +2563,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'Direct mode does not use a machine route or WIP. Use it only when each machine creates a separate finished product. For one part moving through several machines, select Multi-Stage Sequential Flow above.',
+                  'No route is needed in this mode. Use it only when a machine does not pass its output to another machine.',
                   style: TextStyle(fontSize: 13),
                 ),
               ),
@@ -2581,7 +2589,7 @@ class _ProductionFlowPage extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'Required Machine Sequence (select in order M1 -> M2 -> M3)',
+                  '2. Build the route',
                   style: theme.textTheme.titleSmall
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
@@ -2594,6 +2602,17 @@ class _ProductionFlowPage extends ConsumerWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(
+                        'Add machines to the route',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Tap a machine to add it. Tap it again to remove it. Then confirm the order below.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -2639,7 +2658,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                       if (flow.requiredMachineIds.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         Text(
-                          'Route order',
+                          'Route preview',
                           style: theme.textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
@@ -2654,53 +2673,94 @@ class _ProductionFlowPage extends ConsumerWidget {
                           );
                           final name =
                               machine['name'] as String? ?? 'Unknown machine';
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(
-                              radius: 13,
-                              child: Text('${index + 1}'),
-                            ),
-                            title: Text(name),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Move earlier',
-                                  icon: const Icon(Icons.arrow_upward),
-                                  onPressed: index == 0
-                                      ? null
-                                      : () {
-                                          final updated = [
-                                            ...flow.requiredMachineIds,
-                                          ];
-                                          final moved = updated.removeAt(index);
-                                          updated.insert(index - 1, moved);
-                                          ref
-                                              .read(productionFlowProvider
-                                                  .notifier,)
-                                              .setRequiredMachines(updated);
-                                        },
+                          final isFinal =
+                              index == flow.requiredMachineIds.length - 1;
+                          final previousName = index == 0
+                              ? 'Raw Material'
+                              : (list.firstWhere(
+                                      (item) => item['id'] ==
+                                          flow.requiredMachineIds[index - 1],
+                                      orElse: () => <String, dynamic>{
+                                            'name': 'Previous machine',
+                                          },
+                                    )['name'] as String? ??
+                                  'Previous machine');
+                          return Card(
+                            elevation: 0,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            color: isFinal
+                                ? Colors.green.withValues(alpha: 0.08)
+                                : theme.colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.55),
+                            child: ListTile(
+                              contentPadding:
+                                  const EdgeInsets.fromLTRB(12, 6, 4, 6),
+                              leading: CircleAvatar(
+                                radius: 16,
+                                backgroundColor: isFinal
+                                    ? Colors.green
+                                    : theme.colorScheme.primary,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                                IconButton(
-                                  tooltip: 'Move later',
-                                  icon: const Icon(Icons.arrow_downward),
-                                  onPressed: index ==
-                                          flow.requiredMachineIds.length - 1
-                                      ? null
-                                      : () {
-                                          final updated = [
-                                            ...flow.requiredMachineIds,
-                                          ];
-                                          final moved = updated.removeAt(index);
-                                          updated.insert(index + 1, moved);
-                                          ref
-                                              .read(productionFlowProvider
-                                                  .notifier,)
-                                              .setRequiredMachines(updated);
-                                        },
+                              ),
+                              title: Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ],
+                              ),
+                              subtitle: Text(
+                                isFinal
+                                    ? 'Final step - makes ready stock'
+                                    : 'Takes $previousName and creates $name WIP',
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: 'Move earlier',
+                                    icon: const Icon(Icons.arrow_upward),
+                                    onPressed: index == 0
+                                        ? null
+                                        : () {
+                                            final updated = [
+                                              ...flow.requiredMachineIds,
+                                            ];
+                                            final moved =
+                                                updated.removeAt(index);
+                                            updated.insert(index - 1, moved);
+                                            ref
+                                                .read(productionFlowProvider
+                                                    .notifier)
+                                                .setRequiredMachines(updated);
+                                          },
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Move later',
+                                    icon: const Icon(Icons.arrow_downward),
+                                    onPressed: index ==
+                                            flow.requiredMachineIds.length - 1
+                                        ? null
+                                        : () {
+                                            final updated = [
+                                              ...flow.requiredMachineIds,
+                                            ];
+                                            final moved =
+                                                updated.removeAt(index);
+                                            updated.insert(index + 1, moved);
+                                            ref
+                                                .read(productionFlowProvider
+                                                    .notifier)
+                                                .setRequiredMachines(updated);
+                                          },
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         }),
@@ -2712,7 +2772,7 @@ class _ProductionFlowPage extends ConsumerWidget {
               if (flow.validationError != null) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '${flow.validationError} Select at least one active machine.',
+                  '${flow.validationError} Add at least one active machine above.',
                   style: TextStyle(
                     color: theme.colorScheme.error,
                     fontWeight: FontWeight.w600,
@@ -2739,7 +2799,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Active Sequence: ${flow.requiredMachineIds.length} machines required. Final machine finishes ready stock.',
+                          'Ready: ${flow.requiredMachineIds.length} machines in route. The final machine makes ready stock.',
                           style: const TextStyle(
                             color: Colors.green,
                             fontWeight: FontWeight.w600,
