@@ -282,8 +282,9 @@ class _ForcedUpdateGate extends StatelessWidget {
           ),
         ),
       );
+}
 
-class UpdateDownloadButton extends void StatefulWidget {
+class UpdateDownloadButton extends StatefulWidget {
   const UpdateDownloadButton({super.key, required this.release, required this.label, this.expanded = false});
   final AppRelease release;
   final String label;
@@ -293,7 +294,7 @@ class UpdateDownloadButton extends void StatefulWidget {
   State<UpdateDownloadButton> createState() => _UpdateDownloadButtonState();
 }
 
-class _UpdateDownloadButtonState extends void State<UpdateDownloadButton> {
+class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
   AppUpdateDownloadTask? task0;
   double? progress;
   String? error;
