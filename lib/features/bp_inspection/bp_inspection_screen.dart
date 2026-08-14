@@ -164,7 +164,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                               '${batch['part_name']} • ${batch['machine_name']}',
                               overflow: TextOverflow.ellipsis,
                             ),
-                          ))
+                          ),)
                       .toList(),
                   onChanged: (value) {
                     if (value == null) return;

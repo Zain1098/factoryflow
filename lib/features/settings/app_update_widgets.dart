@@ -163,7 +163,7 @@ class _AppUpdateDetailsPageState extends ConsumerState<AppUpdateDetailsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Could not check for updates. You can continue offline.'),
-        ));
+        ),);
       }
     }
   }
@@ -186,7 +186,7 @@ class _AppUpdateDetailsPageState extends ConsumerState<AppUpdateDetailsPage> {
           else if (status != null) ...[
             Text('Installed version', style: Theme.of(context).textTheme.labelLarge),
             Text('${status.installed.name}+${status.installed.code}',
-                style: Theme.of(context).textTheme.headlineSmall),
+                style: Theme.of(context).textTheme.headlineSmall,),
             const SizedBox(height: 20),
             if (status.release == null)
               const Text('No release is currently available. You can continue using the app.')
@@ -229,16 +229,16 @@ class _ReleaseDetails extends StatelessWidget {
       crossAxisAlignment: centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
       children: [
         Text('Latest: ${release.versionName}+${release.versionCode}',
-            textAlign: centered ? TextAlign.center : TextAlign.start),
+            textAlign: centered ? TextAlign.center : TextAlign.start,),
         if (release.releaseNotes.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(release.releaseNotes,
-              textAlign: centered ? TextAlign.center : TextAlign.start),
+              textAlign: centered ? TextAlign.center : TextAlign.start,),
         ],
         if (status.decision == AppUpdateDecision.mandatory) ...[
           const SizedBox(height: 8),
           const Text('Please download and install this update soon to remain compatible.',
-              textAlign: TextAlign.center),
+              textAlign: TextAlign.center,),
         ],
       ],
     );
@@ -262,11 +262,11 @@ class _ForcedUpdateGate extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Icon(Icons.system_update_alt_rounded,
-                        size: 56, color: Theme.of(context).colorScheme.primary),
+                        size: 56, color: Theme.of(context).colorScheme.primary,),
                     const SizedBox(height: 18),
                     Text('Update required',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall),
+                        style: Theme.of(context).textTheme.headlineSmall,),
                     const SizedBox(height: 12),
                     _ReleaseDetails(status: status, centered: true),
                     const SizedBox(height: 24),
@@ -282,6 +282,7 @@ class _ForcedUpdateGate extends StatelessWidget {
           ),
         ),
       );
+}
 
 class UpdateDownloadButton extends StatefulWidget {
   const UpdateDownloadButton({super.key, required this.release, required this.label, this.expanded = false});
@@ -294,22 +295,22 @@ class UpdateDownloadButton extends StatefulWidget {
 }
 
 class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
-  AppUpdateDownloadTask? _task;
-  double? _progress;
-  String? _error;
+  AppUpdateDownloadTask? task0;
+  double? progress;
+  String? error;
 
-  Future<void> _download() async {
-    setState(() { _error = null; _progress = 0; });
+  Future<void> download() async {
+    setState(() { error = null; progress = 0; });
     final task = createAppUpdateDownloadTask(
       url: widget.release.downloadUrl,
       sha256: widget.release.sha256,
     );
-    _task = task;
+    task0 = task;
     final result = await task.start(onProgress: (value) {
-      if (mounted) setState(() => _progress = value);
-    });
+      if (mounted) setState(() => progress = value);
+    },);
     if (!mounted) return;
-    setState(() { _task = null; _progress = null; _error = result.error; });
+    setState(() { task0 = null; progress = null; error = result.error; });
     if (result.cancelled) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update download cancelled.')));
     } else if (!result.succeeded) {
@@ -318,24 +319,24 @@ class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
   }
 
   @override
-  void dispose() { _task?.cancel(); super.dispose(); }
+  void dispose() { task0?.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    if (_task != null) {
+    if (task0 != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          LinearProgressIndicator(value: _progress),
+          LinearProgressIndicator(value: progress),
           const SizedBox(height: 8),
-          TextButton.icon(onPressed: _task!.cancel, icon: const Icon(Icons.close), label: const Text('Cancel download')),
+          TextButton.icon(onPressed: task0!.cancel, icon: const Icon(Icons.close), label: const Text('Cancel download')),
         ],
       );
     }
     final button = FilledButton.icon(
-      onPressed: _download,
+      onPressed: download,
       icon: const Icon(Icons.download_rounded),
-      label: Text(_error == null ? widget.label : 'Retry download'),
+      label: Text(error == null ? widget.label : 'Retry download'),
     );
     return widget.expanded ? button : button;
   }

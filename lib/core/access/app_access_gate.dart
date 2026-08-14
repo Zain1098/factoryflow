@@ -110,7 +110,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
             title: 'Account setup is not complete',
             message:
                 'We could not verify your app profile. Please retry in a moment or contact your administrator.',
-          ));
+          ),);
         }
         return;
       }
@@ -127,7 +127,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
             title: 'App profile could not be verified',
             message:
                 'We could not verify your account status. Please reconnect and try again.',
-          ));
+          ),);
         }
         return;
       }
@@ -142,7 +142,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
           title: 'Access unavailable',
           message:
               'Your access is currently unavailable. Please contact your administrator.',
-        ));
+        ),);
         return;
       }
 
@@ -159,7 +159,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
           message: maintenance['message']?.toString().trim().isNotEmpty == true
               ? maintenance['message'].toString()
               : 'Please try again shortly.',
-        ));
+        ),);
         return;
       }
 
@@ -190,7 +190,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
           status: AppAccessStatus.unavailable,
           title: 'App availability could not be verified',
           message: 'We could not verify app availability. Please reconnect and try again.',
-        ));
+        ),);
       }
     } finally {
       _checking = false;
@@ -266,7 +266,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
             const SizedBox(height: 16),
             Text(access.title ?? 'Access unavailable',
                 style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center),
+                textAlign: TextAlign.center,),
             const SizedBox(height: 8),
             Text(access.message ?? '', textAlign: TextAlign.center),
             if (!isBlocked) ...[
@@ -283,7 +283,7 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
                 child: Text(isBlocked ? 'Sign in' : 'Retry'),
               ),
             ],
-          ]),
+          ],),
         ),
       ),
     );

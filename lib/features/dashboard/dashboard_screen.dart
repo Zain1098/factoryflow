@@ -148,16 +148,16 @@ class DashboardScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Today’s progress',
-                    style: Theme.of(context).textTheme.titleSmall),
+                    style: Theme.of(context).textTheme.titleSmall,),
                 const SizedBox(height: 8),
                 Text('${efficiency.toStringAsFixed(0)}%',
                     style: Theme.of(context)
                         .textTheme
                         .headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                        ?.copyWith(fontWeight: FontWeight.w700),),
                 Text(
                     '${_fmt(data.todayProduction)} of ${_fmt(data.todayTarget)} PCS target',
-                    style: Theme.of(context).textTheme.bodySmall),
+                    style: Theme.of(context).textTheme.bodySmall,),
                 const SizedBox(height: 12),
                 if (data.pendingSyncCount > 0)
                   Text(
@@ -194,7 +194,7 @@ class DashboardScreen extends ConsumerWidget {
                   ),
                 ),
                 Text('${_fmt(data.todayProduction)} PCS',
-                    style: Theme.of(context).textTheme.labelSmall),
+                    style: Theme.of(context).textTheme.labelSmall,),
               ],
             ),
           ),

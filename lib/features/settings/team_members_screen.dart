@@ -32,7 +32,7 @@ class TeamMembersScreen extends ConsumerWidget {
       ),
       body: members.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => EmptyState(
+        error: (error, _) => const EmptyState(
           icon: Icons.cloud_off_outlined,
           message: 'Could not load team members. Check cloud setup and try again.',
         ),
@@ -53,8 +53,8 @@ class TeamMembersScreen extends ConsumerWidget {
                   Expanded(child: Text(
                     'Each person signs in with their own email. Their role controls what they can enter or view.',
                     style: theme.textTheme.bodyMedium,
-                  )),
-                ]),
+                  ),),
+                ],),
               ),
               const SizedBox(height: 18),
               Text('${rows.length} active workspace member${rows.length == 1 ? '' : 's'}', style: theme.textTheme.labelLarge),
@@ -86,7 +86,7 @@ class _MemberCard extends StatelessWidget {
       isThreeLine: true,
       trailing: member['role'] == 'owner' ? Icon(Icons.verified_rounded, color: theme.colorScheme.primary) : const Icon(Icons.chevron_right_rounded),
       onTap: member['role'] == 'owner' ? null : onTap,
-    ));
+    ),);
   }
 }
 
@@ -119,9 +119,9 @@ Future<void> _showInviteSheet(BuildContext context, WidgetRef ref) async {
             } catch (_) {
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not create join code. Check role and cloud connection.'), backgroundColor: Colors.red));
             }
-          }, icon: const Icon(Icons.key_outlined), label: const Text('Create join code')),
-        ]),
-      )),
+          }, icon: const Icon(Icons.key_outlined), label: const Text('Create join code'),),
+        ],),
+      ),),
     ),
   );
   email.dispose();
@@ -133,9 +133,9 @@ Future<void> _showJoinCode(BuildContext context, String code, String email) => s
     Text('Give this code only to $email.'), const SizedBox(height: 16),
     SelectableText(code, style: Theme.of(context).textTheme.headlineSmall?.copyWith(letterSpacing: 2, fontWeight: FontWeight.w800)),
     const SizedBox(height: 12), const Text('They enter it during signup. It works once and only with this email.'),
-  ]),
+  ],),
   actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done')), FilledButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: code)); if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Join code copied.'))); }, icon: const Icon(Icons.copy_outlined), label: const Text('Copy'))],
-));
+),);
 
 Future<void> _showMemberSheet(BuildContext context, WidgetRef ref, Map<String, dynamic> member) async {
   var role = member['role']?.toString() ?? UserRole.management.value;
@@ -146,6 +146,6 @@ Future<void> _showMemberSheet(BuildContext context, WidgetRef ref, Map<String, d
       AppDropdown<String>(label: 'Role', value: role, items: UserRole.values.where((item) => item != UserRole.owner).map((item) => DropdownMenuItem(value: item.value, child: Text(item.value))).toList(), onChanged: (value) => setState(() => role = value ?? role)),
       SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Active access'), subtitle: Text(active ? 'Can sign in and use assigned modules' : 'Sign-in is blocked'), value: active, onChanged: (value) => setState(() => active = value)),
       const SizedBox(height: 12), FilledButton(onPressed: () async { try { await ref.read(supabaseClientProvider)!.rpc('update_workspace_member', params: {'p_member_id': member['id'], 'p_role': role, 'p_status': active ? 'active' : 'inactive'}); ref.invalidate(_workspaceMembersProvider); if (context.mounted) Navigator.pop(context); } catch (_) { if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not update this member.'), backgroundColor: Colors.red)); } }, child: const Text('Save access')),
-    ]),
-  )));
+    ],),
+  ),),);
 }

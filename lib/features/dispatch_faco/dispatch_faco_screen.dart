@@ -69,8 +69,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   void _addPart(Map<String, dynamic> stock) {
     final id = stock['part_id'] as String;
     final batchNumber = stock['batch_number'] as String;
-    if (_items.any((i) => i.partId == id && i.batchNumber == batchNumber))
+    if (_items.any((i) => i.partId == id && i.batchNumber == batchNumber)) {
       return;
+    }
     setState(() {
       _items.add(
         _FacoLine(
@@ -307,7 +308,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 items: list
                     .where((batch) => !_items.any((item) =>
                         item.partId == batch['part_id'] &&
-                        item.batchNumber == batch['batch_number']))
+                        item.batchNumber == batch['batch_number'],),)
                     .map(
                       (batch) => DropdownMenuItem(
                         value: '${batch['batch_number']}|${batch['part_id']}',
@@ -322,7 +323,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 onChanged: (key) {
                   if (key == null) return;
                   final match = list.firstWhere((batch) =>
-                      '${batch['batch_number']}|${batch['part_id']}' == key);
+                      '${batch['batch_number']}|${batch['part_id']}' == key,);
                   _addPart(match);
                 },
               );

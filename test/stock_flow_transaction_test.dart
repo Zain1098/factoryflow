@@ -65,7 +65,7 @@ void main() {
       END
     ''');
     final repository = MaterialReceiveRepository(
-        databaseService, syncService, ledgerService, alertProducerService);
+        databaseService, syncService, ledgerService, alertProducerService,);
 
     final result = await repository.save(
       partId: 'part-a',
@@ -355,7 +355,7 @@ void main() {
       qty: 10,
     );
     final repository = RtvRepository(
-        databaseService, syncService, ledgerService, alertProducerService);
+        databaseService, syncService, ledgerService, alertProducerService,);
 
     final saved = await repository.save(
       batchNumber: 'BATCH-A',
@@ -418,7 +418,7 @@ void main() {
       qty: 10,
     );
     final repository = RtvRepository(
-        databaseService, syncService, ledgerService, alertProducerService);
+        databaseService, syncService, ledgerService, alertProducerService,);
     final sent = await repository.save(
       batchNumber: 'BATCH-A',
       partId: 'part-a',
@@ -488,7 +488,7 @@ void main() {
       qty: 5,
     );
     final repository = RtvRepository(
-        databaseService, syncService, ledgerService, alertProducerService);
+        databaseService, syncService, ledgerService, alertProducerService,);
 
     final returned = await repository.saveReinspection(
       rtvId: 'rtv-cycle-3',
@@ -553,7 +553,7 @@ void main() {
       'sync_status': 'synced',
     });
     final repository = FinalDispatchRepository(
-        databaseService, syncService, ledgerService, alertProducerService);
+        databaseService, syncService, ledgerService, alertProducerService,);
 
     final blocked = await repository.saveDispatchSession(
       customerId: 'customer-a',

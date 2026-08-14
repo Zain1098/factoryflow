@@ -105,9 +105,9 @@ class _WorkRemindersPageState extends State<WorkRemindersPage> {
                                   ...reminders.where((item) => item.id != reminder.id),
                                   reminder.copyWith(enabled: enabled),
                                 ]..sort((a, b) =>
-                                    (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute))),
+                                    (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute),),),
                         onDelete: _saving ? null : () => _delete(reminder),
-                      )),
+                      ),),
               ],
             ),
     );
@@ -237,7 +237,7 @@ class _ReminderEditorState extends State<_ReminderEditor> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(widget.reminder == null ? 'Add work reminder' : 'Edit work reminder',
-                    style: Theme.of(context).textTheme.titleLarge),
+                    style: Theme.of(context).textTheme.titleLarge,),
                 const SizedBox(height: 12),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

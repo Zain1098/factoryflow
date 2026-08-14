@@ -268,17 +268,17 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                       children: [
                         Text(user?.name ?? 'Your profile',
                             style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700)),
+                                ?.copyWith(fontWeight: FontWeight.w700),),
                         const SizedBox(height: 3),
                         Text(user?.email ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant)),
+                                color: theme.colorScheme.onSurfaceVariant,),),
                         const SizedBox(height: 5),
                         Text('Tap camera to update photo',
                             style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.primary)),
+                                color: theme.colorScheme.primary,),),
                       ],
                     ),
                   ),

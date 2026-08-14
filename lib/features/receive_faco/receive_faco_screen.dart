@@ -326,12 +326,12 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
               leading: CircleAvatar(
                 backgroundColor: Colors.purple.withValues(alpha: 0.12),
                 child: const Icon(Icons.move_to_inbox,
-                    color: Colors.purple, size: 20),
+                    color: Colors.purple, size: 20,),
               ),
               title: Text(
                 r['batch_number'] ?? '—',
                 style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600),
+                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
               subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
               trailing: Column(
@@ -343,7 +343,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     children: [
                       if (shortage)
                         const Icon(Icons.warning_amber,
-                            size: 14, color: Colors.orange),
+                            size: 14, color: Colors.orange,),
                       const SizedBox(width: 4),
                       Text(
                         '${r['qty_received']} PCS',
