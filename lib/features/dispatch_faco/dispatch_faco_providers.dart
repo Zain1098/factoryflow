@@ -120,6 +120,57 @@ class DispatchFacoRepository {
     }
 
     for (final item in items) {
+      final batchPart = _db.db.select(
+        'SELECT id FROM productions '
+        'WHERE factory_id = ? AND batch_number = ? AND part_id = ? LIMIT 1',
+        [factoryId, item.batchNumber, item.partId],
+      );
+      if (batchPart.isEmpty) {
+        return DispatchFacoResult(
+          success: false,
+          error: '${item.partCode}: selected batch does not belong to this part.',
+        );
+      }
+      final finalMachineId =
+          _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
+      final batchRows = _db.db.select(
+        '''SELECT COALESCE((
+             SELECT SUM(output.good_qty) FROM productions output
+             WHERE output.factory_id = ? AND output.batch_number = ?
+               AND output.part_id = ?
+               AND (? IS NULL OR output.machine_id = ?)
+           ), 0) - COALESCE((
+             SELECT SUM(bi.bp_reject_qty) FROM bp_inspections bi
+             WHERE bi.factory_id = ? AND bi.batch_number = ?
+               AND bi.part_id = ?
+           ), 0) - COALESCE((
+             SELECT SUM(df.qty) FROM dispatch_to_facos df
+             WHERE df.factory_id = ? AND df.batch_number = ?
+               AND df.part_id = ?
+           ), 0) AS available_qty''',
+        [
+          factoryId,
+          item.batchNumber,
+          item.partId,
+          finalMachineId,
+          finalMachineId,
+          factoryId,
+          item.batchNumber,
+          item.partId,
+          factoryId,
+          item.batchNumber,
+          item.partId,
+        ],
+      );
+      final batchAvailable =
+          (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
+      if (item.qty > batchAvailable) {
+        return DispatchFacoResult(
+          success: false,
+          error:
+              '${item.partCode}: dispatch qty exceeds this batch balance (${batchAvailable.toInt()} PCS).',
+        );
+      }
       final available =
           await _ledger.getAvailableStock(item.partId, StockStage.bpStock);
       if (item.qty > available) {

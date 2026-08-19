@@ -7,6 +7,7 @@ import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../auth/auth_providers.dart';
+import '../final_dispatch/final_dispatch_providers.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -199,12 +200,32 @@ class _PartStockCard extends ConsumerWidget {
     final qtyCtrl = TextEditingController();
     final remarkCtrl = TextEditingController();
     String? errorMsg;
+    List<Map<String, dynamic>> approvedBatches;
+    try {
+      approvedBatches = await ref.read(approvedDispatchBatchesProvider.future);
+    } catch (_) {
+      approvedBatches = const [];
+    }
+    String? selectedBatchNumber;
 
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final currentQty = balances[selectedStage.value] ?? 0;
+          final batchesForPart = approvedBatches
+              .where((batch) => batch['id'] == partId)
+              .toList();
+          Map<String, dynamic>? selectedBatch;
+          for (final batch in batchesForPart) {
+            if (batch['batch_number'] == selectedBatchNumber) {
+              selectedBatch = batch;
+              break;
+            }
+          }
+          final isApprovedAp = selectedStage == StockStage.approvedAp;
+          final currentQty = isApprovedAp
+              ? (selectedBatch?['balance'] as num?)?.toDouble() ?? 0
+              : balances[selectedStage.value] ?? 0;
           return AlertDialog(
             title: Text('Adjust Stock — $partName'),
             content: SingleChildScrollView(
@@ -219,8 +240,48 @@ class _PartStockCard extends ConsumerWidget {
                         .map((s) =>
                             DropdownMenuItem(value: s, child: Text(s.label)),)
                         .toList(),
-                    onChanged: (v) => setS(() => selectedStage = v!),
+                    onChanged: (v) => setS(() {
+                      selectedStage = v!;
+                      selectedBatchNumber = null;
+                    }),
                   ),
+                  if (isApprovedAp) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedBatchNumber,
+                      decoration: const InputDecoration(
+                        labelText: 'Approved batch *',
+                        helperText: 'Only original AP-approved batches can be dispatched.',
+                      ),
+                      items: batchesForPart
+                          .map((batch) => DropdownMenuItem<String>(
+                                value: batch['batch_number'] as String,
+                                child: Text(
+                                  '${batch['batch_number']} · ${_fmt((batch['balance'] as num).toDouble())} PCS',
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: batchesForPart.isEmpty
+                          ? null
+                          : (value) => setS(() => selectedBatchNumber = value),
+                    ),
+                    if (batchesForPart.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'No AP-approved batch is available for this part. Create or correct the source AP inspection first.',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
+                        ),
+                      ),
+                  ],
+                  if (!isApprovedAp && selectedStage != StockStage.rawMaterial)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'This reconciles the ledger only. It does not create a production, inspection, or vendor batch.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   Text(
                     'Current: ${_fmt(currentQty)} PCS',
@@ -283,16 +344,29 @@ class _PartStockCard extends ConsumerWidget {
                     setS(() => errorMsg = 'Remark is required.');
                     return;
                   }
+                  if (isApprovedAp && selectedBatchNumber == null) {
+                    setS(() => errorMsg = 'Select the AP-approved batch.');
+                    return;
+                  }
                   Navigator.pop(ctx);
-                  await _applyAdjustment(
+                  final result = await _applyAdjustment(
                     ref: ref,
                     partId: partId,
                     stage: selectedStage,
-                    currentQty: balances[selectedStage.value] ?? 0,
+                    currentQty: currentQty,
                     adjustMode: adjustMode,
                     qty: qty,
                     remark: remarkCtrl.text.trim(),
+                    batchNumber: selectedBatchNumber,
                   );
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result ?? 'Stock adjustment saved.'),
+                        backgroundColor: result == null ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
                 },
                 child: const Text('Apply'),
               ),
@@ -305,7 +379,7 @@ class _PartStockCard extends ConsumerWidget {
     remarkCtrl.dispose();
   }
 
-  Future<void> _applyAdjustment({
+  Future<String?> _applyAdjustment({
     required WidgetRef ref,
     required String partId,
     required StockStage stage,
@@ -313,9 +387,12 @@ class _PartStockCard extends ConsumerWidget {
     required String adjustMode,
     required double qty,
     required String remark,
+    String? batchNumber,
   }) async {
     final role = ref.read(userRoleProvider);
-    if (role == null || !role.canAdjustStock) return;
+    if (role == null || !role.canAdjustStock) {
+      return 'You are not allowed to adjust stock.';
+    }
     final db = ref.read(databaseServiceProvider);
     final sync = ref.read(syncServiceProvider);
     final ledger = ref.read(stockLedgerServiceProvider);
@@ -329,31 +406,32 @@ class _PartStockCard extends ConsumerWidget {
     switch (adjustMode) {
       case 'set':
         final diff = qty - currentQty;
-        if (diff == 0) return;
+        if (diff == 0) return 'Quantity is already set to this value.';
         adjustedQty = diff.abs();
         newQty = qty;
         direction = diff > 0 ? LedgerDirection.in_ : LedgerDirection.out;
       case 'add':
-        if (qty == 0) return;
+        if (qty == 0) return 'Quantity must be greater than zero.';
         adjustedQty = qty;
         newQty = currentQty + qty;
         direction = LedgerDirection.in_;
       case 'subtract':
-        if (qty == 0) return;
+        if (qty == 0) return 'Quantity must be greater than zero.';
         adjustedQty = qty;
         newQty = currentQty - qty;
         direction = LedgerDirection.out;
       default:
-        return;
+        return 'Invalid adjustment mode.';
     }
 
-    if (newQty < 0) return;
+    if (newQty < 0) return 'Quantity cannot be below zero.';
     final adjId = const Uuid().v4();
     final adjData = {
       'id': adjId,
       'factory_id': factoryId,
       'user_id': user?.id,
       'part_id': partId,
+      'batch_number': batchNumber,
       'stage': stage.value,
       'previous_qty': currentQty,
       'adjusted_qty':
@@ -387,15 +465,17 @@ class _PartStockCard extends ConsumerWidget {
           triggerSync: false,
         );
       });
-    } on StockPostingFailure {
-      return;
+    } on StockPostingFailure catch (error) {
+      return error.message;
     } catch (_) {
-      return;
+      return 'Could not save the adjustment. No stock was changed.';
     }
     await sync.schedulePendingSync();
 
     ref.invalidate(_stockOverviewProvider);
     ref.invalidate(_adjustmentHistoryProvider);
+    ref.invalidate(approvedDispatchBatchesProvider);
+    return null;
   }
 
   String _fmt(double v) =>
@@ -457,7 +537,8 @@ class _AdjustmentTile extends StatelessWidget {
         ),
       ),
       title: Text(
-        '${item['part_name'] ?? item['part_id']} · ${stage.label}',
+        '${item['part_name'] ?? item['part_id']} · ${stage.label}'
+        '${item['batch_number'] == null ? '' : ' · ${item['batch_number']}'}',
         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
       ),
       subtitle: Column(

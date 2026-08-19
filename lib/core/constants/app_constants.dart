@@ -47,12 +47,15 @@ class AppConstants {
   static const int syncRetryMaxAttempts = 5;
   static const Duration syncRetryBaseDelay = Duration(seconds: 2);
 
-  /// Batch format: {PartCode}-{YYYYMMDD}-{MachineSeq}-{Sequence}
+  /// Batch format: {PartCode}-{YYMMDD}-{Sequence}; e.g. BRK-260819-001.
   static String batchNumberPattern(
-      String partCode, DateTime date, String machineSeq, int sequence,) {
-    final dateStr = '${date.year}'
+    String partCode,
+    DateTime date,
+    int sequence,
+  ) {
+    final dateStr = '${(date.year % 100).toString().padLeft(2, '0')}'
         '${date.month.toString().padLeft(2, '0')}'
         '${date.day.toString().padLeft(2, '0')}';
-    return '$partCode-$dateStr-$machineSeq-${sequence.toString().padLeft(3, '0')}';
+    return '$partCode-$dateStr-${sequence.toString().padLeft(3, '0')}';
   }
 }

@@ -96,19 +96,19 @@ class ProductionRepository {
   Future<String> _generateBatchNumber({
     required String partCode,
     required DateTime date,
-    required String machineCode,
     required String factoryId,
   }) async {
-    final dateStr =
-        '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
-    final prefix = '$partCode-$dateStr-$machineCode';
+    final dateStr = '${(date.year % 100).toString().padLeft(2, '0')}'
+        '${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
+    final prefix = '$partCode-$dateStr';
     final existing = _db.db.select(
-      'SELECT COUNT(*) as cnt FROM productions '
+      'SELECT COUNT(DISTINCT batch_number) as cnt FROM productions '
       'WHERE factory_id = ? AND batch_number LIKE ?',
       [factoryId, '$prefix%'],
     );
     final seq = (existing.first['cnt'] as int) + 1;
-    return '$prefix-${seq.toString().padLeft(3, '0')}';
+    return AppConstants.batchNumberPattern(partCode, date, seq);
   }
 
   /// Get good qty of the last completed machine for a batch.
@@ -286,7 +286,6 @@ class ProductionRepository {
         await _generateBatchNumber(
           partCode: partCode,
           date: now,
-          machineCode: entries.first.machineCode,
           factoryId: factoryId,
         );
 

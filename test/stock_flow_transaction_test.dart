@@ -1,14 +1,17 @@
 import 'package:factoryflow/core/constants/stock_stages.dart';
+import 'package:factoryflow/core/constants/app_constants.dart';
 import 'package:factoryflow/core/constants/user_roles.dart';
 import 'package:factoryflow/core/database/database_service_native.dart';
 import 'package:factoryflow/core/network/sync_service.dart';
 import 'package:factoryflow/core/services/alert_producer_service.dart';
 import 'package:factoryflow/core/services/stock_ledger_service.dart';
 import 'package:factoryflow/features/ap_inspection/ap_inspection_providers.dart';
+import 'package:factoryflow/features/dispatch_faco/dispatch_faco_providers.dart';
 import 'package:factoryflow/features/final_dispatch/final_dispatch_providers.dart';
 import 'package:factoryflow/features/material_receive/material_receive_providers.dart';
 import 'package:factoryflow/features/receive_faco/receive_faco_providers.dart';
 import 'package:factoryflow/features/rtv/rtv_providers.dart';
+import 'package:factoryflow/core/providers/production_flow_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -53,6 +56,13 @@ void main() {
     );
     expect(result.success, isTrue);
   }
+
+  test('new batch codes stay short and date-readable', () {
+    expect(
+      AppConstants.batchNumberPattern('BRK', DateTime.utc(2026, 8, 19), 1),
+      'BRK-260819-001',
+    );
+  });
 
   test('material receipt rolls back event ledger and queues together',
       () async {
@@ -630,5 +640,131 @@ void main() {
           .single['batch_number'],
       'BATCH-A',
     );
+  });
+
+  test('batch-linked AP stock adjustment reconciles final dispatch availability',
+      () async {
+    await databaseService.insertRecord('parts', {
+      'id': 'part-a',
+      'factory_id': 'factory-a',
+      'code': 'A',
+      'name': 'Part A',
+      'active': 1,
+    });
+    await seedStock(
+      id: 'approved-seed',
+      partId: 'part-a',
+      stage: StockStage.approvedAp,
+      qty: 85,
+    );
+    await databaseService.insertRecord('ap_inspections', {
+      'id': 'ap-approved-a',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-A',
+      'date': '2026-07-30',
+      'part_id': 'part-a',
+      'qty_checked': 100,
+      'approved_qty': 100,
+      'rejected_qty': 0,
+      'rtv_qty': 0,
+      'sync_status': 'synced',
+    });
+    await databaseService.insertStockAdjustment({
+      'id': 'ap-reconciliation-a',
+      'factory_id': 'factory-a',
+      'user_id': 'user-a',
+      'part_id': 'part-a',
+      'batch_number': 'BATCH-A',
+      'stage': StockStage.approvedAp.value,
+      'previous_qty': 100,
+      'adjusted_qty': -15,
+      'new_qty': 85,
+      'remarks': 'Physical count reconciliation',
+      'created_at': '2026-07-30T10:00:00.000Z',
+      'sync_status': 'synced',
+    });
+    final repository = FinalDispatchRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+      alertProducerService,
+    );
+
+    final available = await repository.getApprovedBatches();
+    expect(available.single['batch_number'], 'BATCH-A');
+    expect(available.single['balance'], 85);
+
+    final blocked = await repository.saveDispatchSession(
+      customerId: 'customer-a',
+      items: const [
+        DispatchItemInput(
+          batchNumber: 'BATCH-A',
+          partId: 'part-a',
+          partCode: 'A',
+          qty: 86,
+        ),
+      ],
+      createdBy: 'user-a',
+    );
+    expect(blocked.success, isFalse);
+    expect(blocked.error, contains('exceeds batch AP OK stock (85 PCS)'));
+
+    final saved = await repository.saveDispatchSession(
+      customerId: 'customer-a',
+      items: const [
+        DispatchItemInput(
+          batchNumber: 'BATCH-A',
+          partId: 'part-a',
+          partCode: 'A',
+          qty: 85,
+        ),
+      ],
+      createdBy: 'user-a',
+    );
+    expect(saved.success, isTrue);
+  });
+
+  test('Faco dispatch rejects a batch linked to another part', () async {
+    await seedStock(
+      id: 'bp-seed',
+      partId: 'part-a',
+      stage: StockStage.bpStock,
+      qty: 100,
+    );
+    await databaseService.insertRecord('productions', {
+      'id': 'production-b',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-B',
+      'part_id': 'part-b',
+      'machine_id': 'machine-b',
+      'good_qty': 100,
+      'production_qty': 100,
+      'date': '2026-07-30',
+      'time': '08:00',
+      'sync_status': 'synced',
+    });
+    final repository = DispatchFacoRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+      const ProductionFlowConfig(),
+    );
+
+    final result = await repository.saveMulti(
+      items: const [
+        DispatchFacoLineItem(
+          partId: 'part-a',
+          partCode: 'A',
+          partName: 'Part A',
+          batchNumber: 'BATCH-B',
+          qty: 5,
+        ),
+      ],
+      vendorId: 'vendor-a',
+      createdBy: 'user-a',
+    );
+
+    expect(result.success, isFalse);
+    expect(result.error, contains('does not belong to this part'));
   });
 }

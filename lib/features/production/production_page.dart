@@ -214,8 +214,8 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       final finalGoodQty = _sessionEntries.last.goodQty.toInt();
 
       final msg = isWip
-          ? '⏳ Production saved as WIP Batch (${result.batchNumber}). Raw material is held in WIP stock until final machine completion.'
-          : '✅ Production Batch Complete (${result.batchNumber})! $finalGoodQty PCS moved to BP (Vendor) Stock.';
+          ? 'Saved as WIP. Continue this batch at the next machine.'
+          : 'Batch complete. $finalGoodQty PCS is ready for BP / Faco.';
 
       setState(() {
         _success = msg;
@@ -779,7 +779,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Continuing WIP Batch: $_wipBatchNumber',
+                          'Continue: $_wipBatchNumber',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.amber.shade900,
@@ -1203,7 +1203,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Saved Batch Number:',
+                              'Batch code',
                               style: TextStyle(
                                   fontSize: 11, fontWeight: FontWeight.w600,),
                             ),

@@ -32,7 +32,7 @@ class DatabaseService {
   bool _initialized = false;
   bool _transactionInProgress = false;
 
-  static const int _currentSchemaVersion = 2;
+  static const int _currentSchemaVersion = 3;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -69,6 +69,9 @@ class DatabaseService {
     if (current < 2) {
       // Already handled by _applyCompatibilityMigrations — just stamp version
       _setSchemaVersion(2);
+    }
+    if (current < 3) {
+      _setSchemaVersion(3);
     }
   }
 
@@ -306,6 +309,7 @@ class DatabaseService {
         factory_id TEXT,
         user_id TEXT,
         part_id TEXT,
+        batch_number TEXT,
         stage TEXT,
         previous_qty REAL,
         adjusted_qty REAL,
@@ -667,6 +671,17 @@ class DatabaseService {
     if (!correctionNames.contains('review_remarks')) {
       db.execute('ALTER TABLE correction_requests ADD COLUMN review_remarks TEXT');
     }
+
+    final adjustmentCols = db.select('PRAGMA table_info(stock_adjustments)');
+    final adjustmentNames =
+        adjustmentCols.map((row) => row['name'] as String).toSet();
+    if (!adjustmentNames.contains('batch_number')) {
+      db.execute('ALTER TABLE stock_adjustments ADD COLUMN batch_number TEXT');
+    }
+    db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_stock_adj_batch '
+      'ON stock_adjustments(factory_id, part_id, stage, batch_number)',
+    );
 
     // Ensure new tables exist on older installs that pre-date this migration.
     db.execute(

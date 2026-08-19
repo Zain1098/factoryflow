@@ -335,8 +335,8 @@ class _BatchTraceabilityTile extends StatelessWidget {
     return Card(
       child: SwitchListTile.adaptive(
         contentPadding: const EdgeInsets.fromLTRB(16, 7, 10, 7),
-        title: Text('Show saved batch code', style: theme.textTheme.titleSmall),
-        subtitle: const Text('Display it after a Production entry is saved'),
+        title: Text('Show batch code after save', style: theme.textTheme.titleSmall),
+        subtitle: const Text('New code: PART-YYMMDD-001'),
         value: showSavedBatchNumber,
         onChanged: onShowSavedBatchNumberChanged,
         secondary: Row(
@@ -377,9 +377,10 @@ void _showBatchTraceabilityInfo(BuildContext context) =>
             Text('Batch traceability',
                 style: Theme.of(sheetContext).textTheme.titleLarge,),
             const SizedBox(height: 8),
-            const Text(
-              'Production creates the original batch. BP, FACO, AP, RTV and dispatch retain the same linked batch. This switch only controls whether the saved code is shown after a Production entry; it never disables batch creation or source checks.',
-            ),
+            const Text('A batch is created only in Production.\n'
+                'BP, Faco, AP, RTV and Dispatch select that same batch.\n\n'
+                'Example: BRK-260819-001\n'
+                'BRK = part, 260819 = date, 001 = daily sequence.'),
           ],
         ),
       ),
@@ -1488,9 +1489,9 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
                     TextField(
                       controller: codeCtrl,
                       decoration: const InputDecoration(
-                        labelText: 'Batch Code Letter',
+                        labelText: 'Machine Short Code',
                         hintText: 'e.g. B',
-                        helperText: 'Used in batch number generation',
+                        helperText: 'Internal machine identifier',
                       ),
                       textCapitalization: TextCapitalization.characters,
                     ),
@@ -2736,7 +2737,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                                             updated.insert(index - 1, moved);
                                             ref
                                                 .read(productionFlowProvider
-                                                    .notifier)
+                                                    .notifier,)
                                                 .setRequiredMachines(updated);
                                           },
                                   ),
@@ -2755,7 +2756,7 @@ class _ProductionFlowPage extends ConsumerWidget {
                                             updated.insert(index + 1, moved);
                                             ref
                                                 .read(productionFlowProvider
-                                                    .notifier)
+                                                    .notifier,)
                                                 .setRequiredMachines(updated);
                                           },
                                   ),

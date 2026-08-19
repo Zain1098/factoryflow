@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/constants/stock_stages.dart';
+import '../../core/providers/production_flow_provider.dart';
 import '../../core/services/stock_ledger_service.dart';
 
 import '../../core/providers/master_data_providers.dart';
@@ -29,11 +30,12 @@ final bpRejectReasonsListProvider = FutureProvider<List<String>>((ref) async {
 });
 
 class BpInspectionRepository {
-  BpInspectionRepository(this._db, this._sync, this._ledger);
+  BpInspectionRepository(this._db, this._sync, this._ledger, [this._flow]);
 
   final DatabaseService _db;
   final SyncService _sync;
   final StockLedgerService _ledger;
+  final ProductionFlowConfig? _flow;
 
   Future<BpInspectionResult> save({
     required String batchNumber,
@@ -86,6 +88,13 @@ class BpInspectionRepository {
         error: 'Original Production batch is required.',
       );
     }
+    if (_flow?.isMultiStage == true &&
+        machineId != _flow!.requiredMachineIds.last) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'Complete the final production machine before BP inspection.',
+      );
+    }
     final productionMatch = _db.db.select(
       'SELECT id FROM productions '
       'WHERE factory_id = ? AND batch_number = ? '
@@ -97,6 +106,35 @@ class BpInspectionRepository {
         success: false,
         error:
             'Selected batch, part, and machine do not match a Production entry.',
+      );
+    }
+
+    final batchRows = _db.db.select(
+      '''SELECT COALESCE((
+           SELECT SUM(good_qty) FROM productions
+           WHERE factory_id = ? AND batch_number = ?
+             AND part_id = ? AND machine_id = ?
+         ), 0) - COALESCE((
+           SELECT SUM(inspected_qty) FROM bp_inspections
+           WHERE factory_id = ? AND batch_number = ? AND part_id = ?
+         ), 0) AS available_qty''',
+      [
+        factoryId,
+        batchNumber,
+        partId,
+        machineId,
+        factoryId,
+        batchNumber,
+        partId,
+      ],
+    );
+    final batchAvailable =
+        (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
+    if (inspectedQty > batchAvailable) {
+      return BpInspectionResult(
+        success: false,
+        error:
+            'Inspection qty (${inspectedQty.toInt()}) exceeds this batch balance (${batchAvailable.toInt()} PCS).',
       );
     }
 
@@ -188,6 +226,8 @@ class BpInspectionRepository {
   Future<List<Map<String, dynamic>>> getRecentBatches() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
+    final finalMachineId =
+        _flow?.isMultiStage == true ? _flow!.requiredMachineIds.last : null;
     final rows = _db.db.select(
       '''SELECT pr.batch_number, pr.part_id, pr.machine_id,
                 p.code AS part_code, p.name AS part_name,
@@ -196,6 +236,7 @@ class BpInspectionRepository {
          LEFT JOIN parts p ON p.id = pr.part_id AND p.factory_id = pr.factory_id
          LEFT JOIN machines m ON m.id = pr.machine_id AND m.factory_id = pr.factory_id
          WHERE pr.factory_id = ?
+           AND (? IS NULL OR pr.machine_id = ?)
            AND pr.created_at = (
              SELECT MAX(latest.created_at) FROM productions latest
              WHERE latest.factory_id = pr.factory_id
@@ -203,7 +244,7 @@ class BpInspectionRepository {
                AND latest.part_id = pr.part_id
            )
          ORDER BY pr.created_at DESC LIMIT 30''',
-      [factoryId],
+      [factoryId, finalMachineId, finalMachineId],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
@@ -233,6 +274,7 @@ final bpInspectionRepositoryProvider = Provider<BpInspectionRepository>((ref) {
     ref.watch(databaseServiceProvider),
     ref.watch(syncServiceProvider),
     ref.watch(stockLedgerServiceProvider),
+    ref.watch(productionFlowProvider),
   );
 });
 
