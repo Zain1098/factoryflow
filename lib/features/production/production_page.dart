@@ -1483,6 +1483,35 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 firstUnusedMachineId)
             : (nextSessionMachineId ?? firstUnusedMachineId));
 
+    // Carry the previous stage's operator forward as a suggestion. The user
+    // can always choose someone else; this simply removes repeated taps for
+    // one person running consecutive machines.
+    Map<String, dynamic>? previousStageOperator(String machineId) {
+      if (!flow.isMultiStage) return null;
+      final sequenceIndex = flow.getMachineSequenceIndex(machineId);
+      if (sequenceIndex <= 1) return null;
+      final previousMachineId = flow.requiredMachineIds[sequenceIndex - 2];
+      MachineEntry? previousEntry;
+      for (final entry in _sessionEntries.reversed) {
+        if (entry.machineId == previousMachineId) {
+          previousEntry = entry;
+          break;
+        }
+      }
+      if (previousEntry == null) return null;
+      for (final operator in operators) {
+        if (operator['id'] == previousEntry.operatorId) return operator;
+      }
+      return null;
+    }
+
+    final suggestedOperator =
+        existingEntry == null ? previousStageOperator(localMachineId) : null;
+    if (suggestedOperator != null) {
+      localOperatorId = suggestedOperator['id'] as String;
+      localOperatorName = suggestedOperator['name'] as String;
+    }
+
     // Calculate maximum allowed production qty based on previous stage
     double? maxAllowedProdQty;
     if (_wipLastGoodQty != null) {
@@ -1507,11 +1536,11 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       }
     }
 
+    // Availability is only a limit; actual output must always be entered by
+    // the user because a machine can produce less than available material.
     final initialProductionQty = existingEntry != null
         ? existingEntry.productionQty.toInt().toString()
-        : (maxAllowedProdQty != null
-            ? maxAllowedProdQty.toInt().toString()
-            : '');
+        : '';
     final initialRejectQty = existingEntry != null
         ? existingEntry.rejectQty.toInt().toString()
         : '0';
@@ -1718,7 +1747,16 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                               selected: isSelected,
                               onSelected: (selected) {
                                 if (selected) {
-                                  setModalState(() => localMachineId = mId);
+                                  setModalState(() {
+                                    localMachineId = mId;
+                                    if (existingEntry == null) {
+                                      final suggested = previousStageOperator(mId);
+                                      if (suggested != null) {
+                                        localOperatorId = suggested['id'] as String;
+                                        localOperatorName = suggested['name'] as String;
+                                      }
+                                    }
+                                  });
                                 }
                               },
                             );

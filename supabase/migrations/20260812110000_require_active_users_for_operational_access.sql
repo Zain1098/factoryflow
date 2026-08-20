@@ -22,12 +22,23 @@ $$;
 
 -- The original atomic production function checked membership directly. Keep
 -- its implementation intact, but place an active-account check in front of it
--- and remove all direct client execution of the legacy implementation.
-ALTER FUNCTION public.post_production_stage(jsonb)
-  RENAME TO post_production_stage_active_checked_impl;
+-- and remove all direct client execution of the legacy implementation. The
+-- guard is idempotent because an older project may already have the protected
+-- implementation function after a partial/manual deployment.
+DO $$
+BEGIN
+  IF to_regprocedure('public.post_production_stage_active_checked_impl(jsonb)') IS NULL THEN
+    IF to_regprocedure('public.post_production_stage(jsonb)') IS NULL THEN
+      RAISE EXCEPTION 'post_production_stage(jsonb) is missing';
+    END IF;
+    ALTER FUNCTION public.post_production_stage(jsonb)
+      RENAME TO post_production_stage_active_checked_impl;
+  END IF;
+END;
+$$;
 REVOKE ALL ON FUNCTION public.post_production_stage_active_checked_impl(jsonb)
   FROM PUBLIC, anon, authenticated;
-CREATE FUNCTION public.post_production_stage(p_command jsonb)
+CREATE OR REPLACE FUNCTION public.post_production_stage(p_command jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
   IF auth.uid() IS NULL OR NOT EXISTS (

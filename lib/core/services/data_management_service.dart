@@ -53,6 +53,11 @@ class DataManagementService {
     'rtv_reinspections',
     'purchase_orders',
     'correction_requests',
+    'dispatch_sessions',
+    'dispatch_items',
+    'ap_rejected_actions',
+    'physical_counts',
+    'stock_adjustments',
   ];
 
   /// Silently backs up [table] to backup_records, then erases it.
@@ -93,7 +98,16 @@ class DataManagementService {
         _db.eraseTableForFactory(table, factoryId);
       }
       _db.eraseQueuedChangesForFactory(factoryId, _allTransactionTables);
+      // Keep a single reset command queued while offline. This prevents a
+      // later hydration from restoring the cloud rows we just erased locally.
+      await _db.enqueueSync(
+        tableName: 'workspace_transaction_reset',
+        recordId: factoryId,
+        operation: 'workspace_transaction_reset',
+        payload: {'factory_id': factoryId, 'requested_by': userId},
+      );
     });
+    await _sync.schedulePendingSync();
     await _pushBackupsToSupabase(userId: userId, factoryId: factoryId);
   }
 

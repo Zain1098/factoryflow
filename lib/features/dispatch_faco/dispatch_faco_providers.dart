@@ -340,7 +340,19 @@ class DispatchFacoRepository {
          ORDER BY date DESC LIMIT 30''',
       [finalMachineId, finalMachineId, factoryId],
     );
-    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final batches = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final partTotals = <String, double>{};
+    for (final batch in batches) {
+      final partId = batch['part_id'] as String;
+      partTotals[partId] = (partTotals[partId] ?? 0) +
+          ((batch['available_qty'] as num?)?.toDouble() ?? 0);
+    }
+    return batches
+        .map((batch) => {
+              ...batch,
+              'part_available_qty': partTotals[batch['part_id']] ?? 0,
+            })
+        .toList();
   }
 }
 

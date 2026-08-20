@@ -158,8 +158,20 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getActiveCustomers() async =>
       List<Map<String, dynamic>>.from(_tables['customers'] ?? []);
 
-  Future<List<Map<String, dynamic>>> getActiveOperators() async =>
-      List<Map<String, dynamic>>.from(_tables['operators'] ?? []);
+  Future<List<Map<String, dynamic>>> getActiveOperators() async {
+    final operators = List<Map<String, dynamic>>.from(_tables['operators'] ?? [])
+        .where((operator) =>
+            operator['factory_id'] == activeWorkspaceId && operator['active'] != 0)
+        .toList();
+    operators.sort((a, b) {
+      final order = (a['sort_order'] as num? ?? 0)
+          .compareTo(b['sort_order'] as num? ?? 0);
+      return order != 0
+          ? order
+          : (a['name']?.toString() ?? '').compareTo(b['name']?.toString() ?? '');
+    });
+    return operators;
+  }
 
   Future<List<Map<String, dynamic>>> getVehicles() async =>
       List<Map<String, dynamic>>.from(_tables['vehicles'] ?? []);

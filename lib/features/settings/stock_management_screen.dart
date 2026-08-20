@@ -12,7 +12,7 @@ import '../final_dispatch/final_dispatch_providers.dart';
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final _stockOverviewProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final parts = await db.getActiveParts();
   final result = <Map<String, dynamic>>[];
@@ -28,7 +28,7 @@ final _stockOverviewProvider =
 });
 
 final _adjustmentHistoryProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
   return ref.watch(databaseServiceProvider).getStockAdjustments();
 });
 

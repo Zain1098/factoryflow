@@ -19,6 +19,7 @@ class _FacoLine {
     required this.partCode,
     required this.partName,
     required this.availableQty,
+    required this.partAvailableQty,
     required this.batchNumber,
   });
 
@@ -26,6 +27,7 @@ class _FacoLine {
   final String partCode;
   final String partName;
   final double availableQty;
+  final double partAvailableQty;
   final String batchNumber;
   final qtyCtrl = TextEditingController();
 
@@ -79,6 +81,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           partCode: stock['part_code'] as String? ?? '',
           partName: stock['part_name'] as String? ?? '',
           availableQty: (stock['available_qty'] as num?)?.toDouble() ?? 0,
+          partAvailableQty:
+              (stock['part_available_qty'] as num?)?.toDouble() ?? 0,
           batchNumber: batchNumber,
         ),
       );
@@ -313,8 +317,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       (batch) => DropdownMenuItem(
                         value: '${batch['batch_number']}|${batch['part_id']}',
                         child: Text(
-                          '${batch['batch_number']} | ${batch['part_code']} - '
-                          '${batch['part_name']} | ${(batch['available_qty'] as num).toInt()} PCS',
+                          '${batch['part_code']} | Total ${(batch['part_available_qty'] as num).toInt()} PCS '
+                          '• ${batch['batch_number']} has ${(batch['available_qty'] as num).toInt()} left',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -354,7 +358,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       ],
                     ),
                     Text(
-                      'Batch: ${item.batchNumber} | Available: ${item.availableQty.toInt()} PCS',
+                      'Total ready for this part: ${item.partAvailableQty.toInt()} PCS\n'
+                      'This batch (${item.batchNumber}): ${item.availableQty.toInt()} PCS',
                       style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),

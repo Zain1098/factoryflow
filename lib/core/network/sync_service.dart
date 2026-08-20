@@ -254,7 +254,17 @@ class SyncService {
             }
           }
 
-          if (operation == 'insert') {
+          if (operation == 'workspace_transaction_reset') {
+            final result = await client.rpc(
+              'erase_workspace_transaction_data',
+              params: {'p_factory_id': payload['factory_id']},
+            ).timeout(const Duration(seconds: 20));
+            if (result is Map && result['success'] == false) {
+              throw StateError(
+                result['error']?.toString() ?? 'Workspace reset was rejected.',
+              );
+            }
+          } else if (operation == 'insert') {
             final rows = await client
                 .from(tableName)
                 .upsert(payload)
@@ -395,7 +405,7 @@ class SyncService {
 
           if (operation == 'production_post') {
             await _db.markProductionPostingSynced(recordId);
-          } else {
+          } else if (operation != 'workspace_transaction_reset') {
             await _db.markRecordSynced(tableName, recordId);
           }
           await _db.updateSyncStatus(id, 'synced', attempts: attempts);

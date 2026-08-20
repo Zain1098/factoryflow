@@ -32,7 +32,7 @@ class DatabaseService {
   bool _initialized = false;
   bool _transactionInProgress = false;
 
-  static const int _currentSchemaVersion = 3;
+  static const int _currentSchemaVersion = 4;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -72,6 +72,9 @@ class DatabaseService {
     }
     if (current < 3) {
       _setSchemaVersion(3);
+    }
+    if (current < 4) {
+      _setSchemaVersion(4);
     }
   }
 
@@ -142,7 +145,8 @@ class DatabaseService {
         id TEXT PRIMARY KEY, factory_id TEXT, name TEXT,
         is_default INTEGER DEFAULT 0, active INTEGER DEFAULT 1)''',
       '''CREATE TABLE IF NOT EXISTS operators (
-        id TEXT PRIMARY KEY, factory_id TEXT, name TEXT, active INTEGER DEFAULT 1)''',
+        id TEXT PRIMARY KEY, factory_id TEXT, name TEXT,
+        sort_order INTEGER DEFAULT 0, active INTEGER DEFAULT 1)''',
       '''CREATE TABLE IF NOT EXISTS vehicles (
         id TEXT PRIMARY KEY, factory_id TEXT, number_plate TEXT, active INTEGER DEFAULT 1)''',
       '''CREATE TABLE IF NOT EXISTS drivers (
@@ -683,6 +687,16 @@ class DatabaseService {
       'ON stock_adjustments(factory_id, part_id, stage, batch_number)',
     );
 
+    final operatorCols = db.select('PRAGMA table_info(operators)');
+    final operatorNames =
+        operatorCols.map((row) => row['name'] as String).toSet();
+    if (!operatorNames.contains('sort_order')) {
+      db.execute('ALTER TABLE operators ADD COLUMN sort_order INTEGER DEFAULT 0');
+      db.execute(
+        'UPDATE operators SET sort_order = rowid WHERE sort_order IS NULL OR sort_order = 0',
+      );
+    }
+
     // Ensure new tables exist on older installs that pre-date this migration.
     db.execute(
       'CREATE TABLE IF NOT EXISTS shifts ('
@@ -1075,7 +1089,8 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getActiveOperators() async {
     final result = db.select(
-      'SELECT * FROM operators WHERE active = 1 AND factory_id = ? ORDER BY name',
+      'SELECT * FROM operators WHERE active = 1 AND factory_id = ? '
+      'ORDER BY sort_order ASC, name COLLATE NOCASE ASC',
       [activeWorkspaceId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();

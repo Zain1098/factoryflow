@@ -42,6 +42,26 @@ client privileges. Workspace suspension is included in the shared membership
 helpers so tenant-scoped policies using them no longer authorize suspended
 workspaces. Existing factory operational tables and ledger flows are unchanged.
 
+### Manual Supabase migration deployment
+
+GitHub Actions is not required. First authenticate once on your own machine:
+
+```powershell
+npx.cmd --yes supabase@2.111.0 login
+```
+
+Preview the linked project's migration state, then apply only after reviewing
+the preview. The script refuses to use `--include-all` or repair migration
+history automatically.
+
+```powershell
+.\tool\deploy_supabase_migrations.ps1
+.\tool\deploy_supabase_migrations.ps1 -Apply
+```
+
+If the CLI reports local/remote history drift, stop there and review the
+`supabase migration list --linked` output before any `migration repair`.
+
 ## Automated Android APK releases
 
 The app reads its installed Android build number and, after sign-in/access
@@ -83,13 +103,33 @@ Configure these in the repository that contains this workflow:
 - `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, and
   `ANDROID_STORE_PASSWORD` — Android signing material, never committed.
 
-### Run a release
+### Run a release manually
 
-GitHub → **Actions** → **Release Android APK** → **Run workflow**. Enter the
-version name, notes, minimum supported build number, and whether it is mandatory.
-The workflow sets `version_code` to GitHub's run number, builds `app-release.apk`,
-calculates SHA-256, replaces the fixed GitHub Release asset, then publishes the
-same metadata through the server-side Edge Function.
+GitHub Actions is optional. Build the signed APK locally (the script verifies
+the resulting file, size, timestamp, and SHA-256):
+
+```powershell
+.\tool\build_signed_apk.ps1 -VersionName 1.2.0 -BuildNumber 120
+```
+
+Upload `build\app\outputs\flutter-apk\app-release.apk` to the existing
+`factoryflow` GitHub Release, replacing `app-release.apk`. Then publish the
+same version, build number, SHA-256, notes, minimum supported build, and
+mandatory flag through the existing `publish-android-release` Edge Function.
+Do not lower the build number.
+
+For that final metadata step, set the publish token only in the current
+terminal session and run:
+
+```powershell
+$env:RELEASE_PUBLISH_TOKEN = 'your-token'
+.\tool\publish_android_release.ps1 `
+  -SupabaseUrl 'https://xejhgfyeichkibepgjii.supabase.co' `
+  -SupabaseAnonKey 'your-anon-key' `
+  -VersionName '1.2.0' -BuildNumber 120 `
+  -MinimumSupportedBuildNumber 120 `
+  -ReleaseNotes 'Production fixes'
+```
 
 ### Rollback
 

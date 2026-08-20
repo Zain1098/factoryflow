@@ -192,14 +192,27 @@ class MasterDataRepository {
 
   Future<String> insertOperator(String name) async {
     final id = _uuid.v4();
+    final existingOperators = await _db.getActiveOperators();
+    final nextOrder = existingOperators.fold<int>(
+      0,
+      (highest, operator) =>
+          ((operator['sort_order'] as num?)?.toInt() ?? 0) > highest
+              ? (operator['sort_order'] as num?)!.toInt()
+              : highest,
+    );
     final data = {
       'id': id,
       'factory_id': _factoryId,
       'name': name,
+      'sort_order': nextOrder + 1,
       'active': 1,
     };
     await _db.insertRecord('operators', data);
-    await _queueUpsert('operators', id, {'name': name, 'active': true});
+    await _queueUpsert(
+      'operators',
+      id,
+      {'name': name, 'sort_order': nextOrder + 1, 'active': true},
+    );
     _bump();
     return id;
   }
@@ -215,6 +228,19 @@ class MasterDataRepository {
 
   Future<void> deactivateOperator(String id) async {
     await _deactivate('operators', id);
+  }
+
+  Future<void> reorderOperators(List<String> orderedIds) async {
+    for (var index = 0; index < orderedIds.length; index++) {
+      final id = orderedIds[index];
+      final sortOrder = index + 1;
+      _db.db.execute(
+        'UPDATE operators SET sort_order = ? WHERE id = ? AND factory_id = ?',
+        [sortOrder, id, _factoryId],
+      );
+      await _queueUpdate('operators', id, {'sort_order': sortOrder});
+    }
+    _bump();
   }
 
   Future<String> insertSupplier(String name) async {

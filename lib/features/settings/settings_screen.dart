@@ -939,16 +939,31 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
               icon: Icons.people_outline,
             );
           }
-          return ListView.separated(
+          return ReorderableListView.builder(
+            padding: const EdgeInsets.only(bottom: 88),
             itemCount: list.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            onReorder: (oldIndex, newIndex) async {
+              if (newIndex > oldIndex) newIndex--;
+              final reordered = List<Map<String, dynamic>>.from(list);
+              final moved = reordered.removeAt(oldIndex);
+              reordered.insert(newIndex, moved);
+              await _runSettingsAction(
+                context,
+                () => ref.read(masterDataRepositoryProvider).reorderOperators(
+                      reordered.map((operator) => operator['id'] as String).toList(),
+                    ),
+                successMessage: 'Operator order updated.',
+              );
+            },
             itemBuilder: (context, i) {
               final op = list[i];
               return ListTile(
+                key: ValueKey(op['id'] as String),
                 leading: CircleAvatar(
                   child: Text((op['name'] as String)[0].toUpperCase()),
                 ),
                 title: Text(op['name'] as String),
+                subtitle: const Text('Hold and drag to set production order'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -964,6 +979,13 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
                       onPressed: () => _confirmDelete(
                         op['id'] as String,
                         op['name'] as String,
+                      ),
+                    ),
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.drag_handle),
                       ),
                     ),
                   ],
@@ -2868,10 +2890,15 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     );
     if (!confirmed) return;
     setState(() => _working = true);
+    final factoryId = ref.read(databaseServiceProvider).activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      setState(() => _working = false);
+      return;
+    }
     await ref.read(dataManagementServiceProvider).eraseSection(
           section: section,
           userId: user.id,
-          factoryId: user.factoryId,
+          factoryId: factoryId,
         );
     await _loadCounts();
     setState(() => _working = false);
@@ -2908,9 +2935,14 @@ class _EraseDataPageState extends ConsumerState<_EraseDataPage> {
     );
     if (!second) return;
     setState(() => _working = true);
+    final factoryId = ref.read(databaseServiceProvider).activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      setState(() => _working = false);
+      return;
+    }
     await ref.read(dataManagementServiceProvider).eraseAllTransactionData(
           userId: user.id,
-          factoryId: user.factoryId,
+          factoryId: factoryId,
         );
     await _loadCounts();
     setState(() => _working = false);
