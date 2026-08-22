@@ -155,7 +155,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
       if (result.success) {
         setState(
           () => _success =
-              'Dispatched ${_items.length} part(s) to FACO successfully!',
+              'Dispatched ${_items.length} part(s) to vendor successfully!',
         );
         ref.invalidate(dispatchFacoListProvider);
         ref.invalidate(bpReinspectedBatchesProvider);
@@ -251,7 +251,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dispatch to Faco'),
+        title: const Text('Dispatch to Vendor'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -285,7 +285,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           const SizedBox(height: 16),
           const SectionHeader('Parts to Dispatch'),
           const Text(
-            'Select which parts (and qty) are going to FACO from Own BP Stock. '
+            'Select which parts (and qty) are going to the vendor from Own BP Stock. '
             'BP inspection is optional — only needed when quality holds material.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
@@ -299,7 +299,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    'No finished production batch is available for Faco dispatch.',
+                    'No finished production batch is available for vendor dispatch.',
                     style: TextStyle(color: Colors.orange),
                   ),
                 );
@@ -498,7 +498,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
       data: (records) {
         if (records.isEmpty) {
           return const EmptyState(
-            message: 'No dispatches to Faco yet.',
+            message: 'No vendor dispatches yet.',
             icon: Icons.local_shipping_outlined,
           );
         }

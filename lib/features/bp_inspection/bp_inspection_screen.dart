@@ -13,6 +13,78 @@ class BpInspectionScreen extends ConsumerStatefulWidget {
   ConsumerState<BpInspectionScreen> createState() => _BpInspectionScreenState();
 }
 
+class _BpRejectedStockTab extends ConsumerWidget {
+  const _BpRejectedStockTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stock = ref.watch(bpRejectedStockProvider);
+    return stock.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => EmptyState(message: 'Error: $error', icon: Icons.error_outline),
+      data: (items) {
+        if (items.isEmpty) {
+          return const EmptyState(message: 'No BP rejected stock awaiting final decision.', icon: Icons.check_circle_outline);
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(12),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final qty = (item['qty'] as num).toDouble();
+            return Card(
+              child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.cancel_outlined)),
+                title: Text('${item['part_code']} – ${item['part_name']}'),
+                subtitle: const Text('Company stock until final rejection is confirmed'),
+                trailing: FilledButton.tonal(
+                  onPressed: () => _confirm(context, ref, item, qty),
+                  child: Text('Finalize ${qty.toInt()} PCS'),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirm(BuildContext context, WidgetRef ref, Map<String, dynamic> item, double qty) async {
+    final note = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm final BP rejection'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('${qty.toInt()} PCS will be removed from company BP rejected stock.'),
+          const SizedBox(height: 12),
+          TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'Reason / confirmation note *')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, note.text.trim().isNotEmpty), child: const Text('Confirm write-off')),
+        ],
+      ),
+    );
+    if (accepted != true) {
+      note.dispose();
+      return;
+    }
+    final user = ref.read(currentUserProvider).value;
+    final result = await ref.read(bpInspectionRepositoryProvider).finalizeRejected(
+      partId: item['part_id'] as String,
+      qty: qty,
+      createdBy: user?.id ?? 'unknown',
+      remarks: note.text,
+    );
+    note.dispose();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.success ? 'BP rejected stock finalized.' : (result.error ?? 'Unable to finalize rejection.'))));
+    if (result.success) ref.invalidate(bpRejectedStockProvider);
+  }
+}
+
 class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -32,7 +104,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -114,13 +186,14 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
           controller: _tabController,
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline), text: 'New Entry'),
+            Tab(icon: Icon(Icons.cancel_outlined), text: 'BP Rejected Stock'),
             Tab(icon: Icon(Icons.history), text: 'History'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [_buildForm(), _buildHistory()],
+        children: [_buildForm(), const _BpRejectedStockTab(), _buildHistory()],
       ),
     );
   }
@@ -229,7 +302,7 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
               padding: EdgeInsets.only(bottom: 8),
               child: Text(
                 'BP inspection is optional — use it when quality needs to hold '
-                'parts. Otherwise finished production can go straight to FACO dispatch.',
+                'parts. Otherwise finished production can go straight to Vendor dispatch.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ),

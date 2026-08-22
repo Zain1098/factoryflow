@@ -265,8 +265,19 @@ class StockLedgerService {
       if (!approvedResult.success) return approvedResult;
     }
 
-    // Final rejects are consumed by the Pending AP OUT above. They remain in
-    // immutable inspection history but must never appear as live inventory.
+    // Keep AP rejects in company stock until an authorized user confirms the
+    // final write-off.  A rejection is not automatically a disposal.
+    if (rejectedQty > 0) {
+      final rejectedResult = await _writeIn(
+        partId: partId,
+        stage: StockStage.apRejected,
+        qty: rejectedQty,
+        refTable: 'ap_inspections',
+        refId: refId,
+        triggerSync: triggerSync,
+      );
+      if (!rejectedResult.success) return rejectedResult;
+    }
 
     if (rtvQty > 0) {
       return _writeIn(
@@ -294,6 +305,23 @@ class StockLedgerService {
       stage: StockStage.apRejected,
       qty: qty,
       refTable: 'ap_rejected_actions',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
+  /// BP Rejected → final write-off after the company confirms disposal.
+  Future<StockLedgerResult> bpRejectedScrap({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) {
+    return _writeOut(
+      partId: partId,
+      stage: StockStage.bpRejected,
+      qty: qty,
+      refTable: 'bp_rejected_actions',
       refId: refId,
       triggerSync: triggerSync,
     );

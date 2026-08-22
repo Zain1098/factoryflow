@@ -244,7 +244,7 @@ void main() {
     expect(wrongBatch.error, contains('cannot be entered manually'));
   });
 
-  test('AP inspection keeps RTV as stock and final reject as history only',
+  test('AP inspection keeps RTV and AP rejected material as company stock',
       () async {
     await databaseService.insertRecord('receive_from_facos', {
       'id': 'faco-receive-a',
@@ -286,7 +286,7 @@ void main() {
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'ap_rejected'),
-      0,
+      20,
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),

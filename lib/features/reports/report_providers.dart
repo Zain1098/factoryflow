@@ -591,6 +591,8 @@ class LiveStockRow {
     required this.partCode,
     required this.rawMaterial,
     required this.bpStock,
+    required this.bpHold,
+    required this.bpRejected,
     required this.atFaco,
     required this.pendingAp,
     required this.approvedAp,
@@ -603,6 +605,8 @@ class LiveStockRow {
   final String partCode;
   final double rawMaterial;
   final double bpStock;
+  final double bpHold;
+  final double bpRejected;
   final double atFaco;
   final double pendingAp;
   final double approvedAp;
@@ -623,6 +627,8 @@ final liveStockReportProvider =
       p.id, p.name, p.code,
       COALESCE(MAX(CASE WHEN sl.stage='raw_material' THEN sl.running_balance END), 0) AS raw,
       COALESCE(MAX(CASE WHEN sl.stage='bp_stock' THEN sl.running_balance END), 0) AS bp,
+      COALESCE(MAX(CASE WHEN sl.stage='bp_hold' THEN sl.running_balance END), 0) AS bp_hold,
+      COALESCE(MAX(CASE WHEN sl.stage='bp_rejected' THEN sl.running_balance END), 0) AS bp_rejected,
       COALESCE(MAX(CASE WHEN sl.stage='at_faco' THEN sl.running_balance END), 0) AS faco,
       COALESCE(MAX(CASE WHEN sl.stage='pending_ap' THEN sl.running_balance END), 0) AS pap,
       COALESCE(MAX(CASE WHEN sl.stage='approved_ap' THEN sl.running_balance END), 0) AS aap,
@@ -646,6 +652,8 @@ final liveStockReportProvider =
   return rows.map((r) {
     final raw = (r['raw'] as num).toDouble();
     final bp = (r['bp'] as num).toDouble();
+    final bpHold = (r['bp_hold'] as num).toDouble();
+    final bpRejected = (r['bp_rejected'] as num).toDouble();
     final faco = (r['faco'] as num).toDouble();
     final pap = (r['pap'] as num).toDouble();
     final aap = (r['aap'] as num).toDouble();
@@ -657,12 +665,14 @@ final liveStockReportProvider =
       partCode: r['code'] as String? ?? '',
       rawMaterial: raw,
       bpStock: bp,
+      bpHold: bpHold,
+      bpRejected: bpRejected,
       atFaco: faco,
       pendingAp: pap,
       approvedAp: aap,
       apRejected: aprej,
       rtvStock: rtv,
-      totalStock: raw + bp + faco + pap + aap + aprej + rtv,
+      totalStock: raw + bp + bpHold + bpRejected + faco + pap + aap + aprej + rtv,
     );
   }).toList();
 });

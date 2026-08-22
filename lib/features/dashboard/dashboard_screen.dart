@@ -909,7 +909,7 @@ class DashboardScreen extends ConsumerWidget {
       'production_rejected': 'Prod reject',
       'bp_stock': 'BP',
       'bp_rejected': 'BP reject',
-      'at_faco': 'At Faco',
+      'at_faco': 'At Vendor',
       'pending_ap': 'Pending AP',
       'approved_ap': 'AP approved',
       'ap_rejected': 'AP reject',
@@ -965,7 +965,7 @@ class DashboardScreen extends ConsumerWidget {
         const Color(0xFFCF3030),
       ),
       _StockEntry(
-        'At Faco (Plating)',
+        'At Vendor',
         data.atFaco,
         Icons.local_shipping_outlined,
         const Color(0xFF6A1B9A),
@@ -1193,7 +1193,7 @@ class DashboardScreen extends ConsumerWidget {
             : 'Within acceptable range',
       ),
       _KpiEntry(
-        label: 'At Faco (Plating)',
+        label: 'At Vendor',
         value: '${_fmt(data.atFaco)} PCS',
         icon: Icons.local_shipping_outlined,
         color: data.atFaco > 500
@@ -1345,7 +1345,7 @@ class DashboardScreen extends ConsumerWidget {
         Color(0xFF2B4C7E),
       ),
       const _QuickAction(
-        'Dispatch Faco',
+        'Dispatch Vendor',
         Icons.local_shipping_outlined,
         '/dispatch-faco',
         Color(0xFFE09F3E),

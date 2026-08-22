@@ -136,7 +136,7 @@ class SyncService {
       'parts', 'machines', 'suppliers', 'vendors', 'customers', 'operators',
       'vehicles', 'drivers', 'shifts', 'bp_reject_reasons', 'ap_reject_reasons',
       'rtv_reasons', 'target_master', 'purchase_orders', 'material_receives',
-      'productions', 'machine_downtimes', 'bp_inspections', 'dispatch_to_facos',
+      'productions', 'machine_downtimes', 'bp_inspections', 'bp_rejected_actions', 'dispatch_to_facos',
       'receive_from_facos', 'ap_inspections', 'ap_rejected_actions', 'rtvs',
       'rtv_reinspections', 'final_dispatches', 'dispatch_sessions', 'dispatch_items',
       'stock_ledger', 'correction_requests', 'physical_counts', 'stock_adjustments',

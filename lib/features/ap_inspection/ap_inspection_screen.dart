@@ -190,7 +190,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           controller: _tabController,
           tabs: const [
             Tab(icon: Icon(Icons.add_circle_outline), text: 'New Entry'),
-            Tab(icon: Icon(Icons.history_outlined), text: 'Final Rejects'),
+            Tab(icon: Icon(Icons.history_outlined), text: 'AP Rejected Stock'),
             Tab(icon: Icon(Icons.history), text: 'History'),
           ],
         ),
@@ -511,7 +511,7 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: NumberFormField(
-                    label: 'Final Reject (no stock)',
+                    label: 'AP Rejected (final decision pending)',
                     controller: e.rejectedCtrl,
                     allowDecimal: false,
                     prefixIcon: const Icon(Icons.cancel_outlined, size: 18),
@@ -630,7 +630,7 @@ class _SplitChip extends StatelessWidget {
   }
 }
 
-// ─── AP Rejected Tab — record only, no actions ────────────────────────────────
+// ─── AP Rejected Tab ──────────────────────────────────────────────────────────
 
 class _ApRejectedTab extends ConsumerWidget {
   const _ApRejectedTab();
@@ -682,7 +682,7 @@ class _ApRejectedTab extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          'Will be scrapped via SAP system',
+                          'Company stock until you confirm final write-off or vendor return',
                           style: TextStyle(
                               fontSize: 12,
                               color: theme.colorScheme.onSurfaceVariant,),
@@ -717,14 +717,16 @@ class _ApRejectedTab extends ConsumerWidget {
                         '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      subtitle: const Text('Pending SAP scrap confirmation'),
-                      trailing: Text(
-                        '$qty PCS',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.red,
-                        ),
+                      subtitle: const Text('Pending final company decision'),
+                      trailing: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('$qty PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                          TextButton(
+                            onPressed: () => _confirmWriteOff(context, ref, item, qty),
+                            child: const Text('Finalize'),
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -735,5 +737,39 @@ class _ApRejectedTab extends ConsumerWidget {
         );
       },
     );
+  }
+
+  Future<void> _confirmWriteOff(BuildContext context, WidgetRef ref, Map<String, dynamic> item, double qty) async {
+    final note = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm final AP rejection'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('${qty.toInt()} PCS will be removed from AP rejected company stock.'),
+          const SizedBox(height: 12),
+          TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'Reason / confirmation note *')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, note.text.trim().isNotEmpty), child: const Text('Confirm write-off')),
+        ],
+      ),
+    );
+    if (accepted != true) {
+      note.dispose();
+      return;
+    }
+    final user = ref.read(currentUserProvider).value;
+    final result = await ref.read(apInspectionRepositoryProvider).scrapRejected(
+      partId: item['part_id'] as String,
+      qty: qty,
+      createdBy: user?.id ?? 'unknown',
+      remarks: note.text,
+    );
+    note.dispose();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.success ? 'AP rejected stock finalized.' : (result.error ?? 'Unable to finalize rejection.'))));
+    if (result.success) ref.invalidate(apRejectedStockProvider);
   }
 }

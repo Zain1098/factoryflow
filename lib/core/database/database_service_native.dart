@@ -227,6 +227,10 @@ class DatabaseService {
         bp_reject_qty REAL, reject_reason_id TEXT,
         inspector_id TEXT, photo_url TEXT, remarks TEXT,
         sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS bp_rejected_actions (
+        id TEXT PRIMARY KEY, factory_id TEXT, date TEXT,
+        part_id TEXT, qty REAL, action TEXT,
+        remarks TEXT, created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS dispatch_to_facos (
         id TEXT PRIMARY KEY, factory_id TEXT, batch_number TEXT, date TEXT, time TEXT,
         part_id TEXT, qty REAL, vendor_id TEXT, vehicle_id TEXT, driver_id TEXT,

@@ -65,7 +65,7 @@ class ApInspectionRepository {
       return ApInspectionResult(
         success: false,
         error:
-            'OK ($approvedQty) + RTV ($rtvQty) + Final Reject ($rejectedQty) must equal Checked ($qtyChecked)',
+            'OK ($approvedQty) + RTV hold ($rtvQty) + AP rejected ($rejectedQty) must equal Checked ($qtyChecked)',
       );
     }
     final batchRows = _db.db.select(
@@ -120,7 +120,7 @@ class ApInspectionRepository {
       'sync_status': 'pending',
     };
 
-    // Pending AP OUT → Approved AP IN + AP Rejected IN
+    // Pending AP OUT → AP OK, AP rejected, and RTV-hold stock.
     try {
       await _db.runInTransaction(() async {
         final ledgerResult = await _ledger.apInspectionSplit(

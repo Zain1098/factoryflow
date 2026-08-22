@@ -267,6 +267,56 @@ class BpInspectionRepository {
   Future<double> availableBpStock(String partId) {
     return _ledger.getAvailableStock(partId, StockStage.bpStock);
   }
+
+  Future<BpInspectionResult> finalizeRejected({
+    required String partId,
+    required double qty,
+    required String createdBy,
+    required String remarks,
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return const BpInspectionResult(success: false, error: 'No active factory workspace is selected.');
+    if (qty <= 0 || remarks.trim().isEmpty) return const BpInspectionResult(success: false, error: 'Quantity and final-rejection note are required.');
+    final id = _uuid.v4();
+    final now = DateTime.now();
+    final record = {
+      'id': id, 'factory_id': factoryId,
+      'date': '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      'part_id': partId, 'qty': qty, 'action': 'final_rejected',
+      'remarks': remarks.trim(), 'created_by': createdBy, 'sync_status': 'pending',
+    };
+    try {
+      await _db.runInTransaction(() async {
+        final ledgerResult = await _ledger.bpRejectedScrap(partId: partId, qty: qty, refId: id, triggerSync: false);
+        if (!ledgerResult.success) throw StockPostingFailure(ledgerResult.error ?? 'Unable to finalize BP rejected stock.');
+        await _db.insertRecord('bp_rejected_actions', record);
+        await _sync.queueInsert(tableName: 'bp_rejected_actions', recordId: id, payload: record, triggerSync: false);
+      });
+    } on StockPostingFailure catch (error) {
+      return BpInspectionResult(success: false, error: error.message);
+    } catch (_) {
+      return const BpInspectionResult(success: false, error: 'Final rejection could not be saved. No stock was changed.');
+    }
+    await _sync.schedulePendingSync();
+    return BpInspectionResult(success: true, recordId: id);
+  }
+
+  Future<List<Map<String, dynamic>>> getRejectedStock() async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
+    final rows = _db.db.select(
+      '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
+                sl.running_balance AS qty
+         FROM parts p INNER JOIN stock_ledger sl ON sl.factory_id = p.factory_id
+           AND sl.part_id = p.id AND sl.stage = 'bp_rejected'
+           AND sl.created_at = (SELECT MAX(created_at) FROM stock_ledger
+             WHERE factory_id = p.factory_id AND part_id = p.id AND stage = 'bp_rejected')
+         WHERE p.factory_id = ? AND p.active = 1 AND sl.running_balance > 0
+         ORDER BY p.name''',
+      [factoryId],
+    );
+    return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+  }
 }
 
 final bpInspectionRepositoryProvider = Provider<BpInspectionRepository>((ref) {
@@ -286,6 +336,10 @@ final bpInspectionListProvider =
 final recentBatchesProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(bpInspectionRepositoryProvider).getRecentBatches();
+});
+
+final bpRejectedStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+  return ref.watch(bpInspectionRepositoryProvider).getRejectedStock();
 });
 
 class BpInspectionResult {

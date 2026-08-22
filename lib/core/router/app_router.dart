@@ -302,14 +302,14 @@ class EntriesMenuScreen extends ConsumerWidget {
         'bp_inspection',
       ),
       const _EntryItem(
-        'Dispatch to Faco',
+        'Dispatch to Vendor',
         'Send to plating vendor',
         '/dispatch-faco',
         Icons.local_shipping,
         'dispatch_faco',
       ),
       const _EntryItem(
-        'Receive from Faco',
+        'Receive from Vendor',
         'Receive plated material',
         '/receive-faco',
         Icons.move_to_inbox,

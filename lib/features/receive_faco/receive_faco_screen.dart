@@ -100,7 +100,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
 
       if (result.success) {
         setState(() {
-          _success = 'Receive from Faco saved!';
+          _success = 'Receive from vendor saved!';
           _lastShortage = result.shortageFlag;
         });
         ref.invalidate(receiveFacoListProvider);
@@ -133,7 +133,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Receive from Faco'),
+        title: const Text('Receive from Vendor'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -166,7 +166,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
             ),
             const SizedBox(height: 16),
 
-            const SectionHeader('Select Faco Dispatch'),
+            const SectionHeader('Select Vendor Dispatch'),
 
             parts.when(
               loading: () => const LinearProgressIndicator(),
@@ -193,14 +193,14 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
             // A receipt must always be linked to the original Faco dispatch.
             if (_partId != null && _pendingDispatches.isEmpty) ...[
               const Text(
-                'No pending Faco dispatch is available for this part.',
+                'No pending vendor dispatch is available for this part.',
                 style: TextStyle(color: Colors.orange),
               ),
               const SizedBox(height: 12),
             ],
             if (_pendingDispatches.isNotEmpty) ...[
               AppDropdown<String>(
-                label: 'Faco Dispatch',
+                label: 'Vendor Dispatch',
                 isRequired: true,
                 prefixIcon: const Icon(Icons.link),
                 value: _dispatchRefId,
@@ -218,7 +218,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     .toList(),
                 onChanged: _onDispatchChanged,
                 validator: (value) => value == null
-                    ? 'Select the Faco dispatch being received'
+                    ? 'Select the vendor dispatch being received'
                     : null,
               ),
               const SizedBox(height: 12),
@@ -310,7 +310,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
       data: (records) {
         if (records.isEmpty) {
           return const EmptyState(
-            message: 'No receives from Faco yet.',
+            message: 'No vendor receipts yet.',
             icon: Icons.move_to_inbox_outlined,
           );
         }

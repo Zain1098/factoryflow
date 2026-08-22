@@ -79,10 +79,10 @@ class ReportsScreen extends ConsumerWidget {
           () => _push(context, const LiveStockReport()),
         ),
         _ReportTile(
-          'Faco Pending',
+          'Vendor Pending',
           Icons.pending_outlined,
           Colors.amber,
-          'Material still at Faco vendor',
+          'Material still with vendor',
           () => _push(context, const _FacoPendingReport()),
         ),
         _ReportTile(
@@ -1134,7 +1134,7 @@ class _FacoPendingReport extends ConsumerWidget {
       final data = async.value!;
       final totalPending = data.fold(0.0, (s, r) => s + r.pending);
       return _ReportPage(
-        title: 'Faco Pending Material',
+        title: 'Vendor Pending Material',
         color: Colors.amber,
         summaryCards: [
           _SummaryCard('Total Pending', _n(totalPending)),
@@ -1164,7 +1164,7 @@ class _FacoPendingReport extends ConsumerWidget {
               ],
             )
             .toList(),
-        emptyMessage: 'No pending material at Faco',
+        emptyMessage: 'No pending material at vendor',
       );
     });
   }
@@ -1197,7 +1197,9 @@ class LiveStockReport extends ConsumerWidget {
           'Part',
           'Raw',
           'BP',
-          'Faco',
+          'BP Hold',
+          'BP Rej',
+          'Vendor',
           'Pend AP',
           'Appr AP',
           'AP Rej',
@@ -1212,6 +1214,8 @@ class LiveStockReport extends ConsumerWidget {
                     : r.partName.substring(0, r.partName.length.clamp(0, 10)),
                 _n(r.rawMaterial),
                 _n(r.bpStock),
+                _n(r.bpHold),
+                _n(r.bpRejected),
                 _n(r.atFaco),
                 _n(r.pendingAp),
                 _n(r.approvedAp),
@@ -1303,7 +1307,7 @@ String _stageLabel(String stage) {
   const map = {
     'raw_material': 'Raw',
     'bp_stock': 'BP',
-    'at_faco': 'Faco',
+    'at_faco': 'Vendor',
     'pending_ap': 'Pend AP',
     'approved_ap': 'Appr AP',
     'rtv_stock': 'RTV',
@@ -1315,8 +1319,8 @@ String _tableLabel(String table) {
   const map = {
     'productions': 'Prod',
     'material_receives': 'MR',
-    'dispatch_to_facos': 'D→Faco',
-    'receive_from_facos': 'R←Faco',
+    'dispatch_to_facos': 'D→Vendor',
+    'receive_from_facos': 'R←Vendor',
     'ap_inspections': 'AP Insp',
     'bp_inspections': 'BP Insp',
     'rtvs': 'RTV',
