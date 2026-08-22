@@ -700,7 +700,7 @@ class _ApRejectedTab extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final item = items[i];
-                  final qty = (item['qty'] as num?)?.toInt() ?? 0;
+                  final qty = (item['qty'] as num?)?.toDouble() ?? 0;
                   return Card(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -721,7 +721,7 @@ class _ApRejectedTab extends ConsumerWidget {
                       trailing: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('$qty PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                          Text('${qty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
                           TextButton(
                             onPressed: () => _confirmWriteOff(context, ref, item, qty),
                             child: const Text('Finalize'),
@@ -749,7 +749,7 @@ class _ApRejectedTab extends ConsumerWidget {
           Text('${qty.toInt()} PCS will be removed from AP rejected company stock.'),
           const SizedBox(height: 12),
           TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'Reason / confirmation note *')),
-        ]),
+        ],),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(dialogContext, note.text.trim().isNotEmpty), child: const Text('Confirm write-off')),
