@@ -37,7 +37,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
               child: ListTile(
                 leading: const CircleAvatar(child: Icon(Icons.cancel_outlined)),
                 title: Text('${item['part_code']} – ${item['part_name']}'),
-                subtitle: const Text('Company stock until final rejection is confirmed'),
+                subtitle: Text('Batch ${item['batch_number']} · Company stock until final rejection is confirmed'),
                 trailing: FilledButton.tonal(
                   onPressed: () => _confirm(context, ref, item, qty),
                   child: Text('Finalize ${qty.toInt()} PCS'),
@@ -74,6 +74,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
     final user = ref.read(currentUserProvider).value;
     final result = await ref.read(bpInspectionRepositoryProvider).finalizeRejected(
       partId: item['part_id'] as String,
+      batchNumber: item['batch_number'] as String,
       qty: qty,
       createdBy: user?.id ?? 'unknown',
       remarks: note.text,

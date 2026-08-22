@@ -172,6 +172,7 @@ class ExportService {
       'Approved AP',
       'AP Rejected',
       'RTV Stock',
+      'RTV At Vendor',
       'Total Stock',
     ];
     final data = rows
@@ -187,6 +188,7 @@ class ExportService {
               _fmt(r.approvedAp),
               _fmt(r.apRejected),
               _fmt(r.rtvStock),
+              _fmt(r.rtvAtVendor),
               _fmt(r.totalStock),
             ],)
         .toList();
@@ -203,6 +205,7 @@ class ExportService {
       _fmt(rows.fold(0.0, (s, r) => s + r.approvedAp)),
       _fmt(rows.fold(0.0, (s, r) => s + r.apRejected)),
       _fmt(rows.fold(0.0, (s, r) => s + r.rtvStock)),
+      _fmt(rows.fold(0.0, (s, r) => s + r.rtvAtVendor)),
       _fmt(rows.fold(0.0, (s, r) => s + r.totalStock)),
     ];
 

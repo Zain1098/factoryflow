@@ -717,7 +717,7 @@ class _ApRejectedTab extends ConsumerWidget {
                         '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      subtitle: const Text('Pending final company decision'),
+                      subtitle: Text('Batch ${item['batch_number']} · Pending final company decision'),
                       trailing: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -763,6 +763,7 @@ class _ApRejectedTab extends ConsumerWidget {
     final user = ref.read(currentUserProvider).value;
     final result = await ref.read(apInspectionRepositoryProvider).scrapRejected(
       partId: item['part_id'] as String,
+      batchNumber: item['batch_number'] as String,
       qty: qty,
       createdBy: user?.id ?? 'unknown',
       remarks: note.text,

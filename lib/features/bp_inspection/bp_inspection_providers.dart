@@ -270,19 +270,20 @@ class BpInspectionRepository {
 
   Future<BpInspectionResult> finalizeRejected({
     required String partId,
+    required String batchNumber,
     required double qty,
     required String createdBy,
     required String remarks,
   }) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return const BpInspectionResult(success: false, error: 'No active factory workspace is selected.');
-    if (qty <= 0 || remarks.trim().isEmpty) return const BpInspectionResult(success: false, error: 'Quantity and final-rejection note are required.');
+    if (batchNumber.trim().isEmpty || qty <= 0 || remarks.trim().isEmpty) return const BpInspectionResult(success: false, error: 'Batch, quantity and final-rejection note are required.');
     final id = _uuid.v4();
     final now = DateTime.now();
     final record = {
       'id': id, 'factory_id': factoryId,
       'date': '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
-      'part_id': partId, 'qty': qty, 'action': 'final_rejected',
+      'part_id': partId, 'batch_number': batchNumber.trim(), 'qty': qty, 'action': 'final_rejected',
       'remarks': remarks.trim(), 'created_by': createdBy, 'sync_status': 'pending',
     };
     try {
@@ -306,13 +307,20 @@ class BpInspectionRepository {
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
       '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
-                sl.running_balance AS qty
-         FROM parts p INNER JOIN stock_ledger sl ON sl.factory_id = p.factory_id
-           AND sl.part_id = p.id AND sl.stage = 'bp_rejected'
-           AND sl.created_at = (SELECT MAX(created_at) FROM stock_ledger
-             WHERE factory_id = p.factory_id AND part_id = p.id AND stage = 'bp_rejected')
-         WHERE p.factory_id = ? AND p.active = 1 AND sl.running_balance > 0
-         ORDER BY p.name''',
+                bi.batch_number,
+                SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) AS qty
+         FROM bp_inspections bi
+         INNER JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
+         LEFT JOIN (
+           SELECT factory_id, part_id, batch_number, SUM(qty) AS actioned_qty
+           FROM bp_rejected_actions WHERE action = 'final_rejected'
+           GROUP BY factory_id, part_id, batch_number
+         ) actions ON actions.factory_id = bi.factory_id
+           AND actions.part_id = bi.part_id AND actions.batch_number = bi.batch_number
+         WHERE bi.factory_id = ? AND p.active = 1
+         GROUP BY bi.factory_id, bi.part_id, bi.batch_number, p.code, p.name, actions.actioned_qty
+         HAVING SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) > 0
+         ORDER BY bi.batch_number DESC, p.name''',
       [factoryId],
     );
     return rows.map((row) => Map<String, dynamic>.from(row)).toList();

@@ -369,6 +369,31 @@ class StockLedgerService {
     );
   }
 
+  /// Explicit RTV dispatch: hold stock leaves the factory only when the user
+  /// confirms this vendor-send action.
+  Future<StockLedgerResult> rtvSendToVendor({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) async {
+    final out = await rtvOut(
+      partId: partId,
+      qty: qty,
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+    if (!out.success) return out;
+    return _writeIn(
+      partId: partId,
+      stage: StockStage.rtvAtVendor,
+      qty: qty,
+      refTable: 'rtvs',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
   Future<StockLedgerResult> rtvReturnOk({
     required String partId,
     required double okQty,
@@ -405,7 +430,7 @@ class StockLedgerService {
 
     final outResult = await _writeOut(
       partId: partId,
-      stage: StockStage.rtvStock,
+      stage: StockStage.rtvAtVendor,
       qty: quantityReceived,
       refTable: 'rtv_reinspections',
       refId: refId,

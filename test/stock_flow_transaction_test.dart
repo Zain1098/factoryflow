@@ -290,6 +290,10 @@ void main() {
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
+      0,
+    );
+    expect(
+      await databaseService.getCurrentBalance('part-a', 'rtv_at_vendor'),
       10,
     );
   });
@@ -450,7 +454,11 @@ void main() {
     expect(returned.status, 'partially_received');
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
-      6,
+      2,
+    );
+    expect(
+      await databaseService.getCurrentBalance('part-a', 'rtv_at_vendor'),
+      4,
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'approved_ap'),

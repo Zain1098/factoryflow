@@ -1203,7 +1203,8 @@ class LiveStockReport extends ConsumerWidget {
           'Pend AP',
           'Appr AP',
           'AP Rej',
-          'RTV',
+          'RTV Hold',
+          'RTV Vendor',
           'Total',
         ],
         rows: filteredData
@@ -1221,6 +1222,7 @@ class LiveStockReport extends ConsumerWidget {
                 _n(r.approvedAp),
                 _n(r.apRejected),
                 _n(r.rtvStock),
+                _n(r.rtvAtVendor),
                 _n(r.totalStock),
               ],
             )

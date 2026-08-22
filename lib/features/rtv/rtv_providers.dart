@@ -158,9 +158,19 @@ class RtvRepository {
 
     try {
       await _db.runInTransaction(() async {
-        // AP inspection already moved this quantity into RTV outstanding
-        // stock. Creating the vendor cycle assigns it; it must not consume the
-        // same stock a second time.
+        // AP inspection creates company RTV Hold. This save is the explicit
+        // vendor-send action, so it posts the matching stock movement.
+        final ledgerResult = await _ledger.rtvSendToVendor(
+          partId: partId,
+          qty: rtvQty,
+          refId: id,
+          triggerSync: false,
+        );
+        if (!ledgerResult.success) {
+          throw StockPostingFailure(
+            ledgerResult.error ?? 'Unable to move RTV stock to vendor.',
+          );
+        }
         await _db.insertRecord('rtvs', record);
         await _sync.queueInsert(
           tableName: 'rtvs',

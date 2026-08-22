@@ -229,7 +229,7 @@ class DatabaseService {
         sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS bp_rejected_actions (
         id TEXT PRIMARY KEY, factory_id TEXT, date TEXT,
-        part_id TEXT, qty REAL, action TEXT,
+        part_id TEXT, batch_number TEXT, qty REAL, action TEXT,
         remarks TEXT, created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS dispatch_to_facos (
         id TEXT PRIMARY KEY, factory_id TEXT, batch_number TEXT, date TEXT, time TEXT,
@@ -249,7 +249,7 @@ class DatabaseService {
         sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS ap_rejected_actions (
         id TEXT PRIMARY KEY, factory_id TEXT, date TEXT,
-        part_id TEXT, qty REAL, action TEXT,
+        part_id TEXT, batch_number TEXT, qty REAL, action TEXT,
         vendor_id TEXT, remarks TEXT,
         created_by TEXT, sync_status TEXT DEFAULT 'pending')''',
       '''CREATE TABLE IF NOT EXISTS rtvs (
@@ -652,6 +652,19 @@ class DatabaseService {
     if (!apNames.contains('rtv_qty')) {
       db.execute(
           'ALTER TABLE ap_inspections ADD COLUMN rtv_qty REAL DEFAULT 0',);
+    }
+
+    for (final table in const ['bp_rejected_actions', 'ap_rejected_actions']) {
+      final names = db.select('PRAGMA table_info($table)')
+          .map((row) => row['name'] as String)
+          .toSet();
+      if (!names.contains('batch_number')) {
+        db.execute('ALTER TABLE $table ADD COLUMN batch_number TEXT');
+      }
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_${table}_batch '
+        'ON $table(factory_id, part_id, batch_number)',
+      );
     }
 
     final bpCols = db.select('PRAGMA table_info(bp_inspections)');

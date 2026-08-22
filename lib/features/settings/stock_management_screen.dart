@@ -236,7 +236,10 @@ class _PartStockCard extends ConsumerWidget {
                   DropdownButtonFormField<StockStage>(
                     initialValue: selectedStage,
                     decoration: const InputDecoration(labelText: 'Stage'),
-                    items: StockStage.values
+                    items: const [
+                      StockStage.rawMaterial,
+                      StockStage.approvedAp,
+                    ]
                         .map((s) =>
                             DropdownMenuItem(value: s, child: Text(s.label)),)
                         .toList(),

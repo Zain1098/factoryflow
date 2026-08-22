@@ -213,24 +213,26 @@ class ApInspectionRepository {
 
   // ── AP Rejected Stock ──────────────────────────────────────────────────────
 
-  /// Returns per-part AP rejected balances
+  /// Returns AP rejected balances by source batch.
   Future<List<Map<String, dynamic>>> getApRejectedStock() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
-      '''SELECT p.id as part_id, p.code as part_code, p.name as part_name,
-                COALESCE(sl.running_balance, 0) AS qty
-         FROM parts p
-         LEFT JOIN stock_ledger sl ON sl.factory_id = p.factory_id
-           AND sl.part_id = p.id AND sl.stage = 'ap_rejected'
-           AND sl.created_at = (
-             SELECT MAX(created_at) FROM stock_ledger
-             WHERE factory_id = p.factory_id
-               AND part_id = p.id AND stage = 'ap_rejected'
-           )
-         WHERE p.factory_id = ? AND p.active = 1
-           AND COALESCE(sl.running_balance, 0) > 0
-         ORDER BY p.name''',
+      '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
+                ai.batch_number,
+                SUM(ai.rejected_qty) - COALESCE(actions.actioned_qty, 0) AS qty
+         FROM ap_inspections ai
+         INNER JOIN parts p ON p.id = ai.part_id AND p.factory_id = ai.factory_id
+         LEFT JOIN (
+           SELECT factory_id, part_id, batch_number, SUM(qty) AS actioned_qty
+           FROM ap_rejected_actions WHERE action IN ('scrapped', 'sent_to_faco')
+           GROUP BY factory_id, part_id, batch_number
+         ) actions ON actions.factory_id = ai.factory_id
+           AND actions.part_id = ai.part_id AND actions.batch_number = ai.batch_number
+         WHERE ai.factory_id = ? AND p.active = 1
+         GROUP BY ai.factory_id, ai.part_id, ai.batch_number, p.code, p.name, actions.actioned_qty
+         HAVING SUM(ai.rejected_qty) - COALESCE(actions.actioned_qty, 0) > 0
+         ORDER BY ai.batch_number DESC, p.name''',
       [factoryId],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
@@ -267,12 +269,14 @@ class ApInspectionRepository {
   /// Scrap AP rejected qty (write off — mark done)
   Future<ApInspectionResult> scrapRejected({
     required String partId,
+    required String batchNumber,
     required double qty,
     required String createdBy,
     String? remarks,
   }) async {
     return _postRejectedAction(
       partId: partId,
+      batchNumber: batchNumber,
       qty: qty,
       action: 'scrapped',
       createdBy: createdBy,
@@ -289,6 +293,7 @@ class ApInspectionRepository {
   /// Send AP rejected qty to Faco vendor (RTV dispatch)
   Future<ApInspectionResult> sendToFaco({
     required String partId,
+    required String batchNumber,
     required double qty,
     required String vendorId,
     required String createdBy,
@@ -296,6 +301,7 @@ class ApInspectionRepository {
   }) async {
     return _postRejectedAction(
       partId: partId,
+      batchNumber: batchNumber,
       qty: qty,
       action: 'sent_to_faco',
       vendorId: vendorId,
@@ -312,6 +318,7 @@ class ApInspectionRepository {
 
   Future<ApInspectionResult> _postRejectedAction({
     required String partId,
+    required String batchNumber,
     required double qty,
     required String action,
     String? vendorId,
@@ -326,10 +333,10 @@ class ApInspectionRepository {
         error: 'No active factory workspace is selected.',
       );
     }
-    if (qty <= 0) {
+    if (batchNumber.trim().isEmpty || qty <= 0) {
       return const ApInspectionResult(
         success: false,
-        error: 'Action quantity must be greater than zero.',
+        error: 'Batch and action quantity are required.',
       );
     }
 
@@ -343,6 +350,7 @@ class ApInspectionRepository {
       'factory_id': factoryId,
       'date': dateStr,
       'part_id': partId,
+      'batch_number': batchNumber.trim(),
       'qty': qty,
       'action': action,
       'vendor_id': vendorId,

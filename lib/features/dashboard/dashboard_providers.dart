@@ -158,7 +158,10 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final rawMaterial = stageTotals[StockStage.rawMaterial.value] ?? 0.0;
   final bpStock = stageTotals[StockStage.bpStock.value] ?? 0.0;
   final bpRejected = stageTotals[StockStage.bpRejected.value] ?? 0.0;
-  final atFaco = stageTotals[StockStage.atFaco.value] ?? 0.0;
+  // Both normal vendor processing and RTV vendor returns are physically with
+  // vendors; the dashboard headline must not hide the latter.
+  final atFaco = (stageTotals[StockStage.atFaco.value] ?? 0.0) +
+      (stageTotals[StockStage.rtvAtVendor.value] ?? 0.0);
   final pendingAp = stageTotals[StockStage.pendingAp.value] ?? 0.0;
   final approvedAp = stageTotals[StockStage.approvedAp.value] ?? 0.0;
   final apRejected = stageTotals[StockStage.apRejected.value] ?? 0.0;

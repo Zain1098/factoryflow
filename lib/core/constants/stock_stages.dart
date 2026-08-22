@@ -8,7 +8,8 @@ enum StockStage {
   pendingAp('pending_ap', 'Pending AP Inspection'),
   approvedAp('approved_ap', 'Own Finished (AP OK / Ready Dispatch)'),
   apRejected('ap_rejected', 'AP Rejected (Awaiting Final Decision)'),
-  rtvStock('rtv_stock', 'AP RTV Hold (Awaiting Vendor Return)');
+  rtvStock('rtv_stock', 'AP RTV Hold (Awaiting Vendor Return)'),
+  rtvAtVendor('rtv_at_vendor', 'RTV At Vendor (Awaiting Return)');
 
   const StockStage(this.value, this.label);
   final String value;
