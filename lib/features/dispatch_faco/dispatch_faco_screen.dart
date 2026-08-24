@@ -50,6 +50,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   String? _success;
   DateTime _recordedAt = DateTime.now();
   final List<_FacoLine> _items = [];
+  String? _selectedPartId;
 
   @override
   void initState() {
@@ -178,6 +179,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     _remarksCtrl.clear();
     setState(() {
       _items.clear();
+      _selectedPartId = null;
       _vendorId = null;
       _vehicleId = null;
       _driverId = null;
@@ -304,32 +306,76 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                   ),
                 );
               }
-              return AppDropdown<String>(
-                label: 'Add Batch to Dispatch',
-                isRequired: false,
-                prefixIcon: const Icon(Icons.qr_code_2_outlined),
-                value: null,
-                items: list
-                    .where((batch) => !_items.any((item) =>
-                        item.partId == batch['part_id'] &&
-                        item.batchNumber == batch['batch_number'],),)
-                    .map(
-                      (batch) => DropdownMenuItem(
-                        value: '${batch['batch_number']}|${batch['part_id']}',
+              final parts = <String, Map<String, dynamic>>{};
+              for (final batch in list) {
+                parts.putIfAbsent(batch['part_id'] as String, () => batch);
+              }
+              final availableBatches = list
+                  .where((batch) => batch['part_id'] == _selectedPartId)
+                  .where((batch) => !_items.any((item) =>
+                      item.partId == batch['part_id'] &&
+                      item.batchNumber == batch['batch_number'],),)
+                  .toList();
+
+              return Column(
+                children: [
+                  AppDropdown<String>(
+                    label: 'Part',
+                    isRequired: true,
+                    prefixIcon: const Icon(Icons.category_outlined),
+                    value: _selectedPartId,
+                    items: parts.entries
+                        .map(
+                          (entry) => DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(
+                              '${entry.value['part_code']} – ${entry.value['part_name']}',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (partId) =>
+                        setState(() => _selectedPartId = partId),
+                  ),
+                  if (_selectedPartId != null) ...[
+                    const SizedBox(height: 12),
+                    AppDropdown<String>(
+                      label: 'Available trace batch',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.qr_code_2_outlined),
+                      value: null,
+                      items: availableBatches
+                          .map(
+                            (batch) => DropdownMenuItem(
+                              value:
+                                  '${batch['batch_number']}|${batch['part_id']}',
+                              child: Text(
+                                '${batch['batch_number']} · ${(batch['available_qty'] as num).toInt()} PCS available',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: availableBatches.isEmpty
+                          ? null
+                          : (key) {
+                              if (key == null) return;
+                              final match = availableBatches.firstWhere((batch) =>
+                                  '${batch['batch_number']}|${batch['part_id']}' ==
+                                      key,);
+                              _addPart(match);
+                            },
+                    ),
+                    if (availableBatches.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
                         child: Text(
-                          '${batch['part_code']} | Total ${(batch['part_available_qty'] as num).toInt()} PCS '
-                          '• ${batch['batch_number']} has ${(batch['available_qty'] as num).toInt()} left',
-                          overflow: TextOverflow.ellipsis,
+                          'All available batches for this part are already added.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (key) {
-                  if (key == null) return;
-                  final match = list.firstWhere((batch) =>
-                      '${batch['batch_number']}|${batch['part_id']}' == key,);
-                  _addPart(match);
-                },
+                  ],
+                ],
               );
             },
           ),
