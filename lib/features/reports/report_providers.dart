@@ -357,14 +357,22 @@ final rejectAnalysisProvider =
 
   final rows = db.db.select(
     '''
+    WITH bp_inspection_rejects AS (
+      SELECT factory_id, part_id, date, SUM(bp_reject_qty) AS qty
+      FROM bp_inspections
+      WHERE factory_id = ? AND date BETWEEN ? AND ?
+      GROUP BY factory_id, part_id, date
+    )
     SELECT
       p.date,
       pt.name AS part_name,
       COALESCE(SUM(p.production_qty), 0) AS production,
-      COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
+      COALESCE(SUM(p.bp_reject_qty), 0) + COALESCE(MAX(bi.qty), 0) AS bp_rej,
       COALESCE(ap.ap_rej, 0) AS ap_rej
     FROM productions p
     LEFT JOIN parts pt ON pt.id = p.part_id AND pt.factory_id = p.factory_id
+    LEFT JOIN bp_inspection_rejects bi ON bi.factory_id = p.factory_id
+      AND bi.part_id = p.part_id AND bi.date = p.date
     LEFT JOIN (
       SELECT factory_id, part_id, date, SUM(rejected_qty) AS ap_rej
       FROM ap_inspections
@@ -377,6 +385,9 @@ final rejectAnalysisProvider =
     ORDER BY p.date DESC
   ''',
     [
+      factoryId,
+      range.fromStr,
+      range.toStr,
       factoryId,
       range.fromStr,
       range.toStr,

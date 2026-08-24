@@ -287,11 +287,27 @@ class FinalDispatchRepository {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
-      '''WITH approved AS (
+      '''WITH ap_approved AS (
            SELECT factory_id, batch_number, part_id,
                   SUM(approved_qty) AS approved_qty
            FROM ap_inspections
            WHERE factory_id = ?
+           GROUP BY factory_id, batch_number, part_id
+         ), forced_rtv AS (
+           SELECT r.factory_id, r.batch_number, r.part_id,
+                  SUM(rr.reject_again_qty) AS approved_qty
+           FROM rtvs r
+           INNER JOIN rtv_reinspections rr
+             ON rr.factory_id = r.factory_id AND rr.rtv_id = r.id
+           WHERE r.factory_id = ? AND r.status = 'force_dispatched'
+           GROUP BY r.factory_id, r.batch_number, r.part_id
+         ), approved AS (
+           SELECT factory_id, batch_number, part_id, SUM(approved_qty) AS approved_qty
+           FROM (
+             SELECT factory_id, batch_number, part_id, approved_qty FROM ap_approved
+             UNION ALL
+             SELECT factory_id, batch_number, part_id, approved_qty FROM forced_rtv
+           ) approved_sources
            GROUP BY factory_id, batch_number, part_id
          ),
          dispatched AS (
@@ -335,7 +351,7 @@ class FinalDispatchRepository {
                  COALESCE(dispatched.dispatched_qty, 0) +
                  COALESCE(adjustments.adjusted_qty, 0) > 0
          ORDER BY batches.batch_number, p.code''',
-      [factoryId, factoryId, factoryId],
+      [factoryId, factoryId, factoryId, factoryId],
     );
     return rows.map((row) => Map<String, dynamic>.from(row)).toList();
   }

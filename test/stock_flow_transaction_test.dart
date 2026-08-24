@@ -538,6 +538,15 @@ void main() {
     expect(returned.isEscalated, isTrue);
     expect(resolved.success, isTrue);
     expect(duplicate.success, isFalse);
+    final dispatchable = await FinalDispatchRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+      alertProducerService,
+    ).getApprovedBatches();
+    expect(dispatchable, hasLength(1));
+    expect(dispatchable.single['batch_number'], 'BATCH-A');
+    expect(dispatchable.single['balance'], 5);
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
       0,

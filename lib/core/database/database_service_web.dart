@@ -639,7 +639,7 @@ class DatabaseService {
     await insertRecord('vendors', {
       'id': 'ven-001',
       'factory_id': factoryId,
-      'name': 'Faco',
+      'name': 'Plating Vendor',
       'active': 1,
     });
     await insertRecord('customers', {

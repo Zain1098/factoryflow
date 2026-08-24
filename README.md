@@ -1,139 +1,99 @@
-# factoryflow
+# FactoryFlow
 
-A new Flutter project.
+FactoryFlow is an offline-first Flutter manufacturing ERP for tracking material
+from inward receipt through production, quality inspection, Vendor processing,
+rework, and final customer dispatch. Each company workspace is isolated and
+operational records synchronise to Supabase when connectivity is available.
 
-## Getting Started
+## Core workflow
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-# FactoryFlow platform Admin Control
-
-The mobile app now includes the protected `/admin-control` route. It is a
-platform-maintenance console, not a production or inventory dashboard. It
-contains workspace status, user blocking, maintenance mode, and immutable
-privileged-action audit views.
-
-## Deploy the database change
-
-1. Back up the target project and review `supabase/migrations/20260810090000_platform_admin_control.sql`.
-2. Apply the migration through the normal Supabase migration workflow. Do not paste a service-role key into the mobile app.
-3. Bootstrap the first platform administrator only from a trusted server/database session:
-
-   ```sql
-   insert into public.platform_admins (user_id, granted_by, note)
-   values ('<existing-public.users-id>', '<existing-public.users-id>', 'initial platform administrator');
-   ```
-
-4. Start the app with `--dart-define=SUPABASE_URL=...` and
-   `--dart-define=SUPABASE_ANON_KEY=...`, then navigate to `/admin-control`.
-
-The only client key is the Supabase publishable/anon key. Privileged reads and
-writes use narrowly granted RPCs; all new tables are RLS-enabled with no direct
-client privileges. Workspace suspension is included in the shared membership
-helpers so tenant-scoped policies using them no longer authorize suspended
-workspaces. Existing factory operational tables and ledger flows are unchanged.
-
-### Manual Supabase migration deployment
-
-GitHub Actions is not required. First authenticate once on your own machine:
-
-```powershell
-npx.cmd --yes supabase@2.111.0 login
+```text
+Material Receive → Production → BP Stock → Vendor Dispatch → Vendor Receive
+→ AP Inspection → Approved AP → Final Dispatch
 ```
 
-Preview the linked project's migration state, then apply only after reviewing
-the preview. The script refuses to use `--include-all` or repair migration
-history automatically.
+Quality stock is never silently removed. BP and AP rejections remain visible
+until an authorised user records an explicit final disposition. RTV material is
+kept distinct from normal Vendor stock and remains auditable through its return
+workflow.
+
+## Features
+
+- Company/workspace-based access control and active-user safeguards.
+- Local SQLite-first records with a durable sync queue and retry history.
+- Material receipt, production, BP and AP inspection, Vendor dispatch/receive,
+  RTV, and final dispatch.
+- Stage-wise live stock, reject, hold, Vendor-pending, production, and dispatch
+  reports.
+- Batch traceability for dispatch-eligible finished material.
+- Owner/Admin stock reconciliation with immutable ledger movements and remarks.
+- Android update policy and controlled platform administration.
+
+## Technology
+
+- Flutter and Riverpod
+- SQLite (`sqlite3`) for offline storage
+- Supabase Auth, Postgres, Row Level Security, and Edge Functions
+
+## Local setup
+
+Prerequisites: Flutter SDK compatible with `pubspec.yaml`, an Android toolchain,
+and a Supabase project for cloud synchronisation.
+
+```powershell
+flutter pub get
+flutter run `
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co `
+  --dart-define=SUPABASE_ANON_KEY=your-publishable-key
+```
+
+The app can operate locally when Supabase is unavailable; queued changes sync
+once access and connectivity are restored. Never place a service-role key,
+Android signing key, GitHub token, or release token in Flutter code or Git.
+
+## Database migrations
+
+Supabase migrations are stored in `supabase/migrations/`. Review migration
+status before applying anything to a linked project:
 
 ```powershell
 .\tool\deploy_supabase_migrations.ps1
 .\tool\deploy_supabase_migrations.ps1 -Apply
 ```
 
-If the CLI reports local/remote history drift, stop there and review the
-`supabase migration list --linked` output before any `migration repair`.
+Do not use `--include-all` or migration repair as a shortcut for history drift.
+Compare local and remote migration history first.
 
-## Automated Android APK releases
+## Verification
 
-The app reads its installed Android build number and, after sign-in/access
-verification and on app resume, calls the authenticated
-`platform_android_release()` RPC. It compares that value to the server policy:
+Run the relevant checks before publishing a change:
 
-- newer server build: optional update with **Later** or **Update now**;
-- installed build below `minimum_supported_version_code`, or a newer mandatory
-  release: non-dismissible **Update required** screen;
-- network failure: app continues normally unless the cached forced policy says
-  an update is required.
+```powershell
+flutter analyze
+flutter test
+git diff --check
+```
 
-The fixed download URL is:
+For stock-flow changes, also perform a device smoke test covering stock entry,
+Vendor dispatch/receipt, inspection, rejection disposition, report totals, and
+final dispatch. A command timeout is not successful verification.
 
-`https://github.com/Zain1098/factoryflow_app_release_version/releases/download/factoryflow/app-release.apk`
+## Android release
 
-Mobile clients do not contain a GitHub token, release token, signing key, or
-Supabase service-role key. Android always asks the user to confirm APK install.
-
-### One-time server setup
-
-1. The existing `platform_android_release()` RPC and `platform_app_releases`
-   table are already used; do not create a second update table.
-2. Deploy the Edge Function with `supabase functions deploy publish-android-release`.
-3. Set the same strong random value as `RELEASE_PUBLISH_TOKEN` in Supabase Edge
-   Function secrets and GitHub Actions secrets. Never put it in Flutter code.
-4. In `Zain1098/factoryflow_app_release_version`, create (or retain) release tag
-   `factoryflow`; the workflow replaces only its `app-release.apk` asset.
-
-### GitHub Actions secrets
-
-Configure these in the repository that contains this workflow:
-
-- `RELEASE_PUBLISH_TOKEN` — shared only with the Edge Function secret.
-- `SUPABASE_URL` and `SUPABASE_ANON_KEY` — used only to invoke the deployed
-  function; neither is a service-role secret.
-- `RELEASE_REPOSITORY_TOKEN` — fine-grained token with **Contents: read/write**
-  access limited to `Zain1098/factoryflow_app_release_version`.
-- `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, and
-  `ANDROID_STORE_PASSWORD` — Android signing material, never committed.
-
-### Run a release manually
-
-GitHub Actions is optional. Build the signed APK locally (the script verifies
-the resulting file, size, timestamp, and SHA-256):
+The repository includes scripts for a signed APK and release metadata. Keep all
+credentials outside Git and review the release workflow before publishing:
 
 ```powershell
 .\tool\build_signed_apk.ps1 -VersionName 1.2.0 -BuildNumber 120
 ```
 
-Upload `build\app\outputs\flutter-apk\app-release.apk` to the existing
-`factoryflow` GitHub Release, replacing `app-release.apk`. Then publish the
-same version, build number, SHA-256, notes, minimum supported build, and
-mandatory flag through the existing `publish-android-release` Edge Function.
-Do not lower the build number.
+Upload the generated APK only after its version, signature, hash, and runtime
+smoke test have been confirmed.
 
-For that final metadata step, set the publish token only in the current
-terminal session and run:
+## Repository hygiene
 
-```powershell
-$env:RELEASE_PUBLISH_TOKEN = 'your-token'
-.\tool\publish_android_release.ps1 `
-  -SupabaseUrl 'https://xejhgfyeichkibepgjii.supabase.co' `
-  -SupabaseAnonKey 'your-anon-key' `
-  -VersionName '1.2.0' -BuildNumber 120 `
-  -MinimumSupportedBuildNumber 120 `
-  -ReleaseNotes 'Production fixes'
-```
-
-### Rollback
-
-Run the same workflow again with a known-good APK/version and a new, higher
-GitHub run number. Do not lower `version_code`: installed apps only move forward.
-Set `mandatory` false and choose an appropriate minimum supported build number
-to remove a forced-update policy.
+- Keep migrations append-only.
+- Stage only reviewed files; do not use broad staging in a dirty worktree.
+- Preserve ledger and operational history; correct records through authorised
+  reversal/disposition flows rather than direct edits.
+- Treat server-side Supabase RLS/RPC checks as authoritative over UI guards.
