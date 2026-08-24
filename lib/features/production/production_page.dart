@@ -215,7 +215,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
       final msg = isWip
           ? 'Saved as WIP. Continue this batch at the next machine.'
-          : 'Batch complete. $finalGoodQty PCS is ready for BP / Faco.';
+          : 'Batch complete. $finalGoodQty PCS is ready for BP / Vendor.';
 
       setState(() {
         _success = msg;

@@ -378,7 +378,7 @@ void _showBatchTraceabilityInfo(BuildContext context) =>
                 style: Theme.of(sheetContext).textTheme.titleLarge,),
             const SizedBox(height: 8),
             const Text('A batch is created only in Production.\n'
-                'BP, Faco, AP, RTV and Dispatch select that same batch.\n\n'
+                'BP, Vendor, AP, Vendor Rework and Dispatch select that same batch.\n\n'
                 'Example: BRK-260819-001\n'
                 'BRK = part, 260819 = date, 001 = daily sequence.'),
           ],

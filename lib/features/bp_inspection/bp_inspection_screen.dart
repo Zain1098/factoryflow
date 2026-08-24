@@ -60,7 +60,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
           Text('${qty.toInt()} PCS will be removed from company BP rejected stock.'),
           const SizedBox(height: 12),
           TextField(controller: note, maxLines: 2, decoration: const InputDecoration(labelText: 'Reason / confirmation note *')),
-        ]),
+        ],),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(dialogContext, note.text.trim().isNotEmpty), child: const Text('Confirm write-off')),

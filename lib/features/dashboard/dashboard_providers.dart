@@ -189,12 +189,14 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     StockStage.rawMaterial.value: 'Raw Material',
     kProductionRejectedStage: 'Production Rejected',
     StockStage.bpStock.value: 'BP Stock',
+    StockStage.bpHold.value: 'BP Hold',
     StockStage.bpRejected.value: 'BP Rejected',
-    StockStage.atFaco.value: 'At Faco',
+    StockStage.atFaco.value: 'At Vendor',
     StockStage.pendingAp.value: 'Pending AP',
     StockStage.approvedAp.value: 'AP Approved',
     StockStage.apRejected.value: 'AP Rejected',
-    StockStage.rtvStock.value: 'RTV',
+    StockStage.rtvStock.value: 'Vendor Rework Hold',
+    StockStage.rtvAtVendor.value: 'At Vendor for Rework',
   };
   if (sequence.isNotEmpty) {
     stageLabels[productionWipStage(sequence[0])] = 'Bending WIP';

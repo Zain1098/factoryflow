@@ -244,7 +244,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
               const SizedBox(width: 8),
               Tooltip(
                 message:
-                    'Parts received from Faco vendor, waiting for AP inspection',
+                    'Parts received from vendor, waiting for AP inspection',
                 child: Icon(Icons.info_outline,
                     size: 14, color: theme.colorScheme.onSurfaceVariant,),
               ),
@@ -263,7 +263,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    'No pending AP stock.\nReceive material from Faco vendor first.',
+                    'No pending AP stock.\nReceive material from vendor first.',
                     textAlign: TextAlign.center,
                   ),
                 );

@@ -58,7 +58,7 @@ class ApInspectionRepository {
     if (batchNumber.trim().isEmpty) {
       return const ApInspectionResult(
         success: false,
-        error: 'Select the original Faco receipt batch before AP inspection.',
+        error: 'Select the original vendor receipt batch before AP inspection.',
       );
     }
     if ((approvedQty + rejectedQty + rtvQty - qtyChecked).abs() > 0.001) {
@@ -174,7 +174,7 @@ class ApInspectionRepository {
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
-  /// Batch-specific material received from Faco but not yet AP inspected.
+  /// Batch-specific material received from vendor but not yet AP inspected.
   /// Keeping the original batch here preserves end-to-end traceability.
   Future<List<Map<String, dynamic>>> getPendingBatches() async {
     final factoryId = _db.activeWorkspaceId.trim();
@@ -290,7 +290,7 @@ class ApInspectionRepository {
     );
   }
 
-  /// Send AP rejected qty to Faco vendor (RTV dispatch)
+  /// Send AP rejected qty to vendor for rework.
   Future<ApInspectionResult> sendToFaco({
     required String partId,
     required String batchNumber,

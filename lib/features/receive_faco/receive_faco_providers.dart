@@ -42,7 +42,7 @@ class ReceiveFacoRepository {
     if (dispatchRefId == null) {
       return const ReceiveFacoResult(
         success: false,
-        error: 'Select the original Faco dispatch before receiving material.',
+        error: 'Select the original vendor dispatch before receiving material.',
       );
     }
     double? dispatchedQty;
@@ -55,7 +55,7 @@ class ReceiveFacoRepository {
     if (rows.isEmpty) {
       return const ReceiveFacoResult(
         success: false,
-        error: 'The selected Faco dispatch is no longer available.',
+        error: 'The selected vendor dispatch is no longer available.',
       );
     }
     final dispatchBatch = rows.first['batch_number'] as String? ?? '';
@@ -63,7 +63,7 @@ class ReceiveFacoRepository {
       return const ReceiveFacoResult(
         success: false,
         error:
-            'Select the original Faco dispatch; batch numbers cannot be entered manually.',
+            'Select the original vendor dispatch; batch numbers cannot be entered manually.',
       );
     }
     dispatchedQty = (rows.first['qty'] as num).toDouble();
@@ -79,7 +79,7 @@ class ReceiveFacoRepository {
     if (remaining <= 0) {
       return const ReceiveFacoResult(
         success: false,
-        error: 'This Faco dispatch has already been received in full.',
+        error: 'This vendor dispatch has already been received in full.',
       );
     }
     if (qtyReceived > remaining) {
@@ -111,7 +111,7 @@ class ReceiveFacoRepository {
       'sync_status': 'pending',
     };
 
-    // Stock: At Faco OUT → Pending AP IN (PRD 7.1)
+    // Stock: At vendor OUT → Pending AP IN (PRD 7.1)
     try {
       await _db.runInTransaction(() async {
         final ledgerResult = await _ledger.receiveFromFaco(
@@ -122,7 +122,7 @@ class ReceiveFacoRepository {
         );
         if (!ledgerResult.success) {
           throw StockPostingFailure(
-            ledgerResult.error ?? 'Unable to update Faco receipt stock.',
+            ledgerResult.error ?? 'Unable to update vendor receipt stock.',
           );
         }
 
@@ -142,7 +142,7 @@ class ReceiveFacoRepository {
       return const ReceiveFacoResult(
         success: false,
         error:
-            'Faco receipt could not be saved. No stock was changed. Please retry.',
+            'Vendor receipt could not be saved. No stock was changed. Please retry.',
       );
     }
 

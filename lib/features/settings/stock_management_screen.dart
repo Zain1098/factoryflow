@@ -207,6 +207,7 @@ class _PartStockCard extends ConsumerWidget {
       approvedBatches = const [];
     }
     String? selectedBatchNumber;
+    final openingBatchNumber = 'OPEN-${part['code'] as String}';
 
     await showDialog<void>(
       context: context,
@@ -222,6 +223,8 @@ class _PartStockCard extends ConsumerWidget {
               break;
             }
           }
+          final needsTraceBatch = selectedStage == StockStage.bpStock ||
+              selectedStage == StockStage.approvedAp;
           final isApprovedAp = selectedStage == StockStage.approvedAp;
           final currentQty = isApprovedAp
               ? (selectedBatch?['balance'] as num?)?.toDouble() ?? 0
@@ -235,49 +238,59 @@ class _PartStockCard extends ConsumerWidget {
                 children: [
                   DropdownButtonFormField<StockStage>(
                     initialValue: selectedStage,
-                    decoration: const InputDecoration(labelText: 'Stage'),
-                    items: const [
-                      StockStage.rawMaterial,
-                      StockStage.approvedAp,
-                    ]
+                    isExpanded: true,
+                    menuMaxHeight: 360,
+                    decoration: const InputDecoration(
+                      labelText: 'Stock location',
+                      helperText: 'Choose where this physical stock is currently sitting.',
+                    ),
+                    items: StockStage.values
                         .map((s) =>
                             DropdownMenuItem(value: s, child: Text(s.label)),)
                         .toList(),
                     onChanged: (v) => setS(() {
                       selectedStage = v!;
-                      selectedBatchNumber = null;
+                      selectedBatchNumber =
+                          (v == StockStage.bpStock || v == StockStage.approvedAp)
+                              ? openingBatchNumber
+                              : null;
                     }),
                   ),
-                  if (isApprovedAp) ...[
+                  if (needsTraceBatch) ...[
                     const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selectedBatchNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'Approved batch *',
-                        helperText: 'Only original AP-approved batches can be dispatched.',
-                      ),
-                      items: batchesForPart
-                          .map((batch) => DropdownMenuItem<String>(
+                    if (isApprovedAp && batchesForPart.isNotEmpty)
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedBatchNumber,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Trace batch',
+                          helperText: 'Use the opening batch for stock that existed before this app.',
+                        ),
+                        items: [
+                          DropdownMenuItem<String>(
+                            value: openingBatchNumber,
+                            child: Text('$openingBatchNumber · Opening stock'),
+                          ),
+                          ...batchesForPart.map((batch) => DropdownMenuItem<String>(
                                 value: batch['batch_number'] as String,
                                 child: Text(
                                   '${batch['batch_number']} · ${_fmt((batch['balance'] as num).toDouble())} PCS',
                                 ),
-                              ))
-                          .toList(),
-                      onChanged: batchesForPart.isEmpty
-                          ? null
-                          : (value) => setS(() => selectedBatchNumber = value),
-                    ),
-                    if (batchesForPart.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Text(
-                          'No AP-approved batch is available for this part. Create or correct the source AP inspection first.',
-                          style: TextStyle(color: Colors.red, fontSize: 12),
+                              )),
+                        ],
+                        onChanged: (value) =>
+                            setS(() => selectedBatchNumber = value),
+                      )
+                    else
+                      InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Trace batch',
+                          helperText: 'Created automatically so later dispatch stays traceable.',
                         ),
+                        child: Text('$openingBatchNumber · Opening stock'),
                       ),
                   ],
-                  if (!isApprovedAp && selectedStage != StockStage.rawMaterial)
+                  if (!needsTraceBatch && selectedStage != StockStage.rawMaterial)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text(
@@ -291,18 +304,21 @@ class _PartStockCard extends ConsumerWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'set', label: Text('Set')),
-                      ButtonSegment(value: 'add', label: Text('Add')),
-                      ButtonSegment(value: 'subtract', label: Text('Subtract')),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final mode in const ['set', 'add', 'subtract'])
+                        ChoiceChip(
+                          label: Text(mode == 'set'
+                              ? 'Set balance'
+                              : mode == 'add'
+                                  ? 'Add stock'
+                                  : 'Subtract stock'),
+                          selected: adjustMode == mode,
+                          onSelected: (_) => setS(() => adjustMode = mode),
+                        ),
                     ],
-                    selected: {adjustMode},
-                    onSelectionChanged: (s) => setS(() => adjustMode = s.first),
-                    style: const ButtonStyle(
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -347,8 +363,8 @@ class _PartStockCard extends ConsumerWidget {
                     setS(() => errorMsg = 'Remark is required.');
                     return;
                   }
-                  if (isApprovedAp && selectedBatchNumber == null) {
-                    setS(() => errorMsg = 'Select the AP-approved batch.');
+                  if (needsTraceBatch && selectedBatchNumber == null) {
+                    setS(() => errorMsg = 'Select the trace batch.');
                     return;
                   }
                   Navigator.pop(ctx);

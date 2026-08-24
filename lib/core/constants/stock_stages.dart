@@ -1,6 +1,7 @@
 /// Stock pipeline stages per PRD Ch. 7.1
 enum StockStage {
   rawMaterial('raw_material', 'Raw Material'),
+  productionRejected('production_rejected', 'Machine Rejected'),
   bpStock('bp_stock', 'Own BP Stock'),
   bpHold('bp_hold', 'BP Hold / Inspection'),
   bpRejected('bp_rejected', 'BP Rejected'),
@@ -8,8 +9,8 @@ enum StockStage {
   pendingAp('pending_ap', 'Pending AP Inspection'),
   approvedAp('approved_ap', 'Own Finished (AP OK / Ready Dispatch)'),
   apRejected('ap_rejected', 'AP Rejected (Awaiting Final Decision)'),
-  rtvStock('rtv_stock', 'AP RTV Hold (Awaiting Vendor Return)'),
-  rtvAtVendor('rtv_at_vendor', 'RTV At Vendor (Awaiting Return)');
+  rtvStock('rtv_stock', 'Vendor Rework Hold'),
+  rtvAtVendor('rtv_at_vendor', 'At Vendor for Rework');
 
   const StockStage(this.value, this.label);
   final String value;

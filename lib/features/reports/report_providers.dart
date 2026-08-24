@@ -590,6 +590,7 @@ class LiveStockRow {
     required this.partName,
     required this.partCode,
     required this.rawMaterial,
+    required this.productionRejected,
     required this.bpStock,
     required this.bpHold,
     required this.bpRejected,
@@ -605,6 +606,7 @@ class LiveStockRow {
   final String partName;
   final String partCode;
   final double rawMaterial;
+  final double productionRejected;
   final double bpStock;
   final double bpHold;
   final double bpRejected;
@@ -628,6 +630,7 @@ final liveStockReportProvider =
     SELECT
       p.id, p.name, p.code,
       COALESCE(MAX(CASE WHEN sl.stage='raw_material' THEN sl.running_balance END), 0) AS raw,
+      COALESCE(MAX(CASE WHEN sl.stage='production_rejected' THEN sl.running_balance END), 0) AS production_rejected,
       COALESCE(MAX(CASE WHEN sl.stage='bp_stock' THEN sl.running_balance END), 0) AS bp,
       COALESCE(MAX(CASE WHEN sl.stage='bp_hold' THEN sl.running_balance END), 0) AS bp_hold,
       COALESCE(MAX(CASE WHEN sl.stage='bp_rejected' THEN sl.running_balance END), 0) AS bp_rejected,
@@ -654,6 +657,7 @@ final liveStockReportProvider =
 
   return rows.map((r) {
     final raw = (r['raw'] as num).toDouble();
+    final productionRejected = (r['production_rejected'] as num).toDouble();
     final bp = (r['bp'] as num).toDouble();
     final bpHold = (r['bp_hold'] as num).toDouble();
     final bpRejected = (r['bp_rejected'] as num).toDouble();
@@ -668,6 +672,7 @@ final liveStockReportProvider =
       partName: r['name'] as String,
       partCode: r['code'] as String? ?? '',
       rawMaterial: raw,
+      productionRejected: productionRejected,
       bpStock: bp,
       bpHold: bpHold,
       bpRejected: bpRejected,
@@ -677,7 +682,7 @@ final liveStockReportProvider =
       apRejected: aprej,
       rtvStock: rtv,
       rtvAtVendor: rtvAtVendor,
-      totalStock: raw + bp + bpHold + bpRejected + faco + pap + aap + aprej + rtv + rtvAtVendor,
+      totalStock: raw + productionRejected + bp + bpHold + bpRejected + faco + pap + aap + aprej + rtv + rtvAtVendor,
     );
   }).toList();
 });
@@ -812,7 +817,6 @@ class HoldMaterialReportData {
 final holdMaterialReportProvider =
     FutureProvider.autoDispose<HoldMaterialReportData>((ref) async {
   final db = ref.watch(databaseServiceProvider);
-  final range = ref.watch(reportDateRangeProvider);
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) {
     return const HoldMaterialReportData(
@@ -821,17 +825,29 @@ final holdMaterialReportProvider =
     );
   }
 
-  // 1. Fetch BP Inspections (Hold Before Plating)
+  // Read the current ledger balance, not historical inspection rows. Opening
+  // stock and later adjustments must be visible here as soon as they are saved.
   final bpRows = db.db.select(
     '''
-    SELECT bi.date, p.code as part_code, p.name as part_name, m.name as machine_name, bi.bp_reject_qty, bi.reject_reason_id
-    FROM bp_inspections bi
-    LEFT JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
-    LEFT JOIN machines m ON m.id = bi.machine_id AND m.factory_id = bi.factory_id
-    WHERE bi.factory_id = ? AND bi.date BETWEEN ? AND ?
-    ORDER BY bi.date DESC
+    SELECT sl.date, p.code as part_code, p.name as part_name,
+           COALESCE(sa.remarks, 'BP quality hold') AS reason,
+           sl.running_balance AS qty
+    FROM stock_ledger sl
+    INNER JOIN parts p ON p.id = sl.part_id AND p.factory_id = sl.factory_id
+    LEFT JOIN stock_adjustments sa ON sa.id = sl.ref_id
+      AND sa.factory_id = sl.factory_id
+    WHERE sl.factory_id = ? AND sl.stage = 'bp_hold'
+      AND sl.rowid = (
+        SELECT current_row.rowid FROM stock_ledger current_row
+        WHERE current_row.factory_id = sl.factory_id
+          AND current_row.part_id = sl.part_id
+          AND current_row.stage = sl.stage
+        ORDER BY current_row.created_at DESC, current_row.rowid DESC LIMIT 1
+      )
+      AND sl.running_balance > 0
+    ORDER BY sl.date DESC
   ''',
-    [factoryId, range.fromStr, range.toStr],
+    [factoryId],
   );
 
   final bpHoldList = bpRows.map((r) {
@@ -839,24 +855,35 @@ final holdMaterialReportProvider =
       date: r['date'] as String,
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
-      machineName: r['machine_name'] as String? ?? '—',
-      qty: (r['bp_reject_qty'] as num).toDouble(),
-      reason: r['reject_reason_id'] as String? ?? '—',
+      machineName: 'BP Hold',
+      qty: (r['qty'] as num).toDouble(),
+      reason: r['reason'] as String? ?? '—',
     );
   }).toList();
 
-  // 2. Fetch Active RTV Stock (Hold After Plating)
+  // RTV held inside the company is distinct from material already sent to a
+  // vendor for rework. This tab reports only the former.
   final rtvRows = db.db.select(
     '''
-    SELECT r.date, p.code as part_code, p.name as part_name, v.name as vendor_name, r.rtv_qty, r.status
-    FROM rtvs r
-    LEFT JOIN parts p ON p.id = r.part_id AND p.factory_id = r.factory_id
-    LEFT JOIN vendors v ON v.id = r.vendor_id AND v.factory_id = r.factory_id
-    WHERE r.factory_id = ? AND r.status != 'received'
-      AND r.date BETWEEN ? AND ?
-    ORDER BY r.date DESC
+    SELECT sl.date, p.code as part_code, p.name as part_name,
+           COALESCE(sa.remarks, 'Awaiting vendor rework') AS vendor_name,
+           sl.running_balance AS qty
+    FROM stock_ledger sl
+    INNER JOIN parts p ON p.id = sl.part_id AND p.factory_id = sl.factory_id
+    LEFT JOIN stock_adjustments sa ON sa.id = sl.ref_id
+      AND sa.factory_id = sl.factory_id
+    WHERE sl.factory_id = ? AND sl.stage = 'rtv_stock'
+      AND sl.rowid = (
+        SELECT current_row.rowid FROM stock_ledger current_row
+        WHERE current_row.factory_id = sl.factory_id
+          AND current_row.part_id = sl.part_id
+          AND current_row.stage = sl.stage
+        ORDER BY current_row.created_at DESC, current_row.rowid DESC LIMIT 1
+      )
+      AND sl.running_balance > 0
+    ORDER BY sl.date DESC
   ''',
-    [factoryId, range.fromStr, range.toStr],
+    [factoryId],
   );
 
   final rtvHoldList = rtvRows.map((r) {
@@ -872,8 +899,8 @@ final holdMaterialReportProvider =
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
       vendorName: r['vendor_name'] as String? ?? '—',
-      qty: (r['rtv_qty'] as num).toDouble(),
-      status: r['status'] as String? ?? 'pending',
+      qty: (r['qty'] as num).toDouble(),
+      status: 'awaiting_vendor_rework',
       agingDays: aging,
     );
   }).toList();

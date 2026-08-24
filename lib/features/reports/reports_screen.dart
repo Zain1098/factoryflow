@@ -59,14 +59,14 @@ class ReportsScreen extends ConsumerWidget {
           'RTV Analysis',
           Icons.undo,
           Colors.deepOrange,
-          'Return to vendor summary & status',
+          'Vendor rework summary & status',
           () => _push(context, const _RtvReport()),
         ),
         _ReportTile(
           'Hold Material',
           Icons.back_hand_outlined,
           Colors.redAccent,
-          'BP QC hold & active RTV aging',
+          'BP hold & vendor rework aging',
           () => _push(context, const _HoldReport()),
         ),
       ]),
@@ -1196,6 +1196,7 @@ class LiveStockReport extends ConsumerWidget {
         tableHeader: const [
           'Part',
           'Raw',
+          'Prod Rej',
           'BP',
           'BP Hold',
           'BP Rej',
@@ -1214,6 +1215,7 @@ class LiveStockReport extends ConsumerWidget {
                     ? r.partCode
                     : r.partName.substring(0, r.partName.length.clamp(0, 10)),
                 _n(r.rawMaterial),
+                _n(r.productionRejected),
                 _n(r.bpStock),
                 _n(r.bpHold),
                 _n(r.bpRejected),
@@ -1308,11 +1310,16 @@ String _fmtDate(String iso) {
 String _stageLabel(String stage) {
   const map = {
     'raw_material': 'Raw',
+    'production_rejected': 'Prod reject',
     'bp_stock': 'BP',
+    'bp_hold': 'BP Hold',
+    'bp_rejected': 'BP reject',
     'at_faco': 'Vendor',
     'pending_ap': 'Pend AP',
     'approved_ap': 'Appr AP',
-    'rtv_stock': 'RTV',
+    'ap_rejected': 'AP reject',
+    'rtv_stock': 'Vendor rework',
+    'rtv_at_vendor': 'At vendor rework',
   };
   return map[stage] ?? stage;
 }
@@ -1349,7 +1356,7 @@ class _HoldReport extends ConsumerWidget {
           bottom: const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.warning_amber), text: 'BP QC Hold'),
-              Tab(icon: Icon(Icons.sync_problem), text: 'RTV Hold (AP)'),
+              Tab(icon: Icon(Icons.sync_problem), text: 'Vendor Rework Hold'),
             ],
           ),
         ),
@@ -1445,7 +1452,7 @@ class _HoldReport extends ConsumerWidget {
   ) {
     if (data.rtvHoldList.isEmpty) {
       return const EmptyState(
-        message: 'No active RTV (Post-Plating) Hold.',
+          message: 'No stock awaiting vendor rework.',
         icon: Icons.check_circle_outline,
       );
     }

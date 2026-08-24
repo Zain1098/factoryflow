@@ -24,8 +24,8 @@ enum EraseSection {
   bpInspections('bp_inspections', 'BP Inspection Records'),
   apInspections('ap_inspections', 'AP Inspection Records'),
   rtvs('rtvs', 'RTV Records'),
-  dispatchFaco('dispatch_to_facos', 'Dispatch to Faco Records'),
-  receiveFaco('receive_from_facos', 'Receive from Faco Records');
+  dispatchFaco('dispatch_to_facos', 'Dispatch to Vendor Records'),
+  receiveFaco('receive_from_facos', 'Receive from Vendor Records');
 
   const EraseSection(this.table, this.label);
   final String table;

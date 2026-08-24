@@ -226,7 +226,7 @@ class _SearchGuide extends StatelessWidget {
         ),
         const SectionHeader('What you can find'),
         Text(
-          'Production, inspections, Faco movement, RTV and final dispatch records are searched only in the active workspace.',
+          'Production, inspections, vendor movement, vendor rework and final dispatch records are searched only in the active workspace.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
             height: 1.45,
@@ -429,8 +429,8 @@ String _tableLabel(String table) {
   switch (table) {
     case 'productions': return 'Production';
     case 'bp_inspections': return 'BP Inspection';
-    case 'dispatch_to_facos': return 'Dispatch to Faco';
-    case 'receive_from_facos': return 'Receive from Faco';
+    case 'dispatch_to_facos': return 'Dispatch to Vendor';
+    case 'receive_from_facos': return 'Receive from Vendor';
     case 'ap_inspections': return 'AP Inspection';
     case 'rtvs': return 'RTV';
     case 'final_dispatches': return 'Final Dispatch';

@@ -101,8 +101,7 @@ class DispatchFacoRepository {
       if ((item.batchNumber ?? '').trim().isEmpty) {
         return const DispatchFacoResult(
           success: false,
-          error:
-              'Select an available production batch before dispatching to Faco.',
+          error: 'Select an available trace batch before dispatching to vendor.',
         );
       }
       if (item.qty <= 0) {
@@ -120,12 +119,13 @@ class DispatchFacoRepository {
     }
 
     for (final item in items) {
+      final isOpeningBatch = item.batchNumber!.startsWith('OPEN-');
       final batchPart = _db.db.select(
         'SELECT id FROM productions '
         'WHERE factory_id = ? AND batch_number = ? AND part_id = ? LIMIT 1',
         [factoryId, item.batchNumber, item.partId],
       );
-      if (batchPart.isEmpty) {
+      if (batchPart.isEmpty && !isOpeningBatch) {
         return DispatchFacoResult(
           success: false,
           error: '${item.partCode}: selected batch does not belong to this part.',
@@ -134,6 +134,17 @@ class DispatchFacoRepository {
       final finalMachineId =
           _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
       final batchRows = _db.db.select(
+        isOpeningBatch
+            ? '''SELECT COALESCE((
+                 SELECT SUM(sa.adjusted_qty) FROM stock_adjustments sa
+                 WHERE sa.factory_id = ? AND sa.batch_number = ?
+                   AND sa.part_id = ? AND sa.stage = 'bp_stock'
+               ), 0) - COALESCE((
+                 SELECT SUM(df.qty) FROM dispatch_to_facos df
+                 WHERE df.factory_id = ? AND df.batch_number = ?
+                   AND df.part_id = ?
+               ), 0) AS available_qty'''
+            :
         '''SELECT COALESCE((
              SELECT SUM(output.good_qty) FROM productions output
              WHERE output.factory_id = ? AND output.batch_number = ?
@@ -148,7 +159,16 @@ class DispatchFacoRepository {
              WHERE df.factory_id = ? AND df.batch_number = ?
                AND df.part_id = ?
            ), 0) AS available_qty''',
-        [
+        isOpeningBatch
+            ? [
+                factoryId,
+                item.batchNumber,
+                item.partId,
+                factoryId,
+                item.batchNumber,
+                item.partId,
+              ]
+            : [
           factoryId,
           item.batchNumber,
           item.partId,
@@ -160,7 +180,7 @@ class DispatchFacoRepository {
           factoryId,
           item.batchNumber,
           item.partId,
-        ],
+              ],
       );
       final batchAvailable =
           (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
@@ -181,7 +201,8 @@ class DispatchFacoRepository {
         );
       }
 
-      if (_flow.isMultiStage &&
+      if (!isOpeningBatch &&
+          _flow.isMultiStage &&
           _flow.requireFinalMachineForDispatch &&
           (item.batchNumber ?? '').isNotEmpty) {
         final finalMachineId = _flow.requiredMachineIds.last;
@@ -201,7 +222,7 @@ class DispatchFacoRepository {
           return DispatchFacoResult(
             success: false,
             error:
-                'Batch "${item.batchNumber}" must complete $mName before vendor dispatch.',
+              'Batch "${item.batchNumber}" must complete $mName before vendor dispatch.',
           );
         }
       }
@@ -243,7 +264,7 @@ class DispatchFacoRepository {
           );
           if (!ledgerResult.success) {
             throw StockPostingFailure(
-              ledgerResult.error ?? 'Unable to update Faco stock.',
+              ledgerResult.error ?? 'Unable to update vendor stock.',
             );
           }
 
@@ -263,7 +284,7 @@ class DispatchFacoRepository {
       return const DispatchFacoResult(
         success: false,
         error:
-            'Faco dispatch could not be saved. No stock was changed. Please retry.',
+            'Vendor dispatch could not be saved. No stock was changed. Please retry.',
       );
     }
 
@@ -297,7 +318,8 @@ class DispatchFacoRepository {
     return rows.map((r) => r['batch_number'] as String).toList();
   }
 
-  /// Finished production batches with quantity still available for Faco.
+  /// Finished production and opening-stock batches with quantity still
+  /// available for vendor dispatch.
   /// A formal BP inspection is optional, but any recorded BP rejects still
   /// reduce the batch quantity that can be dispatched.
   Future<List<Map<String, dynamic>>> getRecentBpInspections() async {
@@ -341,6 +363,25 @@ class DispatchFacoRepository {
       [finalMachineId, finalMachineId, factoryId],
     );
     final batches = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final openingRows = _db.db.select(
+      '''SELECT sa.batch_number, sa.part_id, p.code AS part_code,
+                p.name AS part_name, MAX(sa.created_at) AS date,
+                SUM(sa.adjusted_qty) - COALESCE((
+                  SELECT SUM(df.qty) FROM dispatch_to_facos df
+                  WHERE df.factory_id = sa.factory_id
+                    AND df.batch_number = sa.batch_number
+                    AND df.part_id = sa.part_id
+                ), 0) AS available_qty
+         FROM stock_adjustments sa
+         INNER JOIN parts p ON p.id = sa.part_id AND p.factory_id = sa.factory_id
+         WHERE sa.factory_id = ? AND sa.stage = 'bp_stock'
+           AND sa.batch_number LIKE 'OPEN-%'
+         GROUP BY sa.factory_id, sa.batch_number, sa.part_id, p.code, p.name
+         HAVING available_qty > 0
+         ORDER BY date DESC LIMIT 30''',
+      [factoryId],
+    );
+    batches.addAll(openingRows.map((r) => Map<String, dynamic>.from(r)));
     final partTotals = <String, double>{};
     for (final batch in batches) {
       final partId = batch['part_id'] as String;
@@ -351,7 +392,7 @@ class DispatchFacoRepository {
         .map((batch) => {
               ...batch,
               'part_available_qty': partTotals[batch['part_id']] ?? 0,
-            })
+            },)
         .toList();
   }
 }

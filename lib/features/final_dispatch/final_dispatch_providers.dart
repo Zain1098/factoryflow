@@ -308,26 +308,33 @@ class FinalDispatchRepository {
            WHERE factory_id = ? AND stage = 'approved_ap'
              AND batch_number IS NOT NULL
            GROUP BY factory_id, batch_number, part_id
+         ), batches AS (
+           SELECT factory_id, batch_number, part_id FROM approved
+           UNION
+           SELECT factory_id, batch_number, part_id FROM adjustments
          )
-         SELECT p.id, p.code, p.name, approved.batch_number,
-                approved.approved_qty -
+         SELECT p.id, p.code, p.name, batches.batch_number,
+                COALESCE(approved.approved_qty, 0) -
                   COALESCE(dispatched.dispatched_qty, 0) +
                   COALESCE(adjustments.adjusted_qty, 0) AS balance
-         FROM approved
-         INNER JOIN parts p ON p.id = approved.part_id
-           AND p.factory_id = approved.factory_id
+         FROM batches
+         INNER JOIN parts p ON p.id = batches.part_id
+           AND p.factory_id = batches.factory_id
+         LEFT JOIN approved ON approved.factory_id = batches.factory_id
+           AND approved.batch_number = batches.batch_number
+           AND approved.part_id = batches.part_id
          LEFT JOIN dispatched
-           ON dispatched.factory_id = approved.factory_id
-          AND dispatched.batch_number = approved.batch_number
-          AND dispatched.part_id = approved.part_id
+           ON dispatched.factory_id = batches.factory_id
+          AND dispatched.batch_number = batches.batch_number
+          AND dispatched.part_id = batches.part_id
          LEFT JOIN adjustments
-           ON adjustments.factory_id = approved.factory_id
-          AND adjustments.batch_number = approved.batch_number
-          AND adjustments.part_id = approved.part_id
-         WHERE approved.approved_qty -
+           ON adjustments.factory_id = batches.factory_id
+          AND adjustments.batch_number = batches.batch_number
+          AND adjustments.part_id = batches.part_id
+         WHERE COALESCE(approved.approved_qty, 0) -
                  COALESCE(dispatched.dispatched_qty, 0) +
                  COALESCE(adjustments.adjusted_qty, 0) > 0
-         ORDER BY approved.batch_number, p.code''',
+         ORDER BY batches.batch_number, p.code''',
       [factoryId, factoryId, factoryId],
     );
     return rows.map((row) => Map<String, dynamic>.from(row)).toList();

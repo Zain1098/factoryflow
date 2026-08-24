@@ -161,7 +161,7 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getActiveOperators() async {
     final operators = List<Map<String, dynamic>>.from(_tables['operators'] ?? [])
         .where((operator) =>
-            operator['factory_id'] == activeWorkspaceId && operator['active'] != 0)
+            operator['factory_id'] == activeWorkspaceId && operator['active'] != 0,)
         .toList();
     operators.sort((a, b) {
       final order = (a['sort_order'] as num? ?? 0)
