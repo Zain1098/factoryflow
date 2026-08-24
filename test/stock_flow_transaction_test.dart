@@ -290,11 +290,11 @@ void main() {
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
-      0,
+      10,
     );
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_at_vendor'),
-      10,
+      0,
     );
   });
 
@@ -393,6 +393,10 @@ void main() {
     expect(duplicate.error, contains('No AP-rejected RTV quantity'));
     expect(
       await databaseService.getCurrentBalance('part-a', 'rtv_stock'),
+      0,
+    );
+    expect(
+      await databaseService.getCurrentBalance('part-a', 'rtv_at_vendor'),
       10,
     );
     expect((await repository.getPendingReturns()).single['remaining_qty'], 10);
@@ -502,7 +506,7 @@ void main() {
     await seedStock(
       id: 'rtv-seed',
       partId: 'part-a',
-      stage: StockStage.rtvStock,
+      stage: StockStage.rtvAtVendor,
       qty: 5,
     );
     final repository = RtvRepository(
@@ -774,5 +778,66 @@ void main() {
 
     expect(result.success, isFalse);
     expect(result.error, contains('does not belong to this part'));
+  });
+
+  test('opening BP stock is selectable and dispatchable to a vendor',
+      () async {
+    await databaseService.insertRecord('parts', {
+      'id': 'part-a',
+      'factory_id': 'factory-a',
+      'code': 'A',
+      'name': 'Part A',
+      'active': 1,
+    });
+    await databaseService.insertStockAdjustment({
+      'id': 'opening-bp-a',
+      'factory_id': 'factory-a',
+      'user_id': 'user-a',
+      'part_id': 'part-a',
+      'batch_number': 'OPEN-A',
+      'stage': StockStage.bpStock.value,
+      'previous_qty': 0,
+      'adjusted_qty': 200,
+      'new_qty': 200,
+      'remarks': 'Opening BP stock',
+      'created_at': '2026-07-30T10:00:00.000Z',
+      'sync_status': 'synced',
+    });
+    await seedStock(
+      id: 'opening-bp-ledger-a',
+      partId: 'part-a',
+      stage: StockStage.bpStock,
+      qty: 200,
+    );
+    final repository = DispatchFacoRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+      const ProductionFlowConfig(),
+    );
+
+    final batches = await repository.getRecentBpInspections();
+    expect(batches, hasLength(1));
+    expect(batches.single['part_id'], 'part-a');
+    expect(batches.single['batch_number'], 'OPEN-A');
+    expect(batches.single['available_qty'], 200);
+
+    final dispatched = await repository.saveMulti(
+      items: const [
+        DispatchFacoLineItem(
+          partId: 'part-a',
+          partCode: 'A',
+          partName: 'Part A',
+          batchNumber: 'OPEN-A',
+          qty: 200,
+        ),
+      ],
+      vendorId: 'vendor-a',
+      createdBy: 'user-a',
+    );
+
+    expect(dispatched.success, isTrue);
+    expect(await databaseService.getCurrentBalance('part-a', 'bp_stock'), 0);
+    expect(await databaseService.getCurrentBalance('part-a', 'at_faco'), 200);
   });
 }

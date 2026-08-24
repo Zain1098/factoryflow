@@ -643,10 +643,13 @@ final liveStockReportProvider =
     FROM parts p
     LEFT JOIN stock_ledger sl ON sl.factory_id = p.factory_id
       AND sl.part_id = p.id
-      AND sl.created_at = (
-        SELECT MAX(created_at) FROM stock_ledger
-        WHERE factory_id = p.factory_id
-          AND part_id = p.id AND stage = sl.stage
+      AND sl.rowid = (
+        SELECT current_row.rowid FROM stock_ledger current_row
+        WHERE current_row.factory_id = p.factory_id
+          AND current_row.part_id = p.id
+          AND current_row.stage = sl.stage
+        ORDER BY current_row.created_at DESC, current_row.rowid DESC
+        LIMIT 1
       )
     WHERE p.factory_id = ? AND p.active = 1
     GROUP BY p.id, p.name, p.code
