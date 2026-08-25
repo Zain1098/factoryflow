@@ -230,7 +230,7 @@ class AppDropdown<T> extends StatelessWidget {
   final String label;
   final List<DropdownMenuItem<T>> items;
   final T? value;
-  final void Function(T?) onChanged;
+  final void Function(T?)? onChanged;
   final String? Function(T?)? validator;
   final String? hint;
   final Widget? prefixIcon;
@@ -742,7 +742,7 @@ class RecordDateTimePicker extends StatelessWidget {
       context: context,
       initialDate: value,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now(),
     );
     if (pickedDate == null || !context.mounted) return;
 

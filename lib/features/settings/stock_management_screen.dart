@@ -276,7 +276,7 @@ class _PartStockCard extends ConsumerWidget {
                                 child: Text(
                                   '${batch['batch_number']} · ${_fmt((batch['balance'] as num).toDouble())} PCS',
                                 ),
-                              )),
+                              ),),
                         ],
                         onChanged: (value) =>
                             setS(() => selectedBatchNumber = value),
@@ -314,7 +314,7 @@ class _PartStockCard extends ConsumerWidget {
                               ? 'Set balance'
                               : mode == 'add'
                                   ? 'Add stock'
-                                  : 'Subtract stock'),
+                                  : 'Subtract stock',),
                           selected: adjustMode == mode,
                           onSelected: (_) => setS(() => adjustMode = mode),
                         ),

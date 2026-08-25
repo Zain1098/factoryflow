@@ -139,6 +139,13 @@ class ProductionRepository {
     if (entries.isEmpty) {
       return (batchNumber: '', isWip: false, error: 'No entries to save.');
     }
+    if (recordedAt.isAfter(DateTime.now())) {
+      return (
+        batchNumber: '',
+        isWip: false,
+        error: 'Future production entries are not allowed. Please use the current date and time.',
+      );
+    }
 
     final flowError = _flow.validationError;
     if (flowError != null) {

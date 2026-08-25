@@ -315,6 +315,12 @@ class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update download cancelled.')));
     } else if (!result.succeeded) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.error!)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('APK saved in Downloads/FactoryFlow. Confirm Install in Android to finish updating.'),
+        ),
+      );
     }
   }
 

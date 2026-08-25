@@ -1,8 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:dio/dio.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -14,6 +15,9 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
   final Uri url;
   final String? expectedSha256;
   final CancelToken _cancelToken = CancelToken();
+  static const _downloadChannel = MethodChannel(
+    'com.proflow.factoryflow/app_updates',
+  );
 
   @override
   void cancel() => _cancelToken.cancel('Cancelled by user');
@@ -54,6 +58,7 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
           );
         }
       }
+      await _saveVerifiedApkToDownloads(apk);
       final opened = await OpenFilex.open(
         apk.path,
         type: 'application/vnd.android.package-archive',
@@ -73,6 +78,9 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
       return const AppUpdateDownloadResult.failure(
         'Download failed. Check your connection and try again.',
       );
+    } on StateError catch (error) {
+      await _deleteIfPresent(apk);
+      return AppUpdateDownloadResult.failure(error.message.toString());
     } catch (_) {
       await _deleteIfPresent(apk);
       return const AppUpdateDownloadResult.failure(
@@ -83,6 +91,17 @@ class _AndroidAppUpdateDownloadTask implements AppUpdateDownloadTask {
 
   Future<void> _deleteIfPresent(File? file) async {
     if (file != null && await file.exists()) await file.delete();
+  }
+
+  Future<void> _saveVerifiedApkToDownloads(File apk) async {
+    try {
+      await _downloadChannel.invokeMethod<String>('saveApkToDownloads', {
+        'sourcePath': apk.path,
+        'displayName': 'FactoryFlow-update.apk',
+      });
+    } on PlatformException catch (error) {
+      throw StateError(error.message ?? 'Could not save the APK to Downloads.');
+    }
   }
 }
 
