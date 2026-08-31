@@ -25,7 +25,9 @@ workflow.
   RTV, and final dispatch.
 - Stage-wise live stock, reject, hold, Vendor-pending, production, and dispatch
   reports.
-- Batch traceability for dispatch-eligible finished material.
+- Batch traceability for dispatch-eligible finished material and rejected-stock
+  disposition; a BP/AP rejection action cannot consume quantity from another
+  source batch.
 - Owner/Admin stock reconciliation with immutable ledger movements and remarks.
 - Android update policy and controlled platform administration.
 

@@ -942,6 +942,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
           return ReorderableListView.builder(
             padding: const EdgeInsets.only(bottom: 88),
             itemCount: list.length,
+            // ignore: deprecated_member_use
             onReorder: (oldIndex, newIndex) async {
               if (newIndex > oldIndex) newIndex--;
               final reordered = List<Map<String, dynamic>>.from(list);
@@ -1042,6 +1043,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       },
     );
     if (resultName == null || resultName!.isEmpty) return;
+    if (!mounted) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(context, () => repo.insertOperator(resultName!));
@@ -1059,7 +1061,7 @@ class _OperatorsPageState extends ConsumerState<_OperatorsPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateOperator(id),
         successMessage: 'Operator removed from this device.',);
@@ -1175,6 +1177,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       },
     );
     if (resultName == null || resultName!.isEmpty) return;
+    if (!mounted) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(context, () => repo.insertSupplier(resultName!));
@@ -1192,7 +1195,7 @@ class _SuppliersPageState extends ConsumerState<_SuppliersPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateSupplier(id),
         successMessage: 'Supplier removed from this device.',);
@@ -1344,6 +1347,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       },
     );
     if (resultCode == null || resultName == null) return;
+    if (!mounted) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
@@ -1362,7 +1366,7 @@ class _PartsPageState extends ConsumerState<_PartsPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivatePart(id),
         successMessage: 'Part removed from this device.',);
@@ -1547,6 +1551,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
     );
 
     if (resultName == null || resultCode == null) return;
+    if (!mounted) return;
 
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
@@ -1573,7 +1578,7 @@ class _MachinesPageState extends ConsumerState<_MachinesPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateMachine(id),
         successMessage: 'Machine removed from this device.',);
@@ -1694,6 +1699,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       },
     );
     if (resultName == null || resultName!.isEmpty) return;
+    if (!mounted) return;
     // Insert using masterDataRepository — vendors table already exists in DB
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
@@ -1713,7 +1719,7 @@ class _VendorsPageState extends ConsumerState<_VendorsPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateVendor(id),
         successMessage: 'Vendor removed from this device.',);
@@ -1828,6 +1834,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
     );
     controller.dispose();
     if (result == null) return;
+    if (!mounted) return;
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
@@ -1847,7 +1854,7 @@ class _CustomersPageState extends ConsumerState<_CustomersPage> {
       confirmLabel: 'Deactivate',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateCustomer(id),
         successMessage: 'Customer removed from this device.',);
@@ -1956,6 +1963,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       },
     );
     if (resultName == null || resultName!.isEmpty) return;
+    if (!mounted) return;
     final repo = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(context, () => repo.insertDriver(resultName!));
@@ -1973,7 +1981,7 @@ class _DriversPageState extends ConsumerState<_DriversPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateDriver(id),
         successMessage: 'Driver removed from this device.',);
@@ -2092,6 +2100,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       },
     );
     if (resultPlate == null || resultPlate!.isEmpty) return;
+    if (!mounted) return;
     final repository = ref.read(masterDataRepositoryProvider);
     if (id == null) {
       await _runSettingsAction(
@@ -2110,7 +2119,7 @@ class _VehiclesPageState extends ConsumerState<_VehiclesPage> {
       confirmLabel: 'Remove',
       isDestructive: true,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
     await _runSettingsAction(context,
         () => ref.read(masterDataRepositoryProvider).deactivateVehicle(id),
         successMessage: 'Vehicle removed from this device.',);
@@ -2210,8 +2219,6 @@ class _DatabaseSyncStatusPage extends ConsumerStatefulWidget {
 
 class _DatabaseSyncStatusPageState
     extends ConsumerState<_DatabaseSyncStatusPage> {
-  final bool _syncing = false;
-
   @override
   Widget build(BuildContext context) {
     final pendingState = ref.watch(pendingSyncCountProvider);
@@ -2479,10 +2486,13 @@ class _ProductionFlowPage extends ConsumerWidget {
             style: TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 8),
+          // ignore: deprecated_member_use
           RadioListTile<ProductionCountingMode>(
             contentPadding: EdgeInsets.zero,
             value: ProductionCountingMode.completedOutput,
+            // ignore: deprecated_member_use
             groupValue: flow.countingMode,
+            // ignore: deprecated_member_use
             onChanged: (mode) {
               if (mode != null) {
                 ref.read(productionFlowProvider.notifier).setCountingMode(mode);
@@ -2493,10 +2503,13 @@ class _ProductionFlowPage extends ConsumerWidget {
               'Count only final-machine good output. Three stages making 450 PCS count as 450 PCS.',
             ),
           ),
+          // ignore: deprecated_member_use
           RadioListTile<ProductionCountingMode>(
             contentPadding: EdgeInsets.zero,
             value: ProductionCountingMode.stageWorkload,
+            // ignore: deprecated_member_use
             groupValue: flow.countingMode,
+            // ignore: deprecated_member_use
             onChanged: (mode) {
               if (mode != null) {
                 ref.read(productionFlowProvider.notifier).setCountingMode(mode);
@@ -2547,9 +2560,12 @@ class _ProductionFlowPage extends ConsumerWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
+            // ignore: deprecated_member_use
             RadioListTile<ProductionMode>(
               value: ProductionMode.multiStageSequential,
+              // ignore: deprecated_member_use
               groupValue: flow.productionMode,
+              // ignore: deprecated_member_use
               onChanged: (m) {
                 if (m != null) {
                   ref
@@ -2562,9 +2578,12 @@ class _ProductionFlowPage extends ConsumerWidget {
                 'Recommended when a part moves from one machine to the next before it is ready.',
               ),
             ),
+            // ignore: deprecated_member_use
             RadioListTile<ProductionMode>(
               value: ProductionMode.directSingleStage,
+              // ignore: deprecated_member_use
               groupValue: flow.productionMode,
+              // ignore: deprecated_member_use
               onChanged: (m) {
                 if (m != null) {
                   ref

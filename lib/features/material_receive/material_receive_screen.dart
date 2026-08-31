@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/widgets/barcode_scanner_view.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'material_receive_providers.dart';
@@ -496,10 +497,23 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
             const SizedBox(height: 12),
 
             AppFormField(
-              label: 'PO Number (optional)',
+              label: 'PO / Supplier Challan Number (optional)',
               controller: _poCtrl,
               prefixIcon: const Icon(Icons.receipt_outlined),
-              hint: 'Leave blank if no PO',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                tooltip: 'Scan Challan / PO Barcode',
+                onPressed: () async {
+                  final code = await BarcodeScannerView.scan(
+                    context,
+                    title: 'Scan Supplier Challan / PO',
+                  );
+                  if (code != null && code.isNotEmpty) {
+                    _poCtrl.text = code;
+                  }
+                },
+              ),
+              hint: 'Scan or type PO / Challan number',
             ),
             const SizedBox(height: 12),
 

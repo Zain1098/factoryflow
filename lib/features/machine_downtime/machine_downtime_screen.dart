@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'machine_downtime_providers.dart';
@@ -228,7 +229,12 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
               maxLines: 2,
               prefixIcon: const Icon(Icons.notes),
             ),
-
+            const SizedBox(height: 14),
+            DefectPhotoPicker(
+              label: 'Breakdown / Part Failure Photo',
+              hint: 'Attach photo of broken component or error message',
+              onPhotoChanged: (path) {},
+            ),
             const SizedBox(height: 16),
             if (_error != null) ErrorBanner(_error!),
             if (_success != null) SuccessBanner(_success!),

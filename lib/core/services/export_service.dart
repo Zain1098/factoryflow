@@ -100,6 +100,319 @@ class ExportService {
     }
   }
 
+  /// Delivery Challan & Gate Pass PDF Generation with QR Code and Signatures
+  static Future<void> exportDeliveryChallanPdf({
+    required BuildContext context,
+    required String challanNumber,
+    required String date,
+    required String customerName,
+    required String vehicleNumber,
+    required String driverName,
+    required List<Map<String, dynamic>> items,
+    String? factoryTitle,
+  }) async {
+    final pdf = pw.Document();
+    final font = await PdfGoogleFonts.interRegular();
+    final fontBold = await PdfGoogleFonts.interBold();
+
+    final qrData =
+        'CHALLAN:$challanNumber|DATE:$date|CUSTOMER:$customerName|VEHICLE:$vehicleNumber|ITEMS:${items.length}';
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(28),
+        build: (ctx) {
+          final totalQty = items.fold<double>(
+            0.0,
+            (s, it) => s + ((it['qty'] as num?)?.toDouble() ?? 0.0),
+          );
+
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              // Header
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        factoryTitle ?? 'FACTORYFLOW INDUSTRIAL ERP',
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 16,
+                          color: _pdfBlue,
+                        ),
+                      ),
+                      pw.SizedBox(height: 2),
+                      pw.Text(
+                        'DELIVERY CHALLAN & GOODS OUTWARD GATE PASS',
+                        style: pw.TextStyle(
+                          font: fontBold,
+                          fontSize: 11,
+                          color: PdfColors.grey800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.Container(
+                    width: 64,
+                    height: 64,
+                    child: pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: qrData,
+                    ),
+                  ),
+                ],
+              ),
+              pw.Divider(color: _pdfBlue, thickness: 1.5),
+              pw.SizedBox(height: 8),
+
+              // Metadata Box
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: _pdfLightBlue,
+                  borderRadius:
+                      const pw.BorderRadius.all(pw.Radius.circular(6)),
+                  border:
+                      pw.Border.all(color: PdfColors.blueGrey200, width: 0.8),
+                ),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Challan / Gate Pass No: $challanNumber',
+                            style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 9,
+                            ),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'Date & Time: $date',
+                            style: pw.TextStyle(
+                              font: font,
+                              fontSize: 9,
+                            ),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'Customer / Consignee: $customerName',
+                            style: pw.TextStyle(
+                              font: fontBold,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Vehicle Number: $vehicleNumber',
+                            style: pw.TextStyle(font: fontBold, fontSize: 9),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'Driver Name: $driverName',
+                            style: pw.TextStyle(font: font, fontSize: 9),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(
+                            'Dispatch Type: Final Customer Delivery',
+                            style: pw.TextStyle(font: font, fontSize: 9),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 14),
+
+              // Table
+              pw.Text(
+                'DISPATCHED ITEMS',
+                style: pw.TextStyle(
+                  font: fontBold,
+                  fontSize: 10,
+                  color: _pdfBlue,
+                ),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Table(
+                border: pw.TableBorder.all(
+                  color: PdfColors.blueGrey200,
+                  width: 0.5,
+                ),
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: _pdfBlue),
+                    children: [
+                      _pdfCell(
+                        'Sr.',
+                        fontBold,
+                        color: _pdfWhite,
+                        isHeader: true,
+                      ),
+                      _pdfCell(
+                        'Part Description',
+                        fontBold,
+                        color: _pdfWhite,
+                        isHeader: true,
+                      ),
+                      _pdfCell(
+                        'Part Code',
+                        fontBold,
+                        color: _pdfWhite,
+                        isHeader: true,
+                      ),
+                      _pdfCell(
+                        'Batch Number',
+                        fontBold,
+                        color: _pdfWhite,
+                        isHeader: true,
+                      ),
+                      _pdfCell(
+                        'Qty (PCS)',
+                        fontBold,
+                        color: _pdfWhite,
+                        isHeader: true,
+                      ),
+                    ],
+                  ),
+                  for (var i = 0; i < items.length; i++)
+                    pw.TableRow(
+                      decoration: i.isOdd
+                          ? const pw.BoxDecoration(color: _pdfLightBlue)
+                          : null,
+                      children: [
+                        _pdfCell('${i + 1}', font),
+                        _pdfCell(
+                          items[i]['part_name']?.toString() ?? '—',
+                          font,
+                        ),
+                        _pdfCell(
+                          items[i]['part_code']?.toString() ?? '—',
+                          font,
+                        ),
+                        _pdfCell(
+                          items[i]['batch_number']?.toString() ?? '—',
+                          fontBold,
+                        ),
+                        _pdfCell(
+                          _fmt(
+                            ((items[i]['qty'] as num?)?.toDouble() ?? 0.0),
+                          ),
+                          fontBold,
+                        ),
+                      ],
+                    ),
+                  pw.TableRow(
+                    decoration:
+                        pw.BoxDecoration(color: PdfColor.fromHex('#0D47A1')),
+                    children: [
+                      _pdfCell('', fontBold, color: _pdfWhite),
+                      _pdfCell('TOTAL QUANTITY', fontBold, color: _pdfWhite),
+                      _pdfCell('', fontBold, color: _pdfWhite),
+                      _pdfCell('', fontBold, color: _pdfWhite),
+                      _pdfCell(_fmt(totalQty), fontBold, color: _pdfWhite),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 28),
+
+              // Signatures
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        width: 100,
+                        height: 1,
+                        color: PdfColors.grey600,
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Prepared By (Stores)',
+                        style: pw.TextStyle(font: font, fontSize: 8),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        width: 100,
+                        height: 1,
+                        color: PdfColors.grey600,
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Security Gate Outward',
+                        style: pw.TextStyle(font: font, fontSize: 8),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        width: 100,
+                        height: 1,
+                        color: PdfColors.grey600,
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Driver Signature',
+                        style: pw.TextStyle(font: font, fontSize: 8),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        width: 100,
+                        height: 1,
+                        color: PdfColors.grey600,
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Receiver Stamp & Sign',
+                        style: pw.TextStyle(font: font, fontSize: 8),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    final bytes = await pdf.save();
+    await _sharePdf(
+      bytes: bytes,
+      filename:
+          'delivery_challan_${challanNumber.replaceAll(' ', '_')}.pdf',
+    );
+  }
+
   /// Machine Downtime Report.
   static Future<void> exportDowntimeReport({
     required BuildContext context,

@@ -325,11 +325,22 @@ class DatabaseService {
         remarks TEXT,
         created_at TEXT,
         sync_status TEXT DEFAULT 'pending')''',
+      '''CREATE TABLE IF NOT EXISTS in_app_notifications (
+        id TEXT PRIMARY KEY,
+        factory_id TEXT,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        action_route TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL)''',
       'CREATE INDEX IF NOT EXISTS idx_backup_user ON backup_records(user_id)',
       'CREATE INDEX IF NOT EXISTS idx_backup_table ON backup_records(source_table)',
       'CREATE INDEX IF NOT EXISTS idx_backup_at ON backup_records(backed_up_at)',
       'CREATE INDEX IF NOT EXISTS idx_stock_adj_part ON stock_adjustments(part_id)',
       'CREATE INDEX IF NOT EXISTS idx_stock_adj_created ON stock_adjustments(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_notif_factory_read ON in_app_notifications(factory_id, is_read)',
+      'CREATE INDEX IF NOT EXISTS idx_notif_created ON in_app_notifications(created_at)',
       // Indexes
       'CREATE INDEX IF NOT EXISTS idx_ledger_part_stage ON stock_ledger(part_id, stage)',
       'CREATE INDEX IF NOT EXISTS idx_ledger_date ON stock_ledger(date)',
@@ -1294,7 +1305,6 @@ class DatabaseService {
 
   // ── Correction Requests ───────────────────────────────────────────────────
 
-  /// FIXED: Proper method instead of raw SQL in corrections_screen.dart.
   Future<void> updateCorrectionStatus({
     required String id,
     required String status,
@@ -1302,16 +1312,67 @@ class DatabaseService {
     String? reviewRemarks,
   }) async {
     final request = db.select(
-      'SELECT factory_id FROM correction_requests WHERE id = ?',
+      'SELECT * FROM correction_requests WHERE id = ?',
       [id],
     );
     if (request.isEmpty) return;
-    final factoryId = request.first['factory_id'] as String? ?? '';
+    final row = request.first;
+    final factoryId = row['factory_id'] as String? ?? '';
     if (factoryId.isEmpty || factoryId != activeWorkspaceId) return;
+
+    final now = DateTime.now().toIso8601String();
     db.execute(
       'UPDATE correction_requests SET status = ?, reviewed_by = ?, reviewed_at = ?, review_remarks = ? WHERE id = ?',
-      [status, reviewedBy, DateTime.now().toIso8601String(), reviewRemarks, id],
+      [status, reviewedBy, now, reviewRemarks, id],
     );
+
+    // If approved, apply proposed changes to target record
+    if (status == 'approved') {
+      final tableName = row['table_name'] as String? ?? '';
+      final recordId = row['record_id'] as String? ?? '';
+      final proposedJson = row['proposed_value_json'] as String?;
+      if (tableName.isNotEmpty && recordId.isNotEmpty && proposedJson != null && proposedJson.isNotEmpty) {
+        try {
+          final proposed = jsonDecode(proposedJson) as Map<String, dynamic>;
+          for (final entry in proposed.entries) {
+            final col = entry.key;
+            if (col != 'id' && col != 'factory_id' && col != 'sync_status') {
+              db.execute(
+                'UPDATE $tableName SET $col = ?, sync_status = ? WHERE id = ? AND factory_id = ?',
+                [entry.value, 'pending', recordId, factoryId],
+              );
+            }
+          }
+          await writeAuditLog(
+            id: const Uuid().v4(),
+            tableName: tableName,
+            recordId: recordId,
+            action: 'CORRECTION_APPLIED',
+            changedBy: reviewedBy ?? 'admin',
+            newValue: proposed,
+          );
+        } catch (_) {}
+      }
+
+      await insertInAppNotification(
+        title: 'Correction Request Approved',
+        body: 'Your correction request for $tableName #$recordId has been approved.',
+        type: 'correction',
+        actionRoute: '/corrections',
+        factoryId: factoryId,
+      );
+    } else if (status == 'rejected') {
+      final tableName = row['table_name'] as String? ?? '';
+      final recordId = row['record_id'] as String? ?? '';
+      await insertInAppNotification(
+        title: 'Correction Request Rejected',
+        body: 'Correction request for $tableName #$recordId was rejected: ${reviewRemarks ?? "No reason given"}.',
+        type: 'correction',
+        actionRoute: '/corrections',
+        factoryId: factoryId,
+      );
+    }
+
     await enqueueSync(
       tableName: 'correction_requests',
       recordId: id,
@@ -1734,6 +1795,100 @@ class DatabaseService {
       [factoryId],
     );
     return result.first['cnt'] as int;
+  }
+
+  // ── In-App Notifications ──────────────────────────────────────────────────
+  Future<void> insertInAppNotification({
+    required String title,
+    required String body,
+    required String type,
+    String? actionRoute,
+    String? factoryId,
+  }) async {
+    final effectiveFactoryId = (factoryId ?? activeWorkspaceId).trim();
+    final id = const Uuid().v4();
+    final now = DateTime.now().toIso8601String();
+    db.execute(
+      '''INSERT INTO in_app_notifications
+         (id, factory_id, title, body, type, action_route, is_read, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)''',
+      [id, effectiveFactoryId, title, body, type, actionRoute, now],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getInAppNotifications({
+    String? type,
+    int limit = 100,
+  }) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      final rows = type == null
+          ? db.select(
+              'SELECT * FROM in_app_notifications ORDER BY created_at DESC LIMIT ?',
+              [limit],
+            )
+          : db.select(
+              'SELECT * FROM in_app_notifications WHERE type = ? ORDER BY created_at DESC LIMIT ?',
+              [type, limit],
+            );
+      return rows.map(_rowToMap).toList();
+    }
+    final rows = type == null
+        ? db.select(
+            'SELECT * FROM in_app_notifications WHERE factory_id = ? ORDER BY created_at DESC LIMIT ?',
+            [factoryId, limit],
+          )
+        : db.select(
+            'SELECT * FROM in_app_notifications WHERE factory_id = ? AND type = ? ORDER BY created_at DESC LIMIT ?',
+            [factoryId, type, limit],
+          );
+    return rows.map(_rowToMap).toList();
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      final rows = db.select(
+        'SELECT COUNT(*) as cnt FROM in_app_notifications WHERE is_read = 0',
+      );
+      return rows.first['cnt'] as int;
+    }
+    final rows = db.select(
+      'SELECT COUNT(*) as cnt FROM in_app_notifications WHERE factory_id = ? AND is_read = 0',
+      [factoryId],
+    );
+    return rows.first['cnt'] as int;
+  }
+
+  Future<void> markNotificationAsRead(String id) async {
+    db.execute(
+      'UPDATE in_app_notifications SET is_read = 1 WHERE id = ?',
+      [id],
+    );
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      db.execute('UPDATE in_app_notifications SET is_read = 1');
+    } else {
+      db.execute(
+        'UPDATE in_app_notifications SET is_read = 1 WHERE factory_id = ?',
+        [factoryId],
+      );
+    }
+  }
+
+  Future<void> clearAllNotifications() async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      db.execute('DELETE FROM in_app_notifications');
+    } else {
+      db.execute(
+        'DELETE FROM in_app_notifications WHERE factory_id = ?',
+        [factoryId],
+      );
+    }
   }
 
   void dispose() {

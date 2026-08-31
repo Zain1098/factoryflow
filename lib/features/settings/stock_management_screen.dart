@@ -8,6 +8,7 @@ import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../auth/auth_providers.dart';
 import '../final_dispatch/final_dispatch_providers.dart';
+import 'physical_stock_audit_screen.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,16 @@ class _StockManagementScreenState extends ConsumerState<StockManagementScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Stock Management'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calculate_outlined),
+            tooltip: 'Physical Stock Audit Wizard',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PhysicalStockAuditScreen()),
+            ),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [Tab(text: 'Overview'), Tab(text: 'History')],
@@ -208,6 +219,8 @@ class _PartStockCard extends ConsumerWidget {
     }
     String? selectedBatchNumber;
     final openingBatchNumber = 'OPEN-${part['code'] as String}';
+
+    if (!context.mounted) return;
 
     await showDialog<void>(
       context: context,

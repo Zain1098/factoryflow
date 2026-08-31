@@ -7,6 +7,7 @@ import '../../core/network/sync_service.dart';
 import '../../core/widgets/app_shell.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
+import '../notifications/notification_providers.dart';
 import 'dashboard_providers.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -19,6 +20,7 @@ class DashboardScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final isOnline = ref.watch(isOnlineProvider);
     final pendingSync = ref.watch(pendingSyncCountProvider).value ?? 0;
+    final unreadNotifs = ref.watch(unreadNotificationCountProvider).value ?? 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -51,7 +53,11 @@ class DashboardScreen extends ConsumerWidget {
             compact: true,
           ),
           IconButton(
-            icon: const Icon(Icons.notifications_none_rounded),
+            icon: Badge.count(
+              count: unreadNotifs,
+              isLabelVisible: unreadNotifs > 0,
+              child: const Icon(Icons.notifications_none_rounded),
+            ),
             onPressed: () => context.push('/notifications'),
             tooltip: 'Notifications',
           ),
@@ -100,6 +106,10 @@ class DashboardScreen extends ConsumerWidget {
 
               // ── Top Premium Efficiency Header ──
               _buildEfficiencyHeader(context, data),
+              const SizedBox(height: 16),
+
+              // ── Industrial OEE Overall Equipment Effectiveness ──
+              _buildOeeCard(context, data),
               const SizedBox(height: 16),
 
               // ── Machine Status Row ──
@@ -477,6 +487,165 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOeeCard(BuildContext context, DashboardData data) {
+    final theme = Theme.of(context);
+    final oee = data.oeeScore;
+    final oeeColor = oee >= 85
+        ? const Color(0xFF1E9E8F)
+        : oee >= 65
+            ? const Color(0xFFE09F3E)
+            : const Color(0xFFCF3030);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: oeeColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.analytics_outlined, color: oeeColor, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Overall Equipment Effectiveness (OEE)',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: oeeColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: oeeColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  '${oee.toStringAsFixed(1)}% OEE',
+                  style: TextStyle(color: oeeColor, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildOeePillar(
+                  context,
+                  title: 'Availability',
+                  rate: data.availabilityRate * 100,
+                  subtext: data.todayDowntimeMins > 0
+                      ? '${data.todayDowntimeMins.toInt()}m downtime'
+                      : '0m downtime',
+                  color: data.availabilityRate >= 0.9 ? Colors.green : Colors.orange,
+                  icon: Icons.timer_outlined,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildOeePillar(
+                  context,
+                  title: 'Performance',
+                  rate: (data.performanceRate * 100).clamp(0.0, 100.0),
+                  subtext: '${_fmt(data.todayProduction)} / ${_fmt(data.todayTarget)} PCS',
+                  color: data.performanceRate >= 0.8 ? Colors.blue : Colors.amber.shade800,
+                  icon: Icons.speed_rounded,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildOeePillar(
+                  context,
+                  title: 'Quality',
+                  rate: data.qualityRate * 100,
+                  subtext: '${(100 - data.totalRejectPct).clamp(0.0, 100.0).toStringAsFixed(1)}% yield',
+                  color: data.qualityRate >= 0.95 ? Colors.teal : Colors.red,
+                  icon: Icons.verified_user_outlined,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOeePillar(
+    BuildContext context, {
+    required String title,
+    required double rate,
+    required String subtext,
+    required Color color,
+    required IconData icon,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  title,
+                  style: theme.textTheme.labelSmall?.copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${rate.toStringAsFixed(0)}%',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: color,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtext,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 9,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -919,176 +1088,6 @@ class DashboardScreen extends ConsumerWidget {
     return labels[stage] ?? stage;
   }
 
-  Widget _buildStockGrid(BuildContext context, DashboardData data) {
-    final theme = Theme.of(context);
-    final stocks = [
-      _StockEntry(
-        'Raw Material',
-        data.rawMaterial,
-        Icons.inventory_2_outlined,
-        const Color(0xFF795548),
-      ),
-      _StockEntry(
-        'Bending WIP',
-        data.bendingWip,
-        Icons.rotate_right,
-        const Color(0xFFF57F17),
-      ),
-      _StockEntry(
-        'Notching WIP',
-        data.notchingWip,
-        Icons.content_cut,
-        const Color(0xFFE65100),
-      ),
-      _StockEntry(
-        'End Forming WIP',
-        data.endFormingWip,
-        Icons.change_circle_outlined,
-        const Color(0xFFBF360C),
-      ),
-      _StockEntry(
-        'Prod. Rejected',
-        data.productionRejected,
-        Icons.cancel_outlined,
-        const Color(0xFFCF3030),
-      ),
-      _StockEntry(
-        'BP Stock',
-        data.bpStock,
-        Icons.check_circle_outline,
-        const Color(0xFF2B4C7E),
-      ),
-      _StockEntry(
-        'BP Rejected',
-        data.bpRejected,
-        Icons.cancel_outlined,
-        const Color(0xFFCF3030),
-      ),
-      _StockEntry(
-        'At Vendor',
-        data.atFaco,
-        Icons.local_shipping_outlined,
-        const Color(0xFF6A1B9A),
-      ),
-      _StockEntry(
-        'Pending AP Insp.',
-        data.pendingAp,
-        Icons.hourglass_top_outlined,
-        const Color(0xFF283593),
-      ),
-      _StockEntry(
-        'AP Approved',
-        data.approvedAp,
-        Icons.verified_outlined,
-        const Color(0xFF1E9E8F),
-      ),
-      _StockEntry(
-        'AP Rejected',
-        data.apRejected,
-        Icons.warning_amber_outlined,
-        const Color(0xFFE64A19),
-      ),
-      _StockEntry(
-        'RTV Outstanding',
-        data.rtvStock,
-        Icons.undo,
-        const Color(0xFFCF3030),
-      ),
-    ];
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.75,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: stocks.length,
-      itemBuilder: (context, i) {
-        final s = stocks[i];
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.cardTheme.color ?? theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: theme.dividerColor,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Stack(
-              children: [
-                // Left accent bar
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 4,
-                    color: s.color,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: s.color.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(7),
-                            ),
-                            child: Icon(s.icon, color: s.color, size: 13),
-                          ),
-                          const SizedBox(width: 7),
-                          Expanded(
-                            child: Text(
-                              s.label,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _fmt(s.qty),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.onSurface,
-                          height: 1,
-                        ),
-                      ),
-                      Text(
-                        'PCS',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.6),
-                          fontSize: 9,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildTodayGrid(BuildContext context, DashboardData data) {
     final theme = Theme.of(context);
     final items = [
@@ -1323,95 +1322,6 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    final theme = Theme.of(context);
-    final actions = [
-      const _QuickAction(
-        'Production',
-        Icons.precision_manufacturing,
-        '/production',
-        Color(0xFF1E9E8F),
-      ),
-      const _QuickAction(
-        'Material Receive',
-        Icons.inventory_2_outlined,
-        '/material-receive',
-        Color(0xFF795548),
-      ),
-      const _QuickAction(
-        'BP Inspection',
-        Icons.fact_check_outlined,
-        '/bp-inspection',
-        Color(0xFF2B4C7E),
-      ),
-      const _QuickAction(
-        'Dispatch Vendor',
-        Icons.local_shipping_outlined,
-        '/dispatch-faco',
-        Color(0xFFE09F3E),
-      ),
-    ];
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 2.8,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: actions.length,
-      itemBuilder: (context, i) {
-        final a = actions[i];
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => context.push(a.route),
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.cardTheme.color ?? theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: theme.dividerColor),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: a.color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(a.icon, color: a.color, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      a.label,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 12,
-                    color: theme.colorScheme.onSurfaceVariant
-                        .withValues(alpha: 0.4),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   String _fmt(double v) =>
       v == v.toInt() ? v.toInt().toString() : v.toStringAsFixed(1);
 }
@@ -1556,10 +1466,3 @@ class _StockEntry {
   final Color color;
 }
 
-class _QuickAction {
-  const _QuickAction(this.label, this.icon, this.route, this.color);
-  final String label;
-  final IconData icon;
-  final String route;
-  final Color color;
-}

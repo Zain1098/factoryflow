@@ -37,6 +37,7 @@ dependencies:
   dio: ^5.9.0
   open_filex: ^4.7.0
   google_fonts: ^6.2.1
+  mobile_scanner: ^6.0.4
 
 dev_dependencies:
   flutter_test:

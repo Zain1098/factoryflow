@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/widgets/barcode_scanner_view.dart';
+import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'bp_inspection_providers.dart';
@@ -224,35 +226,62 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                 loading: () => const LinearProgressIndicator(),
                 error: (error, _) =>
                     ErrorBanner('Could not load production batches: $error'),
-                data: (list) => AppDropdown<String>(
-                  label: 'Production Batch',
-                  isRequired: true,
-                  prefixIcon: const Icon(Icons.qr_code_2),
-                  value: _batchCtrl.text.isEmpty ? null : _batchCtrl.text,
-                  items: list
-                      .map((batch) => DropdownMenuItem(
-                            value: batch['batch_number'] as String,
-                            child: Text(
-                              '${batch['batch_number']} • ${batch['part_code']} - '
-                              '${batch['part_name']} • ${batch['machine_name']}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),)
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    final batch = list.firstWhere(
-                      (item) => item['batch_number'] == value,
-                    );
-                    setState(() {
-                      _batchCtrl.text = value;
-                      _partId = batch['part_id'] as String?;
-                      _machineId = batch['machine_id'] as String?;
-                    });
-                  },
-                  validator: (value) => value == null
-                      ? 'Select the original Production batch'
-                      : null,
+                data: (list) => Row(
+                  children: [
+                    Expanded(
+                      child: AppDropdown<String>(
+                        label: 'Production Batch',
+                        isRequired: true,
+                        prefixIcon: const Icon(Icons.qr_code_2),
+                        value: _batchCtrl.text.isEmpty ? null : _batchCtrl.text,
+                        items: list
+                            .map((batch) => DropdownMenuItem(
+                                  value: batch['batch_number'] as String,
+                                  child: Text(
+                                    '${batch['batch_number']} • ${batch['part_code']} - '
+                                    '${batch['part_name']} • ${batch['machine_name']}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),)
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          final batch = list.firstWhere(
+                            (item) => item['batch_number'] == value,
+                          );
+                          setState(() {
+                            _batchCtrl.text = value;
+                            _partId = batch['part_id'] as String?;
+                            _machineId = batch['machine_id'] as String?;
+                          });
+                        },
+                        validator: (value) => value == null
+                            ? 'Select the original Production batch'
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: 'Scan Batch QR',
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      onPressed: () async {
+                        final scanned = await BarcodeScannerView.scan(context, title: 'Scan Batch Code');
+                        if (scanned != null && scanned.isNotEmpty) {
+                          final match = list.firstWhere(
+                            (b) => (b['batch_number'] as String).toLowerCase() == scanned.toLowerCase(),
+                            orElse: () => <String, dynamic>{},
+                          );
+                          if (match.isNotEmpty) {
+                            setState(() {
+                              _batchCtrl.text = match['batch_number'] as String;
+                              _partId = match['part_id'] as String?;
+                              _machineId = match['machine_id'] as String?;
+                            });
+                          }
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -357,6 +386,13 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                 return null;
               },
             ),
+            const SizedBox(height: 14),
+            DefectPhotoPicker(
+              label: 'BP Defect Evidence Photo',
+              hint: 'Attach photo of surface finish, dimension, or crack issue',
+              onPhotoChanged: (photoPath) {},
+            ),
+            const SizedBox(height: 16),
             const SizedBox(height: 16),
             if (_error != null) ErrorBanner(_error!),
             if (_success != null) SuccessBanner(_success!),

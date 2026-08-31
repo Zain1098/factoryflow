@@ -6,6 +6,7 @@ import 'package:factoryflow/core/network/sync_service.dart';
 import 'package:factoryflow/core/services/alert_producer_service.dart';
 import 'package:factoryflow/core/services/stock_ledger_service.dart';
 import 'package:factoryflow/features/ap_inspection/ap_inspection_providers.dart';
+import 'package:factoryflow/features/bp_inspection/bp_inspection_providers.dart';
 import 'package:factoryflow/features/dispatch_faco/dispatch_faco_providers.dart';
 import 'package:factoryflow/features/final_dispatch/final_dispatch_providers.dart';
 import 'package:factoryflow/features/material_receive/material_receive_providers.dart';
@@ -333,6 +334,75 @@ void main() {
 
     expect(result.success, isFalse);
     expect(result.error, contains('pending AP batch stock'));
+  });
+
+  test('rejected-stock actions cannot consume a different source batch',
+      () async {
+    await databaseService.insertRecord('bp_inspections', {
+      'id': 'bp-a',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-A',
+      'date': '2026-07-30',
+      'part_id': 'part-a',
+      'machine_id': 'machine-a',
+      'inspected_qty': 10,
+      'bp_reject_qty': 4,
+      'sync_status': 'synced',
+    });
+    await databaseService.insertRecord('ap_inspections', {
+      'id': 'ap-b',
+      'factory_id': 'factory-a',
+      'batch_number': 'BATCH-B',
+      'date': '2026-07-30',
+      'part_id': 'part-a',
+      'qty_checked': 10,
+      'approved_qty': 6,
+      'rejected_qty': 4,
+      'rtv_qty': 0,
+      'sync_status': 'synced',
+    });
+    await seedStock(
+      id: 'bp-rejected-seed',
+      partId: 'part-a',
+      stage: StockStage.bpRejected,
+      qty: 4,
+    );
+    await seedStock(
+      id: 'ap-rejected-seed',
+      partId: 'part-a',
+      stage: StockStage.apRejected,
+      qty: 4,
+    );
+
+    final bpResult = await BpInspectionRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+    ).finalizeRejected(
+      partId: 'part-a',
+      batchNumber: 'BATCH-A',
+      qty: 5,
+      createdBy: 'quality-a',
+      remarks: 'Verified scrap',
+    );
+    final apResult = await ApInspectionRepository(
+      databaseService,
+      syncService,
+      ledgerService,
+    ).scrapRejected(
+      partId: 'part-a',
+      batchNumber: 'BATCH-B',
+      qty: 5,
+      createdBy: 'quality-a',
+      remarks: 'Verified scrap',
+    );
+
+    expect(bpResult.success, isFalse);
+    expect(bpResult.error, contains('BP rejected stock for batch BATCH-A'));
+    expect(apResult.success, isFalse);
+    expect(apResult.error, contains('AP rejected stock for batch BATCH-B'));
+    expect(await databaseService.getCurrentBalance('part-a', 'bp_rejected'), 4);
+    expect(await databaseService.getCurrentBalance('part-a', 'ap_rejected'), 4);
   });
 
   test('RTV assignment keeps vendor-outstanding stock and blocks reuse',

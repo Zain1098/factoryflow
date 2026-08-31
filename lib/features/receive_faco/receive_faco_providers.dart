@@ -42,7 +42,8 @@ class ReceiveFacoRepository {
     if (dispatchRefId == null) {
       return const ReceiveFacoResult(
         success: false,
-        error: 'Select the original vendor dispatch before receiving material.',
+        error:
+            'Select the original Faco dispatch before receiving material.',
       );
     }
     double? dispatchedQty;

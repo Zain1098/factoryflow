@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../ap_inspection/ap_inspection_providers.dart';
@@ -295,6 +296,12 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
             controller: _remarksCtrl,
             maxLines: 2,
             prefixIcon: const Icon(Icons.notes),
+          ),
+          const SizedBox(height: 14),
+          DefectPhotoPicker(
+            label: 'RTV Defect / Reject Evidence Photo',
+            hint: 'Attach photo of plating/vendor defect for return claim',
+            onPhotoChanged: (path) {},
           ),
           const SizedBox(height: 16),
           if (_error != null) ErrorBanner(_error!),

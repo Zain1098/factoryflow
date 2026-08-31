@@ -187,6 +187,9 @@ void main() {
       ],
     );
 
+    tester.view.physicalSize = const Size(600, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+
     await tester.tap(find.text('Select finished part'));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('V21'));
@@ -194,6 +197,15 @@ void main() {
     await tester.scrollUntilVisible(find.text('Add machine entry'), 250);
     await tester.tap(find.text('Add machine entry'));
     await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Input Quantity (PCS)'),
+      '100',
+    );
+    await tester.scrollUntilVisible(
+      find.text('Add Machine Entry to List'),
+      250,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.tap(find.text('Add Machine Entry to List'));
     await tester.pumpAndSettle();
 

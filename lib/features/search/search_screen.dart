@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/database_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/barcode_scanner_view.dart';
 import '../../core/widgets/shared_widgets.dart';
+import 'batch_genealogy_screen.dart';
 
 enum _SearchMode { batch, challan, partId }
 
@@ -137,13 +139,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     decoration: InputDecoration(
                       hintText: _mode.hint,
                       prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: query.isEmpty
-                          ? null
-                          : IconButton(
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (query.isNotEmpty)
+                            IconButton(
                               tooltip: 'Clear search',
                               icon: const Icon(Icons.close_rounded),
                               onPressed: _searchCtrl.clear,
                             ),
+                          IconButton(
+                            tooltip: 'Scan Barcode / QR',
+                            icon: const Icon(Icons.qr_code_scanner_rounded),
+                            color: theme.colorScheme.primary,
+                            onPressed: () async {
+                              final code = await BarcodeScannerView.scan(
+                                context,
+                                title: 'Scan ${_mode.label}',
+                                hint: 'Align barcode or QR code inside the frame',
+                              );
+                              if (code != null && code.isNotEmpty) {
+                                _searchCtrl.text = code;
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -384,12 +405,33 @@ class _SearchResults extends StatelessWidget {
                       ),
                 ),
                 subtitle: Text('${tableLabel(table)} · ${r['date'] ?? ''}'),
-                trailing: Text(
-                  qtyLabel(r, table),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: color,
-                      ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      qtyLabel(r, table),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: color,
+                          ),
+                    ),
+                    if (r['batch_number'] != null) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                    ],
+                  ],
                 ),
+                onTap: r['batch_number'] != null
+                    ? () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => BatchGenealogyScreen(
+                              batchNumber: r['batch_number'] as String,
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
               ),
             );
           },

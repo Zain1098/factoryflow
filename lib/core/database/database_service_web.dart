@@ -26,7 +26,7 @@ class DatabaseService {
   static const _storageKey = 'factoryflow_web_database_v1';
 
   // Expose a fake "db" object so call sites that use db.select() still compile
-  _FakeDb get db => _FakeDb(_tables, () => unawaited(_persist()));
+  FakeDb get db => FakeDb(_tables, () => unawaited(_persist()));
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -663,12 +663,88 @@ class DatabaseService {
     });
   }
 
+  Future<void> insertInAppNotification({
+    required String title,
+    required String body,
+    required String type,
+    String? actionRoute,
+    String? factoryId,
+  }) async {
+    final effectiveFactoryId = (factoryId ?? activeWorkspaceId).trim();
+    final id = const Uuid().v4();
+    final now = DateTime.now().toIso8601String();
+    await insertRecord('in_app_notifications', {
+      'id': id,
+      'factory_id': effectiveFactoryId,
+      'title': title,
+      'body': body,
+      'type': type,
+      'action_route': actionRoute,
+      'is_read': 0,
+      'created_at': now,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getInAppNotifications({
+    String? type,
+    int limit = 100,
+  }) async {
+    final list = _tables['in_app_notifications'] ?? [];
+    var filtered = list.cast<Map<String, dynamic>>();
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isNotEmpty) {
+      filtered = filtered.where((n) => n['factory_id'] == factoryId).toList();
+    }
+    if (type != null) {
+      filtered = filtered.where((n) => n['type'] == type).toList();
+    }
+    return filtered.take(limit).toList();
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final list = _tables['in_app_notifications'] ?? [];
+    var filtered = list.cast<Map<String, dynamic>>().where((n) => n['is_read'] == 0);
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isNotEmpty) {
+      filtered = filtered.where((n) => n['factory_id'] == factoryId);
+    }
+    return filtered.length;
+  }
+
+  Future<void> markNotificationAsRead(String id) async {
+    final list = _tables['in_app_notifications'] ?? [];
+    for (final n in list) {
+      if (n['id'] == id) n['is_read'] = 1;
+    }
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    final list = _tables['in_app_notifications'] ?? [];
+    final factoryId = activeWorkspaceId.trim();
+    for (final n in list) {
+      if (factoryId.isEmpty || n['factory_id'] == factoryId) {
+        n['is_read'] = 1;
+      }
+    }
+  }
+
+  Future<void> clearAllNotifications() async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      _tables['in_app_notifications'] = [];
+    } else {
+      _tables['in_app_notifications'] = (_tables['in_app_notifications'] ?? [])
+          .where((n) => n['factory_id'] != factoryId)
+          .toList();
+    }
+  }
+
   void dispose() {}
 }
 
 /// Fake db object so existing code calling db.select(...) compiles on web
-class _FakeDb {
-  _FakeDb(this._tables, this._onChanged);
+class FakeDb {
+  FakeDb(this._tables, this._onChanged);
   final Map<String, List<Map<String, dynamic>>> _tables;
   final void Function() _onChanged;
 

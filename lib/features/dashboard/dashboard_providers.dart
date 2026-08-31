@@ -70,6 +70,11 @@ class DashboardData {
     required this.machineStatuses,
     required this.weeklyData,
     required this.partStocks,
+    this.availabilityRate = 1.0,
+    this.performanceRate = 1.0,
+    this.qualityRate = 1.0,
+    this.oeeScore = 100.0,
+    this.todayDowntimeMins = 0.0,
   });
 
   final double rawMaterial;
@@ -96,6 +101,11 @@ class DashboardData {
   final List<DashboardMachineStatus> machineStatuses;
   final List<DashboardWeeklyData> weeklyData;
   final List<DashboardPartStock> partStocks;
+  final double availabilityRate;
+  final double performanceRate;
+  final double qualityRate;
+  final double oeeScore;
+  final double todayDowntimeMins;
 
   static const empty = DashboardData(
     rawMaterial: 0,
@@ -122,6 +132,11 @@ class DashboardData {
     machineStatuses: [],
     weeklyData: [],
     partStocks: [],
+    availabilityRate: 1.0,
+    performanceRate: 1.0,
+    qualityRate: 1.0,
+    oeeScore: 100.0,
+    todayDowntimeMins: 0.0,
   );
 
   double get totalRejectPct {
@@ -347,6 +362,30 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
   final pendingApprovals =
       (pendingCorrectionRows.first['cnt'] as num?)?.toInt() ?? 0;
 
+  // ── OEE Calculation ────────────────────────────────────────────────────────
+  final downtimeRows = db.db.select(
+    'SELECT COALESCE(SUM(duration_minutes), 0) as total_mins '
+    'FROM machine_downtimes WHERE factory_id = ? AND date = ?',
+    [factoryId, todayStr],
+  );
+  final todayDowntimeMins =
+      (downtimeRows.first['total_mins'] as num?)?.toDouble() ?? 0.0;
+
+  final plannedMinutes = (totalMachines > 0 ? totalMachines : 1) * 480.0;
+  final availabilityRate =
+      ((plannedMinutes - todayDowntimeMins) / plannedMinutes).clamp(0.0, 1.0);
+  final performanceRate = todayTarget > 0
+      ? (todayProd / todayTarget).clamp(0.0, 1.2)
+      : (todayProd > 0 ? 1.0 : 0.0);
+  final totalAttempted = todayProd + todayBp;
+  final qualityRate =
+      totalAttempted > 0 ? (todayProd / totalAttempted).clamp(0.0, 1.0) : 1.0;
+  final oeeScore = (availabilityRate *
+          (performanceRate > 1.0 ? 1.0 : performanceRate) *
+          qualityRate *
+          100)
+      .clamp(0.0, 100.0);
+
   return DashboardData(
     rawMaterial: rawMaterial,
     bendingWip: bendingWip,
@@ -372,5 +411,10 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     machineStatuses: machineStatuses,
     weeklyData: weeklyData,
     partStocks: partStocks,
+    availabilityRate: availabilityRate,
+    performanceRate: performanceRate,
+    qualityRate: qualityRate,
+    oeeScore: oeeScore,
+    todayDowntimeMins: todayDowntimeMins,
   );
 });

@@ -339,6 +339,24 @@ class ApInspectionRepository {
         error: 'Batch and action quantity are required.',
       );
     }
+    if (action == 'sent_to_faco' && (vendorId == null || vendorId.trim().isEmpty)) {
+      return const ApInspectionResult(
+        success: false,
+        error: 'Select a vendor before sending rejected stock for rework.',
+      );
+    }
+    final availableForBatch = _rejectedBalanceForBatch(
+      factoryId: factoryId,
+      partId: partId,
+      batchNumber: batchNumber,
+    );
+    if (qty > availableForBatch) {
+      return ApInspectionResult(
+        success: false,
+        error:
+            'Action qty (${qty.toInt()} PCS) exceeds AP rejected stock for batch ${batchNumber.trim()} (${availableForBatch.toInt()} PCS).',
+      );
+    }
 
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -386,6 +404,30 @@ class ApInspectionRepository {
 
     await _sync.schedulePendingSync();
     return ApInspectionResult(success: true, recordId: id);
+  }
+
+  /// Rejected material is held in one physical AP pool by part. Validate its
+  /// source-batch balance before posting so a selected batch cannot consume
+  /// quantity rejected by another batch.
+  double _rejectedBalanceForBatch({
+    required String factoryId,
+    required String partId,
+    required String batchNumber,
+  }) {
+    final rows = _db.db.select(
+      '''SELECT COALESCE(SUM(ai.rejected_qty), 0) - COALESCE((
+           SELECT SUM(action.qty)
+           FROM ap_rejected_actions action
+           WHERE action.factory_id = ai.factory_id
+             AND action.part_id = ai.part_id
+             AND action.batch_number = ai.batch_number
+             AND action.action IN ('scrapped', 'sent_to_faco')
+         ), 0) AS available_qty
+         FROM ap_inspections ai
+         WHERE ai.factory_id = ? AND ai.part_id = ? AND ai.batch_number = ?''',
+      [factoryId, partId, batchNumber.trim()],
+    );
+    return (rows.single['available_qty'] as num?)?.toDouble() ?? 0;
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../final_dispatch/final_dispatch_providers.dart';
@@ -600,6 +601,14 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                     style: const TextStyle(color: Colors.orange, fontSize: 11),
                   ),
                 ),
+              if (e.rejected > 0 || e.rtvQty > 0) ...[
+                const SizedBox(height: 10),
+                DefectPhotoPicker(
+                  label: 'Plating Defect Photo Evidence',
+                  hint: 'Capture plating blister, peel, or rust issue',
+                  onPhotoChanged: (path) {},
+                ),
+              ],
             ],
           ],
         ),

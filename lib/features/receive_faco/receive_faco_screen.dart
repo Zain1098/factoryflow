@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/widgets/barcode_scanner_view.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import 'receive_faco_providers.dart';
@@ -255,6 +256,19 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
               label: 'Supplier Challan (optional)',
               controller: _challanCtrl,
               prefixIcon: const Icon(Icons.receipt_outlined),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                tooltip: 'Scan Vendor Challan Barcode',
+                onPressed: () async {
+                  final code = await BarcodeScannerView.scan(
+                    context,
+                    title: 'Scan Vendor Challan Code',
+                  );
+                  if (code != null && code.isNotEmpty) {
+                    _challanCtrl.text = code;
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 12),
 

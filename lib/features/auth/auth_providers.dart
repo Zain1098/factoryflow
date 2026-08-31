@@ -13,7 +13,6 @@ import '../../core/database/database_service.dart';
 import '../../core/models/app_user.dart';
 import '../../core/constants/user_roles.dart';
 import '../../core/network/sync_service.dart';
-import '../../core/providers/master_data_providers.dart';
 
 // ─── Supabase connected flag (overridden in main.dart) ────────────────────────
 
@@ -881,14 +880,6 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   void _onSessionRestored() {
     // A cached session must not make ERP data or sync available before the
     // remote access decision made by AppAccessGate.
-  }
-
-  void _syncMasterDataIfOnline() {
-    ref.read(syncServiceProvider).isOnline().then((online) {
-      if (online) {
-        ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase();
-      }
-    }).catchError((_) {});
   }
 
   Future<void> refreshUser(AppUser updatedUser) async {

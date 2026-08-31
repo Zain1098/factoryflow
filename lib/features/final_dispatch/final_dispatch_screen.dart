@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/services/export_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../ap_inspection/ap_inspection_providers.dart';
@@ -668,6 +669,35 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                        label: const Text('Print Gate Pass PDF', style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          final challanNum = session['challan_number'] as String? ?? 'CH-${session['id']}';
+                          ExportService.exportDeliveryChallanPdf(
+                            context: context,
+                            challanNumber: challanNum,
+                            date: session['date'] as String? ?? '',
+                            customerName: session['customer_name'] as String? ?? 'Customer',
+                            vehicleNumber: session['vehicle_plate'] as String? ?? '—',
+                            driverName: session['driver_name'] as String? ?? '—',
+                            items: items
+                                .map(
+                                  (it) => {
+                                    'part_name': it['part_name'],
+                                    'part_code': it['part_code'],
+                                    'batch_number': it['batch_number'],
+                                    'qty': it['dispatch_qty'],
+                                  },
+                                )
+                                .toList(),
+                          );
+                        },
                       ),
                     ),
                   ],

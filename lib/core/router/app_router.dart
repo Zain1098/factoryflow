@@ -20,6 +20,8 @@ import '../../features/reports/reports_screen.dart';
 import '../../features/search/search_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/settings/settings_screen.dart';
+import '../../features/settings/physical_stock_audit_screen.dart';
+import '../../features/search/batch_genealogy_screen.dart';
 import '../../features/corrections/corrections_screen.dart';
 import '../../features/admin_control/admin_control_screen.dart';
 import '../widgets/app_shell.dart';
@@ -142,6 +144,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/settings',
             builder: (_, __) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/stock-audit',
+            builder: (_, __) => const PhysicalStockAuditScreen(),
+          ),
+          GoRoute(
+            path: '/batch-traceability',
+            builder: (_, state) => BatchGenealogyScreen(
+              batchNumber: state.uri.queryParameters['batch'] ?? '',
+            ),
           ),
           GoRoute(
             path: '/corrections',

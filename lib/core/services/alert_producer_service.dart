@@ -72,9 +72,18 @@ class AlertProducerService {
         [factoryId, _lowStockThreshold],
       );
       for (final row in rows) {
+        final partName = row['name'] as String;
+        final balance = (row['balance'] as num).toDouble();
         await NotificationService.instance.showLowStock(
-          row['name'] as String,
-          (row['balance'] as num).toDouble(),
+          partName,
+          balance,
+        );
+        await _db.insertInAppNotification(
+          title: 'Low Stock Alert: $partName',
+          body: '$partName is low on approved stock ($balance PCS remaining). Consider receiving or producing more.',
+          type: 'low_stock',
+          actionRoute: '/reports/stock',
+          factoryId: factoryId,
         );
       }
     } catch (_) {}
@@ -90,7 +99,16 @@ class AlertProducerService {
         [factoryId],
       );
       final count = rows.first['cnt'] as int;
-      if (count > 0) await NotificationService.instance.showRtvPending(count);
+      if (count > 0) {
+        await NotificationService.instance.showRtvPending(count);
+        await _db.insertInAppNotification(
+          title: 'RTV Pending from Vendors',
+          body: '$count batch(es) are currently with vendor for rework/replacement.',
+          type: 'rtv',
+          actionRoute: '/rtv',
+          factoryId: factoryId,
+        );
+      }
     } catch (_) {}
   }
 
@@ -122,12 +140,20 @@ class AlertProducerService {
       );
       final produced = summary['production'] ?? 0;
       if (produced < target * 0.8) {
+        final pct = (produced / target * 100).toStringAsFixed(0);
         await NotificationService.instance.showAlert(
           id: 5,
           title: 'Target Behind',
           body:
-              'Today: ${produced.toInt()} / ${target.toInt()} PCS (${(produced / target * 100).toStringAsFixed(0)}%)',
+              'Today: ${produced.toInt()} / ${target.toInt()} PCS ($pct%)',
           preferenceKey: 'notif_production',
+        );
+        await _db.insertInAppNotification(
+          title: 'Production Target Alert',
+          body: 'Production is running behind target today (${produced.toInt()} / ${target.toInt()} PCS, $pct%).',
+          type: 'target',
+          actionRoute: '/production',
+          factoryId: factoryId,
         );
       }
     } catch (_) {}
@@ -146,8 +172,16 @@ class AlertProducerService {
         [factoryId],
       );
       if (rows.isNotEmpty) {
+        final mName = rows.first['name'] as String;
         await NotificationService.instance
-            .showMachineBreakdown(rows.first['name'] as String);
+            .showMachineBreakdown(mName);
+        await _db.insertInAppNotification(
+          title: 'Machine Breakdown: $mName',
+          body: '$mName is currently halted in breakdown/maintenance.',
+          type: 'downtime',
+          actionRoute: '/machine-downtime',
+          factoryId: factoryId,
+        );
       }
     } catch (_) {}
   }

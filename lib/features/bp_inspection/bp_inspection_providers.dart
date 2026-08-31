@@ -278,6 +278,18 @@ class BpInspectionRepository {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return const BpInspectionResult(success: false, error: 'No active factory workspace is selected.');
     if (batchNumber.trim().isEmpty || qty <= 0 || remarks.trim().isEmpty) return const BpInspectionResult(success: false, error: 'Batch, quantity and final-rejection note are required.');
+    final availableForBatch = _rejectedBalanceForBatch(
+      factoryId: factoryId,
+      partId: partId,
+      batchNumber: batchNumber,
+    );
+    if (qty > availableForBatch) {
+      return BpInspectionResult(
+        success: false,
+        error:
+            'Final rejection qty (${qty.toInt()} PCS) exceeds BP rejected stock for batch ${batchNumber.trim()} (${availableForBatch.toInt()} PCS).',
+      );
+    }
     final id = _uuid.v4();
     final now = DateTime.now();
     final record = {
@@ -300,6 +312,29 @@ class BpInspectionRepository {
     }
     await _sync.schedulePendingSync();
     return BpInspectionResult(success: true, recordId: id);
+  }
+
+  /// The ledger tracks the physical BP-rejected pool by part. This guard keeps
+  /// a selected source batch from consuming another batch's rejected quantity.
+  double _rejectedBalanceForBatch({
+    required String factoryId,
+    required String partId,
+    required String batchNumber,
+  }) {
+    final rows = _db.db.select(
+      '''SELECT COALESCE(SUM(bi.bp_reject_qty), 0) - COALESCE((
+           SELECT SUM(action.qty)
+           FROM bp_rejected_actions action
+           WHERE action.factory_id = bi.factory_id
+             AND action.part_id = bi.part_id
+             AND action.batch_number = bi.batch_number
+             AND action.action = 'final_rejected'
+         ), 0) AS available_qty
+         FROM bp_inspections bi
+         WHERE bi.factory_id = ? AND bi.part_id = ? AND bi.batch_number = ?''',
+      [factoryId, partId, batchNumber.trim()],
+    );
+    return (rows.single['available_qty'] as num?)?.toDouble() ?? 0;
   }
 
   Future<List<Map<String, dynamic>>> getRejectedStock() async {
