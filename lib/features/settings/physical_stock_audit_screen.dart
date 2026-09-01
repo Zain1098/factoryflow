@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../../core/widgets/barcode_scanner_view.dart';
 import '../../core/widgets/shared_widgets.dart';
@@ -166,6 +167,7 @@ class _PhysicalStockAuditScreenState
       );
 
       ref.invalidate(_physicalAuditHistoryProvider);
+      refreshAllStockAndEntryProviders(ref);
 
       if (mounted) {
         HapticFeedback.lightImpact();

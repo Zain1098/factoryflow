@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/services/stock_ledger_service.dart';
 import '../auth/auth_providers.dart';
 import '../final_dispatch/final_dispatch_providers.dart';
@@ -506,7 +507,7 @@ class _PartStockCard extends ConsumerWidget {
 
     ref.invalidate(_stockOverviewProvider);
     ref.invalidate(_adjustmentHistoryProvider);
-    ref.invalidate(approvedDispatchBatchesProvider);
+    refreshAllStockAndEntryProviders(ref);
     return null;
   }
 
