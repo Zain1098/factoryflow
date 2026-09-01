@@ -544,23 +544,30 @@ class DashboardScreen extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: oeeColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: oeeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(Icons.analytics_outlined, color: oeeColor, size: 18),
                     ),
-                    child: Icon(Icons.analytics_outlined, color: oeeColor, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Overall Equipment Effectiveness (OEE)',
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Overall Equipment Effectiveness (OEE)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(

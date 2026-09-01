@@ -8,147 +8,346 @@ import '../../core/services/export_service.dart';
 
 // ─── Reports Hub ──────────────────────────────────────────────────────────────
 
-class ReportsScreen extends ConsumerWidget {
+class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
+}
+
+class _ReportsScreenState extends ConsumerState<ReportsScreen> {
+  int _selectedCategoryIndex = 0; // 0 = All, 1 = Production, 2 = Quality, 3 = Inventory
+  String _searchQuery = '';
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final range = ref.watch(reportDateRangeProvider);
     final theme = Theme.of(context);
 
-    final sections = [
-      _ReportSection('Production', Colors.teal, [
+    final allSections = [
+      _ReportSection('Production & Output', Colors.teal, [
         _ReportTile(
-          'Daily Production',
-          Icons.today,
+          'Daily Production Report',
+          Icons.today_rounded,
           Colors.teal,
-          'Day-wise output, target & efficiency',
+          'Day-wise output, planned target & efficiency',
           () => _push(context, const _DailyProductionReport()),
         ),
         _ReportTile(
-          'Machine-wise',
-          Icons.precision_manufacturing,
+          'Machine-wise Production',
+          Icons.precision_manufacturing_rounded,
           Colors.blue,
-          'Output & downtime per machine',
+          'Output volume & downtime per machine',
           () => _push(context, const _MachineReport()),
         ),
         _ReportTile(
-          'Operator-wise',
-          Icons.person_outline,
+          'Operator Performance',
+          Icons.person_outline_rounded,
           Colors.indigo,
-          'Output & avg per operator',
+          'Output quantity & average speed per operator',
           () => _push(context, const _OperatorReport()),
         ),
         _ReportTile(
-          'Machine Downtime',
+          'Machine Downtime & Maintenance',
           Icons.build_outlined,
           Colors.orange,
-          'Breakdown & maintenance log',
+          'Breakdown reasons, duration & repair logs',
           () => _push(context, const _DowntimeReport()),
         ),
       ]),
-      _ReportSection('Quality', Colors.red, [
+      _ReportSection('Quality & Rejections', Colors.red, [
         _ReportTile(
-          'Reject Analysis',
+          'Reject & Defect Analysis',
           Icons.cancel_outlined,
           Colors.red,
-          'BP + AP rejection by part & date',
+          'BP + AP inspection rejections by part & reason',
           () => _push(context, const _RejectReport()),
         ),
         _ReportTile(
-          'RTV Analysis',
-          Icons.undo,
+          'RTV & Vendor Debit Notes',
+          Icons.undo_rounded,
           Colors.deepOrange,
-          'Vendor rework summary & status',
+          'Return to vendor summary, debits & recovery',
           () => _push(context, const _RtvReport()),
         ),
         _ReportTile(
-          'Hold Material',
+          'Hold & Quarantined Material',
           Icons.back_hand_outlined,
-          Colors.redAccent,
-          'BP hold & vendor rework aging',
+          Colors.pink,
+          'BP hold & vendor rework aging status',
           () => _push(context, const _HoldReport()),
         ),
       ]),
-      _ReportSection('Inventory & Dispatch', Colors.green, [
+      _ReportSection('Inventory & Logistics', Colors.green, [
         _ReportTile(
-          'Live Stock',
+          'Live Stock at All Stages',
           Icons.inventory_2_outlined,
           Colors.green,
-          'Current stock at every stage',
+          'Current balances across production, vendor & dispatch',
           () => _push(context, const LiveStockReport()),
         ),
         _ReportTile(
-          'Vendor Pending',
-          Icons.pending_outlined,
-          Colors.amber,
-          'Material still with vendor',
+          'Vendor Pending Subcontracting',
+          Icons.pending_actions_rounded,
+          Colors.amber.shade800,
+          'Material dispatched to FACO still awaiting return',
           () => _push(context, const _FacoPendingReport()),
         ),
         _ReportTile(
-          'Dispatch Report',
-          Icons.send_outlined,
+          'Finished Goods Dispatch',
+          Icons.local_shipping_outlined,
           Colors.purple,
-          'Final dispatch to customers',
+          'Final customer dispatches, gate passes & invoices',
           () => _push(context, const _DispatchReport()),
         ),
         _ReportTile(
-          'Inventory Movement',
-          Icons.swap_horiz,
+          'Inventory Movement Ledger',
+          Icons.swap_horiz_rounded,
           Colors.blueGrey,
-          'Full stock ledger movement',
+          'Complete chronological stock transaction ledger',
           () => _push(context, const _LedgerReport()),
         ),
       ]),
     ];
 
+    // Filter by Category
+    List<_ReportSection> displayedSections;
+    if (_selectedCategoryIndex == 1) {
+      displayedSections = [allSections[0]];
+    } else if (_selectedCategoryIndex == 2) {
+      displayedSections = [allSections[1]];
+    } else if (_selectedCategoryIndex == 3) {
+      displayedSections = [allSections[2]];
+    } else {
+      displayedSections = allSections;
+    }
+
+    // Filter by Search Query
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      displayedSections = displayedSections
+          .map((sec) {
+            final filteredTiles = sec.tiles.where((t) {
+              return t.title.toLowerCase().contains(q) ||
+                  t.subtitle.toLowerCase().contains(q);
+            }).toList();
+            return _ReportSection(sec.title, sec.color, filteredTiles);
+          })
+          .where((sec) => sec.tiles.isNotEmpty)
+          .toList();
+    }
+
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Reports'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Reports & Analytics',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            Text(
+              '${_shortDate(range.from)} – ${_shortDate(range.to)}',
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+        elevation: 0,
+        centerTitle: false,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.date_range_rounded),
+            tooltip: 'Select Custom Date Range',
+            color: theme.colorScheme.primary,
+            onPressed: () => _pickRange(context, ref, range),
+          ),
           IconButton(
             icon: const Icon(Icons.search_rounded),
             onPressed: () => GlobalQuickSearchSheet.show(context),
             tooltip: 'Search / Barcode Lookup',
           ),
-          TextButton.icon(
-            icon: const Icon(Icons.date_range, size: 18),
-            label: Text(
-              '${_shortDate(range.from)} – ${_shortDate(range.to)}',
-              style: const TextStyle(fontSize: 12),
-            ),
-            onPressed: () => _pickRange(context, ref, range),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
+          // ── Analytics Range & Header Banner ────────────────────────────────
           _ReportsHero(
             range: range,
             onChooseRange: () => _pickRange(context, ref, range),
           ),
-          const SizedBox(height: 18),
-          Text(
-            'QUICK RANGE',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              letterSpacing: 1.1,
+
+          const SizedBox(height: 12),
+
+          // ── Quick Date Range Preset Chips ──────────────────────────────────
+          _DateRangeChips(
+            range: range,
+            onCustomPick: () => _pickRange(context, ref, range),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── Search & Filter Field ──────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+              ),
+            ),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (val) => setState(() => _searchQuery = val.trim()),
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Filter reports by name or metric...',
+                hintStyle: TextStyle(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+                prefixIcon: const Icon(Icons.filter_list_rounded, size: 18),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 16),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.transparent,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+              ),
             ),
           ),
-          _DateRangeChips(range: range),
-          const SizedBox(height: 14),
-          for (final section in sections) _ReportSectionCard(section: section),
+
+          const SizedBox(height: 12),
+
+          // ── Category Pills (All, Production, Quality, Inventory) ───────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildCategoryPill(0, 'All Reports (11)', Icons.dashboard_rounded),
+                const SizedBox(width: 8),
+                _buildCategoryPill(1, 'Production (4)', Icons.precision_manufacturing_rounded),
+                const SizedBox(width: 8),
+                _buildCategoryPill(2, 'Quality (3)', Icons.fact_check_rounded),
+                const SizedBox(width: 8),
+                _buildCategoryPill(3, 'Inventory & Dispatch (4)', Icons.inventory_2_rounded),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Report Section Cards ───────────────────────────────────────────
+          if (displayedSections.isEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.search_off_rounded,
+                    size: 44,
+                    color: theme.colorScheme.outline,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'No reports match "$_searchQuery"',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Try searching for production, reject, stock, downtime...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            for (final section in displayedSections)
+              _ReportSectionCard(section: section),
+          ],
         ],
       ),
     );
   }
 
-  void _push(BuildContext context, Widget screen) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  Widget _buildCategoryPill(int index, String label, IconData icon) {
+    final theme = Theme.of(context);
+    final isSelected = _selectedCategoryIndex == index;
+    return Material(
+      color: isSelected
+          ? theme.colorScheme.primary
+          : theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(10),
+      elevation: isSelected ? 1 : 0,
+      child: InkWell(
+        onTap: () => setState(() => _selectedCategoryIndex = index),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isSelected
+                    ? Colors.white
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  String _shortDate(DateTime d) => DateFormat('dd MMM').format(d);
+  void _push(BuildContext context, Widget screen) {
+    Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
+  }
+
+  String _shortDate(DateTime d) => DateFormat('dd MMM yyyy').format(d);
 
   Future<void> _pickRange(
     BuildContext context,
@@ -182,52 +381,103 @@ class _ReportsHero extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.66),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: scheme.primary,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: Icon(Icons.analytics_outlined, color: scheme.onPrimary),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Factory insights', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 3),
-                Text(
-                  '${DateFormat('dd MMM').format(range.from)} - ${DateFormat('dd MMM yyyy').format(range.to)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton.filledTonal(
-            tooltip: 'Choose report dates',
-            onPressed: onChooseRange,
-            icon: const Icon(Icons.calendar_month_outlined, size: 20),
+        gradient: LinearGradient(
+          colors: [
+            scheme.primaryContainer.withValues(alpha: 0.7),
+            scheme.surface,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.15),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.analytics_rounded, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Plant Intelligence Hub',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Filtered: ${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yyyy').format(range.to)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onChooseRange,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.calendar_month_rounded, size: 15, color: scheme.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Dates',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _DateRangeChips extends ConsumerWidget {
-  const _DateRangeChips({required this.range});
+  const _DateRangeChips({required this.range, required this.onCustomPick});
   final DateRange range;
+  final VoidCallback onCustomPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -240,37 +490,38 @@ class _DateRangeChips extends ConsumerWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.only(top: 8),
       child: Row(
-        children: presets.map((p) {
-          final isSelected =
-              range.fromStr == p.$2.fromStr && range.toStr == p.$2.toStr;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(p.$1),
-              selected: isSelected,
-              onSelected: (_) =>
-                  ref.read(reportDateRangeProvider.notifier).set(p.$2),
-              selectedColor: Theme.of(context).colorScheme.primary,
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(11),
-                side: BorderSide(
+        children: [
+          ...presets.map((p) {
+            final isSelected =
+                range.fromStr == p.$2.fromStr && range.toStr == p.$2.toStr;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: Text(p.$1),
+                selected: isSelected,
+                onSelected: (_) =>
+                    ref.read(reportDateRangeProvider.notifier).set(p.$2),
+                selectedColor: Theme.of(context).colorScheme.primary,
+                labelStyle: TextStyle(
                   color: isSelected
-                      ? Colors.transparent
-                      : Theme.of(context).colorScheme.outlineVariant,
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  side: BorderSide(
+                    color: isSelected
+                        ? Colors.transparent
+                        : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -285,42 +536,90 @@ class _ReportSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 5, 8, 7),
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
             child: Row(
               children: [
                 Container(
-                  width: 8,
-                  height: 8,
+                  width: 3,
+                  height: 13,
                   decoration: BoxDecoration(
                     color: section.color,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(section.title, style: theme.textTheme.titleSmall),
-                const Spacer(),
                 Text(
-                  '${section.tiles.length} REPORTS',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontSize: 9,
+                  section.title.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.9,
+                    color: section.color,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: section.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${section.tiles.length} REPORTS',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: section.color,
+                      letterSpacing: 0.6,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          ...section.tiles.map((tile) => _ReportListTile(tile: tile)),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Column(
+                children: section.tiles.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final tile = entry.value;
+                  return Column(
+                    children: [
+                      _ReportListTile(tile: tile),
+                      if (i < section.tiles.length - 1)
+                        Divider(
+                          height: 1,
+                          indent: 62,
+                          endIndent: 14,
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -336,36 +635,40 @@ class _ReportListTile extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: tile.onTap,
-        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: tile.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(tile.icon, color: tile.color, size: 21),
+                child: Icon(tile.icon, color: tile.color, size: 19),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(tile.title, style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 3),
+                    Text(
+                      tile.title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
                     Text(
                       tile.subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 11,
                       ),
                     ),
                   ],
@@ -373,9 +676,9 @@ class _ReportListTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Icon(
-                Icons.arrow_forward_rounded,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
+                Icons.arrow_forward_ios_rounded,
+                size: 13,
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
           ),

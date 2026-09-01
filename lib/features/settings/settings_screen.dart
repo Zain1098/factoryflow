@@ -166,30 +166,84 @@ final _notifPrefsProvider =
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-Widget _masterTile(
-  BuildContext context,
-  IconData icon,
-  String title,
-  String subtitle,
-  Widget page,
-) {
-  return _SettingsNavigationTile(
-    icon: icon,
-    title: title,
-    subtitle: subtitle,
-    onTap: () =>
-        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)),
-  );
+class _SettingsGroupContainer extends StatelessWidget {
+  const _SettingsGroupContainer({
+    required this.title,
+    required this.children,
+  });
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title.toUpperCase(),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Column(
+                children: children,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _SettingsNavigationTile extends StatelessWidget {
-  const _SettingsNavigationTile({
+class _SettingsRowItem extends StatelessWidget {
+  const _SettingsRowItem({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
     this.iconColor,
     this.titleColor,
+    this.showDivider = true,
   });
 
   final IconData icon;
@@ -198,44 +252,78 @@ class _SettingsNavigationTile extends StatelessWidget {
   final VoidCallback onTap;
   final Color? iconColor;
   final Color? titleColor;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: ListTile(
-        minVerticalPadding: 11,
-        leading: Container(
-          width: 38,
-          height: 38,
-          decoration: BoxDecoration(
-            color:
-                (iconColor ?? theme.colorScheme.primary).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
+    final effectiveColor = iconColor ?? theme.colorScheme.primary;
+
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: effectiveColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: effectiveColor, size: 19),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: titleColor ?? theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
           ),
-          child: Icon(icon,
-              color: iconColor ?? theme.colorScheme.primary, size: 20,),
         ),
-        title: Text(
-          title,
-          style: theme.textTheme.titleSmall?.copyWith(color: titleColor),
-        ),
-        subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: Icon(Icons.chevron_right_rounded,
-            color: theme.colorScheme.onSurfaceVariant,),
-        onTap: onTap,
-      ),
+        if (showDivider)
+          Divider(
+            height: 1,
+            indent: 64,
+            endIndent: 14,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+          ),
+      ],
     );
   }
-}
-
-class _SettingsTileCard extends StatelessWidget {
-  const _SettingsTileCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Card(child: child);
 }
 
 class _ThemeModeSelector extends StatelessWidget {
@@ -247,40 +335,73 @@ class _ThemeModeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        children: [
-          const ListTile(
-            leading: Icon(Icons.palette_outlined),
-            title: Text('Appearance'),
-            subtitle: Text('Choose how FactoryFlow looks on this device'),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.pink.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.palette_rounded, color: Colors.pink, size: 19),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Choose light, dark, or system mode',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          _ThemeChoice(
-            icon: Icons.brightness_auto_outlined,
-            title: 'Use phone setting',
-            subtitle: 'Follow your device light or dark mode',
-            selected: mode == ThemeMode.system,
-            onTap: () => onChanged(ThemeMode.system),
-          ),
-          _ThemeChoice(
-            icon: Icons.light_mode_outlined,
-            title: 'Light mode',
-            subtitle: 'Bright interface for daytime work',
-            selected: mode == ThemeMode.light,
-            onTap: () => onChanged(ThemeMode.light),
-          ),
-          _ThemeChoice(
-            icon: Icons.dark_mode_outlined,
-            title: 'Dark mode',
-            subtitle: 'Low-light interface for evening work',
-            selected: mode == ThemeMode.dark,
-            onTap: () => onChanged(ThemeMode.dark),
-          ),
-          const SizedBox(height: 4),
-          Divider(color: theme.dividerColor, height: 1),
-        ],
-      ),
+        ),
+        Divider(
+          height: 1,
+          indent: 64,
+          endIndent: 14,
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+        _ThemeChoice(
+          icon: Icons.brightness_auto_rounded,
+          title: 'System Default',
+          subtitle: 'Follow device light/dark mode',
+          selected: mode == ThemeMode.system,
+          onTap: () => onChanged(ThemeMode.system),
+        ),
+        _ThemeChoice(
+          icon: Icons.light_mode_rounded,
+          title: 'Light Mode',
+          subtitle: 'Crisp bright interface',
+          selected: mode == ThemeMode.light,
+          onTap: () => onChanged(ThemeMode.light),
+        ),
+        _ThemeChoice(
+          icon: Icons.dark_mode_rounded,
+          title: 'Dark Mode',
+          subtitle: 'Gentle low-light interface',
+          selected: mode == ThemeMode.dark,
+          onTap: () => onChanged(ThemeMode.dark),
+        ),
+      ],
     );
   }
 }
@@ -303,18 +424,51 @@ class _ThemeChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      leading: Icon(icon, color: selected ? scheme.primary : scheme.onSurfaceVariant),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                size: 20,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                        color: selected ? scheme.primary : scheme.onSurface,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                color: selected ? scheme.primary : scheme.outlineVariant,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
       ),
-      selected: selected,
-      selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.38),
-      onTap: onTap,
     );
   }
 }
@@ -331,34 +485,59 @@ class _BatchTraceabilityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Card(
-      child: SwitchListTile.adaptive(
-        contentPadding: const EdgeInsets.fromLTRB(16, 7, 10, 7),
-        title: Text('Show batch code after save', style: theme.textTheme.titleSmall),
-        subtitle: const Text('New code: PART-YYMMDD-001'),
-        value: showSavedBatchNumber,
-        onChanged: onShowSavedBatchNumberChanged,
-        secondary: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.qr_code_2_rounded,
-                  color: colors.primary, size: 20,),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.teal.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            IconButton(
-              tooltip: 'About batch traceability',
-              icon: const Icon(Icons.info_outline_rounded, size: 19),
-              onPressed: () => _showBatchTraceabilityInfo(context),
+            child: const Icon(Icons.qr_code_2_rounded, color: Colors.teal, size: 19),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Batch Code Popups',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () => _showBatchTraceabilityInfo(context),
+                      child: Icon(
+                        Icons.info_outline_rounded,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Shows code after save (e.g. BRK-260819-001)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Switch.adaptive(
+            value: showSavedBatchNumber,
+            onChanged: onShowSavedBatchNumberChanged,
+          ),
+        ],
       ),
     );
   }
@@ -374,7 +553,7 @@ void _showBatchTraceabilityInfo(BuildContext context) =>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Batch traceability',
+            Text('Batch Traceability',
                 style: Theme.of(sheetContext).textTheme.titleLarge,),
             const SizedBox(height: 8),
             const Text('A batch is created only in Production.\n'
@@ -386,10 +565,23 @@ void _showBatchTraceabilityInfo(BuildContext context) =>
       ),
     );
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
-  /// Builds avatar widget with network image if available, else first-letter fallback
+  @override
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   static Widget _buildAvatar(BuildContext context, AppUser user) {
     final theme = Theme.of(context);
     if (user.avatarUrl != null && user.avatarUrl!.isNotEmpty) {
@@ -413,13 +605,17 @@ class SettingsScreen extends ConsumerWidget {
       backgroundColor: theme.colorScheme.primaryContainer,
       child: Text(
         user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+          color: theme.colorScheme.primary,
+        ),
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final userState = ref.watch(currentUserProvider);
     if (userState.isLoading) {
@@ -442,341 +638,894 @@ class SettingsScreen extends ConsumerWidget {
     final canApproveCorrections = user?.role.canApproveCorrections ?? false;
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text(
+          'Settings & Hub',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        elevation: 0,
         centerTitle: false,
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.only(bottom: 32),
         children: [
-          // ── User Profile Card ────────────────────────────────────────────────
-          if (user != null)
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primaryContainer,
-                    theme.colorScheme.secondaryContainer,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          // ── Search Bar ─────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'Search settings, masters, preferences...',
+                hintStyle: TextStyle(
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AccountSettingsScreen(),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    _buildAvatar(context, user),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user.name,
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            user.email,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primary
-                                  .withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              user.role.value.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: theme.colorScheme.primary,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
                 ),
               ),
             ),
+          ),
 
-          // ── PRODUCTION ────────────────────────────────────────────────────
-          if (canManageFactory) ...[
-            const _SectionLabel('Factory Setup'),
-            _SettingsNavigationTile(
-              icon: Icons.groups_2_outlined,
-              title: 'Team Members',
-              subtitle: 'Invite people and control role-based access',
-              onTap: () => Navigator.push(
+          // ── If Search Active, Show Filtered List ───────────────────────────
+          if (_searchQuery.isNotEmpty) ...[
+            _buildSearchResults(
+              context,
+              canManageFactory: canManageFactory,
+              canApproveCorrections: canApproveCorrections,
+              user: user,
+            ),
+          ] else ...[
+            // ── User Profile Header Card ─────────────────────────────────────
+            if (user != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.primaryContainer.withValues(alpha: 0.7),
+                        theme.colorScheme.surface,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute<void>(
+                          builder: (_) => const AccountSettingsScreen(),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            _buildAvatar(context, user),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          user.name,
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          user.role.value.toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: theme.colorScheme.primary,
+                                            letterSpacing: 0.8,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    user.email,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.manage_accounts_rounded,
+                                        size: 13,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Manage Account & Security',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 15,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── FACTORY OPERATIONS & SETUP ──────────────────────────────────
+            if (canManageFactory) ...[
+              _SettingsGroupContainer(
+                title: 'Factory Operations',
+                children: [
+                  _SettingsRowItem(
+                    icon: Icons.groups_2_rounded,
+                    iconColor: Colors.indigo,
+                    title: 'Team Members & Roles',
+                    subtitle: 'Invite team and control role permissions',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const TeamMembersScreen(),
+                      ),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.track_changes_rounded,
+                    iconColor: Colors.green,
+                    title: 'Daily Production Targets',
+                    subtitle: 'Part-wise and day-wise output goals',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const _ProductionTargetsPage(),
+                      ),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.account_tree_rounded,
+                    iconColor: Colors.teal,
+                    title: 'Production Flow Routing',
+                    subtitle: 'Machine sequence, WIP and dispatch rules',
+                    showDivider: false,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const _ProductionFlowPage(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // ── MASTER DATA (PARTS & MACHINES) ────────────────────────────
+              _SettingsGroupContainer(
+                title: 'Manufacturing Masters',
+                children: [
+                  _SettingsRowItem(
+                    icon: Icons.category_rounded,
+                    iconColor: Colors.blueAccent,
+                    title: 'Parts Catalog',
+                    subtitle: 'Add, edit or configure manufactured parts',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _PartsPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.precision_manufacturing_rounded,
+                    iconColor: Colors.cyan,
+                    title: 'Machine Fleet',
+                    subtitle: 'Add, reorder and configure press machines',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _MachinesPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.badge_rounded,
+                    iconColor: Colors.deepPurple,
+                    title: 'Operators & Staff',
+                    subtitle: 'Production machine operators roster',
+                    showDivider: false,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _OperatorsPage()),
+                    ),
+                  ),
+                ],
+              ),
+
+              // ── SUPPLY CHAIN & LOGISTICS ──────────────────────────────────
+              _SettingsGroupContainer(
+                title: 'Supply Chain & Partners',
+                children: [
+                  _SettingsRowItem(
+                    icon: Icons.local_shipping_rounded,
+                    iconColor: Colors.orange,
+                    title: 'Raw Material Suppliers',
+                    subtitle: 'Coil and raw sheet metal vendors',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _SuppliersPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.store_rounded,
+                    iconColor: Colors.deepOrange,
+                    title: 'External Vendors (FACO)',
+                    subtitle: 'Plating, coating and heat treatment contractors',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _VendorsPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.business_rounded,
+                    iconColor: Colors.purple,
+                    title: 'Dispatch Customers',
+                    subtitle: 'Finished goods delivery clients',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _CustomersPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.person_pin_rounded,
+                    iconColor: Colors.brown,
+                    title: 'Logistics Drivers',
+                    subtitle: 'Vehicle drivers for gate passes',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _DriversPage()),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.directions_car_filled_rounded,
+                    iconColor: Colors.blueGrey,
+                    title: 'Transport Vehicles',
+                    subtitle: 'Registered truck & vehicle number plates',
+                    showDivider: false,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(builder: (_) => const _VehiclesPage()),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // ── APP & DEVICE PREFERENCES ─────────────────────────────────────
+            _SettingsGroupContainer(
+              title: 'App & Device Preferences',
+              children: [
+                _ThemeModeSelector(
+                  mode: themeMode,
+                  onChanged: ref.read(themeModeProvider.notifier).setThemeMode,
+                ),
+                Divider(
+                  height: 1,
+                  indent: 64,
+                  endIndent: 14,
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                ),
+                _BatchTraceabilityTile(
+                  showSavedBatchNumber: showBatchNumber,
+                  onShowSavedBatchNumberChanged: (value) =>
+                      ref.read(batchConfigProvider.notifier).toggle(value),
+                ),
+                Divider(
+                  height: 1,
+                  indent: 64,
+                  endIndent: 14,
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final biometricAsync = ref.watch(_biometricEnabledProvider);
+                    final svc = ref.read(biometricServiceProvider);
+                    return FutureBuilder<bool>(
+                      future: svc.isAvailable(),
+                      builder: (context, snap) {
+                        final available = snap.data ?? false;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.fingerprint_rounded,
+                                  color: Colors.blue,
+                                  size: 19,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Biometric App Lock',
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      available
+                                          ? 'Fingerprint & face recognition unlock'
+                                          : 'Not supported on this device',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch.adaptive(
+                                value: biometricAsync.value ?? false,
+                                onChanged: available
+                                    ? (val) async {
+                                        if (val && !await svc.authenticate()) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Biometric lock was not enabled because authentication was cancelled.',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                          return;
+                                        }
+                                        await svc.setEnabled(val);
+                                        ref.invalidate(_biometricEnabledProvider);
+                                      }
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                Divider(
+                  height: 1,
+                  indent: 64,
+                  endIndent: 14,
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                ),
+                _SettingsRowItem(
+                  icon: Icons.notifications_active_rounded,
+                  iconColor: Colors.amber.shade800,
+                  title: 'Notifications & Alerts',
+                  subtitle: 'Production targets, downtime & reminder alerts',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const _NotificationsPage(),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: AppUpdateSettingsSection(),
+                ),
+              ],
+            ),
+
+            // ── GOVERNANCE & STOCK SYSTEM ────────────────────────────────────
+            _SettingsGroupContainer(
+              title: 'Governance & Inventory',
+              children: [
+                if (canManageFactory)
+                  _SettingsRowItem(
+                    icon: Icons.inventory_2_rounded,
+                    iconColor: Colors.teal,
+                    title: 'Stock Management & Audit',
+                    subtitle: 'Physical ledger reconciliation & stage adjustments',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const StockManagementScreen(),
+                      ),
+                    ),
+                  ),
+                if (canApproveCorrections) ...[
+                  _SettingsRowItem(
+                    icon: Icons.gavel_rounded,
+                    iconColor: Colors.indigo,
+                    title: 'Correction Approval Requests',
+                    subtitle: 'Review, approve or reject entry edit requests',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const CorrectionsScreen(),
+                      ),
+                    ),
+                  ),
+                  _SettingsRowItem(
+                    icon: Icons.sync_problem_rounded,
+                    iconColor: Colors.orange,
+                    title: 'Cloud Sync Conflicts',
+                    subtitle: 'Review and resolve offline conflict records',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ConflictReviewScreen(),
+                      ),
+                    ),
+                  ),
+                ],
+                if (canManageFactory)
+                  _SettingsRowItem(
+                    icon: Icons.delete_sweep_rounded,
+                    iconColor: Colors.redAccent,
+                    titleColor: Colors.redAccent,
+                    title: 'Erase Local Cache Data',
+                    subtitle: 'Admin-only cache recovery and reset controls',
+                    showDivider: false,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const _EraseDataPage(),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            // ── SESSION & ABOUT ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                children: [
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final version = ref.watch(_appVersionProvider).value ??
+                          AppConstants.appVersion;
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              child: Icon(
+                                Icons.precision_manufacturing_rounded,
+                                color: theme.colorScheme.primary,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'ProFlow Manufacturing ERP',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  Text(
+                                    'FactoryFlow Build v$version',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  if (user != null)
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _confirmDeleteAccount(context, ref, user),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.no_accounts_rounded, size: 16, color: Colors.red.shade400),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Delete My Account',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red.shade400,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: BorderSide(color: Colors.red.withValues(alpha: 0.35)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon: const Icon(Icons.logout_rounded, size: 18),
+                      label: const Text(
+                        'Sign Out of Device',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () => _signOut(context, ref),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults(
+    BuildContext context, {
+    required bool canManageFactory,
+    required bool canApproveCorrections,
+    required AppUser? user,
+  }) {
+    final List<Map<String, dynamic>> allItems = [
+      if (canManageFactory) ...[
+        {
+          'category': 'Factory Operations',
+          'title': 'Team Members & Roles',
+          'subtitle': 'Invite team and control role permissions',
+          'icon': Icons.groups_2_rounded,
+          'color': Colors.indigo,
+          'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => const TeamMembersScreen(),
                 ),
               ),
-            ),
-            _SettingsNavigationTile(
-              icon: Icons.track_changes_outlined,
-              title: 'Daily Production Targets',
-              subtitle: 'Part-wise and day-wise targets',
-              onTap: () => Navigator.push(
+        },
+        {
+          'category': 'Factory Operations',
+          'title': 'Daily Production Targets',
+          'subtitle': 'Part-wise and day-wise output goals',
+          'icon': Icons.track_changes_rounded,
+          'color': Colors.green,
+          'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => const _ProductionTargetsPage(),
                 ),
               ),
-            ),
-            _SettingsNavigationTile(
-              icon: Icons.account_tree_outlined,
-              title: 'Production Flow',
-              subtitle: 'Machine sequence, WIP and dispatch rules',
-              onTap: () => Navigator.push(
+        },
+        {
+          'category': 'Factory Operations',
+          'title': 'Production Flow Routing',
+          'subtitle': 'Machine sequence, WIP and dispatch rules',
+          'icon': Icons.account_tree_rounded,
+          'color': Colors.teal,
+          'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => const _ProductionFlowPage(),
                 ),
               ),
-            ),
-            const Divider(),
-
-            // ── MASTER DATA ──────────────────────────────────────────────────
-            const _SectionLabel('Master Data'),
-            _masterTile(
-              context,
-              Icons.category_outlined,
-              'Parts',
-              'Add, edit or remove parts',
-              const _PartsPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.precision_manufacturing_outlined,
-              'Machines',
-              'Add, reorder & set machine sequence',
-              const _MachinesPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.people_outline,
-              'Operators',
-              'Add or remove operators',
-              const _OperatorsPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.local_shipping_outlined,
-              'Suppliers',
-              'Material suppliers',
-              const _SuppliersPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.store_outlined,
-              'Vendors',
-              'Manage external vendors',
-              const _VendorsPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.business_outlined,
-              'Customers',
-              'Final dispatch customers',
-              const _CustomersPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.person_outlined,
-              'Drivers',
-              'Add or remove drivers',
-              const _DriversPage(),
-            ),
-            _masterTile(
-              context,
-              Icons.directions_car_outlined,
-              'Vehicles',
-              'Number plates',
-              const _VehiclesPage(),
-            ),
-            const Divider(),
-          ],
-
-          // ── APP SETTINGS ─────────────────────────────────────────────────
-          const _SectionLabel('App Settings'),
-          _SettingsTileCard(
-            child: _ThemeModeSelector(
-              mode: themeMode,
-              onChanged: ref.read(themeModeProvider.notifier).setThemeMode,
-            ),
-          ),
-          _BatchTraceabilityTile(
-            showSavedBatchNumber: showBatchNumber,
-            onShowSavedBatchNumberChanged: (value) =>
-                ref.read(batchConfigProvider.notifier).toggle(value),
-          ),
-          Consumer(
-            builder: (context, ref, _) {
-              final biometricAsync = ref.watch(_biometricEnabledProvider);
-              final svc = ref.read(biometricServiceProvider);
-              return FutureBuilder<bool>(
-                future: svc.isAvailable(),
-                builder: (context, snap) {
-                  final available = snap.data ?? false;
-                  return _SettingsTileCard(
-                    child: SwitchListTile(
-                      secondary: const Icon(Icons.fingerprint),
-                      title: const Text('Biometric Lock'),
-                      subtitle: Text(
-                        available
-                            ? 'Fingerprint / face unlock'
-                            : 'Not available on this device',
-                      ),
-                      value: biometricAsync.value ?? false,
-                      onChanged: available
-                          ? (val) async {
-                              if (val && !await svc.authenticate()) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Biometric lock was not enabled because authentication was cancelled.',
-                                      ),
-                                    ),
-                                  );
-                                }
-                                return;
-                              }
-                              await svc.setEnabled(val);
-                              ref.invalidate(_biometricEnabledProvider);
-                            }
-                          : null,
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-          _SettingsNavigationTile(
-            icon: Icons.notifications_none_outlined,
-            title: 'Notifications',
-            subtitle: 'Alerts, sound & vibration preferences',
-            onTap: () => Navigator.push(
+        },
+        {
+          'category': 'Manufacturing Masters',
+          'title': 'Parts Catalog',
+          'subtitle': 'Add, edit or configure manufactured parts',
+          'icon': Icons.category_rounded,
+          'color': Colors.blueAccent,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _PartsPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Manufacturing Masters',
+          'title': 'Machine Fleet',
+          'subtitle': 'Add, reorder and configure press machines',
+          'icon': Icons.precision_manufacturing_rounded,
+          'color': Colors.cyan,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _MachinesPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Manufacturing Masters',
+          'title': 'Operators & Staff',
+          'subtitle': 'Production machine operators roster',
+          'icon': Icons.badge_rounded,
+          'color': Colors.deepPurple,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _OperatorsPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Supply Chain & Partners',
+          'title': 'Raw Material Suppliers',
+          'subtitle': 'Coil and raw sheet metal vendors',
+          'icon': Icons.local_shipping_rounded,
+          'color': Colors.orange,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _SuppliersPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Supply Chain & Partners',
+          'title': 'External Vendors (FACO)',
+          'subtitle': 'Plating, coating and heat treatment contractors',
+          'icon': Icons.store_rounded,
+          'color': Colors.deepOrange,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _VendorsPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Supply Chain & Partners',
+          'title': 'Dispatch Customers',
+          'subtitle': 'Finished goods delivery clients',
+          'icon': Icons.business_rounded,
+          'color': Colors.purple,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _CustomersPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Supply Chain & Partners',
+          'title': 'Logistics Drivers',
+          'subtitle': 'Vehicle drivers for gate passes',
+          'icon': Icons.person_pin_rounded,
+          'color': Colors.brown,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _DriversPage(),
+                ),
+              ),
+        },
+        {
+          'category': 'Supply Chain & Partners',
+          'title': 'Transport Vehicles',
+          'subtitle': 'Registered truck & vehicle number plates',
+          'icon': Icons.directions_car_filled_rounded,
+          'color': Colors.blueGrey,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const _VehiclesPage(),
+                ),
+              ),
+        },
+      ],
+      {
+        'category': 'Preferences',
+        'title': 'Notifications & Alerts',
+        'subtitle': 'Production targets, downtime & reminder alerts',
+        'icon': Icons.notifications_active_rounded,
+        'color': Colors.amber.shade800,
+        'onTap': () => Navigator.push(
               context,
               MaterialPageRoute<void>(
                 builder: (_) => const _NotificationsPage(),
               ),
             ),
-          ),
-          const AppUpdateSettingsSection(),
-          const Divider(),
-
-          // ── SYSTEM ───────────────────────────────────────────────────────
-          const _SectionLabel('System'),
-          if (canApproveCorrections) ...[
-            _SettingsNavigationTile(
-              icon: Icons.gavel_outlined,
-              title: 'Correction Requests',
-              subtitle: 'Review, approve or reject edit requests',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const CorrectionsScreen(),
-                ),
-              ),
-            ),
-            _SettingsNavigationTile(
-              icon: Icons.warning_amber_rounded,
-              iconColor: Colors.orange,
-              title: 'Sync Conflicts',
-              subtitle: 'Review and resolve failed sync records',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const ConflictReviewScreen(),
-                ),
-              ),
-            ),
-          ],
-          if (canManageFactory)
-            _SettingsNavigationTile(
-              icon: Icons.inventory_2_outlined,
-              title: 'Stock Management',
-              subtitle: 'Review balances and post adjustments',
-              onTap: () => Navigator.push(
+      },
+      if (canManageFactory)
+        {
+          'category': 'Governance',
+          'title': 'Stock Management & Audit',
+          'subtitle': 'Physical ledger reconciliation & adjustments',
+          'icon': Icons.inventory_2_rounded,
+          'color': Colors.teal,
+          'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => const StockManagementScreen(),
                 ),
               ),
-            ),
-          if (canManageFactory)
-            _SettingsNavigationTile(
-              icon: Icons.delete_sweep_outlined,
-              iconColor: Colors.orange,
-              title: 'Erase Local Data',
-              subtitle: 'Admin-only recovery and reset controls',
-              onTap: () => Navigator.push(
+        },
+      if (canApproveCorrections) ...[
+        {
+          'category': 'Governance',
+          'title': 'Correction Approval Requests',
+          'subtitle': 'Review, approve or reject entry edit requests',
+          'icon': Icons.gavel_rounded,
+          'color': Colors.indigo,
+          'onTap': () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
-                  builder: (_) => const _EraseDataPage(),
+                  builder: (_) => const CorrectionsScreen(),
                 ),
               ),
-            ),
-          if (user != null)
-            _SettingsNavigationTile(
-              icon: Icons.no_accounts_outlined,
-              iconColor: Colors.red,
-              titleColor: Colors.red,
-              title: 'Delete My Account',
-              subtitle: 'Remove access and clear local data',
-              onTap: () => _confirmDeleteAccount(context, ref, user),
-            ),
-          const Divider(),
+        },
+        {
+          'category': 'Governance',
+          'title': 'Cloud Sync Conflicts',
+          'subtitle': 'Review and resolve offline conflict records',
+          'icon': Icons.sync_problem_rounded,
+          'color': Colors.orange,
+          'onTap': () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const ConflictReviewScreen(),
+                ),
+              ),
+        },
+      ],
+    ];
 
-          // ── ABOUT ────────────────────────────────────────────────────────
-          const _SectionLabel('About'),
-          Consumer(
-            builder: (context, ref, _) {
-              final version = ref.watch(_appVersionProvider).value ??
-                  AppConstants.appVersion;
-              return ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: const Text('ProFlow Manufacturing ERP'),
-                subtitle: Text('FactoryFlow v$version'),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-            onTap: () => _signOut(context, ref),
-          ),
-          const SizedBox(height: 24),
-        ],
+    final filtered = allItems.where((item) {
+      final t = (item['title'] as String).toLowerCase();
+      final s = (item['subtitle'] as String).toLowerCase();
+      final c = (item['category'] as String).toLowerCase();
+      return t.contains(_searchQuery) || s.contains(_searchQuery) || c.contains(_searchQuery);
+    }).toList();
+
+    if (filtered.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+        child: Column(
+          children: [
+            Icon(Icons.search_off_rounded, size: 48, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 12),
+            Text(
+              'No settings found for "$_searchQuery"',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Try searching for parts, machines, theme, biometric, stock...',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: _SettingsGroupContainer(
+        title: 'Search Results (${filtered.length})',
+        children: filtered.asMap().entries.map((entry) {
+          final i = entry.key;
+          final item = entry.value;
+          return _SettingsRowItem(
+            icon: item['icon'] as IconData,
+            iconColor: item['color'] as Color?,
+            title: item['title'] as String,
+            subtitle: '${item['category']} • ${item['subtitle']}',
+            onTap: item['onTap'] as VoidCallback,
+            showDivider: i < filtered.length - 1,
+          );
+        }).toList(),
       ),
     );
   }
@@ -814,14 +1563,24 @@ class _NotificationsPage extends ConsumerWidget {
         padding: const EdgeInsets.only(top: 10, bottom: 24),
         children: [
           _NotificationsSection(),
-          _SettingsNavigationTile(
-            icon: Icons.alarm_outlined,
-            title: 'Work reminders',
-            subtitle: 'Daily reminders with factory off-days',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(builder: (_) => const WorkRemindersPage()),
-            ),
+          const SizedBox(height: 12),
+          _SettingsGroupContainer(
+            title: 'Schedules & Reminders',
+            children: [
+              _SettingsRowItem(
+                icon: Icons.alarm_rounded,
+                iconColor: Colors.amber.shade800,
+                title: 'Work Reminders',
+                subtitle: 'Daily reminders with factory off-days',
+                showDivider: false,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WorkRemindersPage(),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -882,28 +1641,6 @@ class _NotificationsSection extends ConsumerWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-// ─── Section Label ─────────────────────────────────────────────────────────────
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.label);
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        label.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
       ),
     );
   }
