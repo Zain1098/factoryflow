@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
+import '../../features/auth/auth_providers.dart';
+import '../providers/master_data_providers.dart';
+import 'barcode_scanner_view.dart';
 
 /// Compact reusable header for top-level operational screens.
 class CompactScreenHeader extends StatelessWidget {
@@ -1062,6 +1067,243 @@ class DraftRecoveryBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Skeleton Shimmer Loader ──────────────────────────────────────────────────
+
+class SkeletonShimmerLoader extends StatefulWidget {
+  const SkeletonShimmerLoader({
+    super.key,
+    this.height = 16,
+    this.width = double.infinity,
+    this.borderRadius = 8,
+  });
+
+  final double height;
+  final double width;
+  final double borderRadius;
+
+  @override
+  State<SkeletonShimmerLoader> createState() => _SkeletonShimmerLoaderState();
+}
+
+class _SkeletonShimmerLoaderState extends State<SkeletonShimmerLoader>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.3, end: 0.85).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
+
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, _) {
+        return Container(
+          height: widget.height,
+          width: widget.width,
+          decoration: BoxDecoration(
+            color: baseColor.withValues(alpha: _anim.value),
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Role Filtered View ───────────────────────────────────────────────────────
+
+class RoleFilteredView extends ConsumerWidget {
+  const RoleFilteredView({
+    super.key,
+    required this.allowedRoles,
+    required this.child,
+    this.fallback = const SizedBox.shrink(),
+  });
+
+  final List<String> allowedRoles;
+  final Widget child;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final role = ref.watch(userRoleProvider);
+    final userRoleName = role?.value.toLowerCase() ?? 'operator';
+    if (allowedRoles.any((r) => r.toLowerCase() == userRoleName)) {
+      return child;
+    }
+    return fallback;
+  }
+}
+
+// ─── Global Quick Search Sheet ────────────────────────────────────────────────
+
+class GlobalQuickSearchSheet extends ConsumerStatefulWidget {
+  const GlobalQuickSearchSheet({super.key});
+
+  static Future<void> show(BuildContext context) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const GlobalQuickSearchSheet(),
+    );
+  }
+
+  @override
+  ConsumerState<GlobalQuickSearchSheet> createState() =>
+      _GlobalQuickSearchSheetState();
+}
+
+class _GlobalQuickSearchSheetState
+    extends ConsumerState<GlobalQuickSearchSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.search, size: 24),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Global Batch & Stock Lookup',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Search Batch #, Part Code, or PO...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.qr_code_scanner),
+                onPressed: () async {
+                  final code = await BarcodeScannerView.scan(
+                    context,
+                    title: 'Scan Barcode',
+                  );
+                  if (code != null && code.isNotEmpty) {
+                    _searchCtrl.text = code;
+                    setState(() => _query = code.toLowerCase());
+                  }
+                },
+              ),
+            ),
+            onChanged: (q) => setState(() => _query = q.toLowerCase()),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _query.trim().isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.qr_code_2, size: 48, color: Colors.grey),
+                        SizedBox(height: 8),
+                        Text(
+                          'Scan or type a batch code / part number above.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  )
+                : _buildSearchResults(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    final partsAsync = ref.watch(partsProvider);
+    return partsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error searching: $e')),
+      data: (parts) {
+        final matches = parts.where((p) {
+          final code = (p['code'] as String? ?? '').toLowerCase();
+          final name = (p['name'] as String? ?? '').toLowerCase();
+          return code.contains(_query) || name.contains(_query);
+        }).toList();
+
+        if (matches.isEmpty) {
+          return Center(
+            child: Text(
+              'No parts or batches match "$_query"',
+              style: const TextStyle(color: Colors.grey),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          itemCount: matches.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) {
+            final part = matches[i];
+            return ListTile(
+              leading: const CircleAvatar(
+                child: Icon(Icons.inventory_2_outlined, size: 18),
+              ),
+              title: Text('${part['code']} – ${part['name']}'),
+              subtitle: Text('ID: ${part['id']}'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+              },
+            );
+          },
+        );
+      },
     );
   }
 }

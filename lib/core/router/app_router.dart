@@ -18,6 +18,7 @@ import '../../features/rtv/rtv_screen.dart';
 import '../../features/final_dispatch/final_dispatch_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/search/search_screen.dart';
+import '../widgets/shared_widgets.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/settings/physical_stock_audit_screen.dart';
@@ -233,7 +234,16 @@ class EntriesMenuScreen extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Entries')),
+      appBar: AppBar(
+        title: const Text('Entries'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => GlobalQuickSearchSheet.show(context),
+            tooltip: 'Quick Batch / Stock Search',
+          ),
+        ],
+      ),
       body: entries.isEmpty
           ? Center(
               child: Column(

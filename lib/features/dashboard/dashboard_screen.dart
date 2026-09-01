@@ -47,6 +47,11 @@ class DashboardScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => GlobalQuickSearchSheet.show(context),
+            tooltip: 'Quick Batch / Stock Search',
+          ),
           SyncStatusButton(
             isOnline: isOnline,
             pendingCount: pendingSync,
@@ -64,7 +69,24 @@ class DashboardScreen extends ConsumerWidget {
         ],
       ),
       body: dashAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              SkeletonShimmerLoader(height: 120, borderRadius: 16),
+              SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: SkeletonShimmerLoader(height: 90, borderRadius: 12)),
+                  SizedBox(width: 12),
+                  Expanded(child: SkeletonShimmerLoader(height: 90, borderRadius: 12)),
+                ],
+              ),
+              SizedBox(height: 16),
+              SkeletonShimmerLoader(height: 200, borderRadius: 16),
+            ],
+          ),
+        ),
         error: (e, _) => EmptyState(
           message: 'Could not load dashboard.\n$e',
           icon: Icons.error_outline,

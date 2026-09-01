@@ -106,6 +106,11 @@ class ReportsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Reports'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => GlobalQuickSearchSheet.show(context),
+            tooltip: 'Search / Barcode Lookup',
+          ),
           TextButton.icon(
             icon: const Icon(Icons.date_range, size: 18),
             label: Text(
