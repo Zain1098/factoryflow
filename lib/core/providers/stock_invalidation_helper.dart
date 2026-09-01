@@ -35,12 +35,13 @@ void refreshAllStockAndEntryProviders(WidgetRef ref) {
   // Invalidate History Lists across Entries
   ref.invalidate(materialReceiveListProvider);
   ref.invalidate(purchaseOrderListProvider);
-  ref.invalidate(productionHistoryProvider);
+  ref.invalidate(productionListProvider);
+  ref.invalidate(wipBatchesProvider);
   ref.invalidate(bpInspectionListProvider);
   ref.invalidate(dispatchFacoListProvider);
   ref.invalidate(receiveFacoListProvider);
   ref.invalidate(apInspectionListProvider);
   ref.invalidate(rtvListProvider);
   ref.invalidate(finalDispatchListProvider);
-  ref.invalidate(downtimeHistoryProvider);
+  ref.invalidate(machineDowntimeListProvider);
 }
