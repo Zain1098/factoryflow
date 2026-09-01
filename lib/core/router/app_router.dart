@@ -26,7 +26,6 @@ import '../../features/search/batch_genealogy_screen.dart';
 import '../../features/corrections/corrections_screen.dart';
 import '../../features/admin_control/admin_control_screen.dart';
 import '../widgets/app_shell.dart';
-import '../widgets/shared_widgets.dart';
 
 // ---------------------------------------------------------------------------
 // Router provider — watches currentUserProvider for reactive redirects

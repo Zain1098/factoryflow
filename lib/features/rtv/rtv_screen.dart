@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -103,6 +104,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
 
       if (result.success) {
         setState(() => _success = 'RTV saved! Cycle #${result.cycleNumber}');
+        refreshAllStockAndEntryProviders(ref);
         ref.invalidate(rtvListProvider);
         ref.invalidate(rtvCandidatesProvider);
         ref.invalidate(pendingRtvReturnsProvider);
@@ -275,6 +277,8 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _reason,
             items: (rtvReasons.value ?? kRtvReasonsFallback)
+                .toSet()
+                .toList()
                 .map(
                   (r) => DropdownMenuItem(
                     value: r,

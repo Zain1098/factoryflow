@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -157,6 +158,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
         () => _success =
             'AP Inspection saved for ${_entries.length} batch item(s).',
       );
+      refreshAllStockAndEntryProviders(ref);
       ref.invalidate(apInspectionListProvider);
       ref.invalidate(pendingApStockProvider);
       ref.invalidate(apRejectedStockProvider);
@@ -226,6 +228,8 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
             prefixIcon: const Icon(Icons.report_problem_outlined),
             value: _rejectReason,
             items: (rejectReasons.value ?? kApRejectReasonsFallback)
+                .toSet()
+                .toList()
                 .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                 .toList(),
             onChanged: (v) => setState(() => _rejectReason = v),
@@ -780,6 +784,9 @@ class _ApRejectedTab extends ConsumerWidget {
     note.dispose();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.success ? 'AP rejected stock finalized.' : (result.error ?? 'Unable to finalize rejection.'))));
-    if (result.success) ref.invalidate(apRejectedStockProvider);
+    if (result.success) {
+      refreshAllStockAndEntryProviders(ref);
+      ref.invalidate(apRejectedStockProvider);
+    }
   }
 }

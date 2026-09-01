@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/stock_ledger_service.dart';
@@ -39,72 +40,87 @@ class ReceiveFacoRepository {
     }
 
     // Shortage check: compare with dispatched qty (PRD 3.7 — allowed, flagged)
-    if (dispatchRefId == null) {
-      return const ReceiveFacoResult(
-        success: false,
-        error:
-            'Select the original Faco dispatch before receiving material.',
-      );
-    }
     double? dispatchedQty;
     bool shortageFlag = false;
-    final rows = _db.db.select(
-      'SELECT qty, batch_number FROM dispatch_to_facos '
-      'WHERE factory_id = ? AND id = ? AND part_id = ?',
-      [factoryId, dispatchRefId, partId],
-    );
-    if (rows.isEmpty) {
-      return const ReceiveFacoResult(
-        success: false,
-        error: 'The selected vendor dispatch is no longer available.',
+
+    if (dispatchRefId != null && dispatchRefId.startsWith('OPEN-AT-FACO-')) {
+      final availableVendorStock =
+          await _ledger.getAvailableStock(partId, StockStage.atFaco);
+      if (qtyReceived > availableVendorStock) {
+        return ReceiveFacoResult(
+          success: false,
+          error:
+              'Received quantity (${qtyReceived.toInt()}) exceeds the available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+        );
+      }
+      dispatchedQty = availableVendorStock;
+      shortageFlag = qtyReceived < availableVendorStock;
+    } else if (dispatchRefId != null) {
+      final rows = _db.db.select(
+        'SELECT qty, batch_number FROM dispatch_to_facos '
+        'WHERE factory_id = ? AND id = ? AND part_id = ?',
+        [factoryId, dispatchRefId, partId],
       );
-    }
-    final dispatchBatch = rows.first['batch_number'] as String? ?? '';
-    if (dispatchBatch.isEmpty || dispatchBatch != batchNumber) {
-      return const ReceiveFacoResult(
-        success: false,
-        error:
-            'Select the original vendor dispatch; batch numbers cannot be entered manually.',
+      if (rows.isEmpty) {
+        return const ReceiveFacoResult(
+          success: false,
+          error: 'The selected vendor dispatch is no longer available.',
+        );
+      }
+      dispatchedQty = (rows.first['qty'] as num).toDouble();
+      final receivedRows = _db.db.select(
+        'SELECT COALESCE(SUM(qty_received), 0) AS received '
+        'FROM receive_from_facos '
+        'WHERE factory_id = ? AND dispatch_ref_id = ?',
+        [factoryId, dispatchRefId],
       );
+      final alreadyReceived =
+          (receivedRows.first['received'] as num).toDouble();
+      final remaining = dispatchedQty - alreadyReceived;
+      if (remaining <= 0) {
+        return const ReceiveFacoResult(
+          success: false,
+          error: 'This vendor dispatch has already been received in full.',
+        );
+      }
+      if (qtyReceived > remaining) {
+        return ReceiveFacoResult(
+          success: false,
+          error:
+              'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
+        );
+      }
+      shortageFlag = qtyReceived < remaining;
+    } else {
+      final availableVendorStock =
+          await _ledger.getAvailableStock(partId, StockStage.atFaco);
+      if (qtyReceived > availableVendorStock) {
+        return ReceiveFacoResult(
+          success: false,
+          error:
+              'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+        );
+      }
+      dispatchedQty = availableVendorStock;
+      shortageFlag = qtyReceived < availableVendorStock;
     }
-    dispatchedQty = (rows.first['qty'] as num).toDouble();
-    final receivedRows = _db.db.select(
-      'SELECT COALESCE(SUM(qty_received), 0) AS received '
-      'FROM receive_from_facos '
-      'WHERE factory_id = ? AND dispatch_ref_id = ?',
-      [factoryId, dispatchRefId],
-    );
-    final alreadyReceived =
-        (receivedRows.first['received'] as num).toDouble();
-    final remaining = dispatchedQty - alreadyReceived;
-    if (remaining <= 0) {
-      return const ReceiveFacoResult(
-        success: false,
-        error: 'This vendor dispatch has already been received in full.',
-      );
-    }
-    if (qtyReceived > remaining) {
-      return ReceiveFacoResult(
-        success: false,
-        error:
-            'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
-      );
-    }
-    shortageFlag = qtyReceived < remaining;
 
     final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();
     final dateStr =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
+    final effectiveBatch =
+        batchNumber.trim().isNotEmpty ? batchNumber.trim() : 'OPEN';
+
     final record = {
       'id': id,
       'factory_id': factoryId,
-      'batch_number': batchNumber,
+      'batch_number': effectiveBatch,
       'date': dateStr,
       'part_id': partId,
       'qty_received': qtyReceived,
-      'dispatch_ref_id': dispatchRefId,
+      'dispatch_ref_id': dispatchRefId ?? 'OPEN-AT-FACO-$partId',
       'supplier_challan': supplierChallan,
       'shortage_flag': shortageFlag ? 1 : 0,
       'remarks': remarks,
@@ -173,6 +189,7 @@ class ReceiveFacoRepository {
   Future<List<Map<String, dynamic>>> getPendingDispatches(String partId) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
+
     final rows = _db.db.select(
       '''SELECT df.id, df.batch_number, df.qty, df.date,
                 p.code AS part_code, p.name AS part_name,
@@ -187,7 +204,39 @@ class ReceiveFacoRepository {
          ORDER BY df.date DESC LIMIT 20''',
       [factoryId, partId],
     );
-    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final list = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+
+    // Check if there is manual / opening at_faco stock in the stock ledger
+    final totalAtVendor =
+        await _ledger.getAvailableStock(partId, StockStage.atFaco);
+    final trackedDispatches = list.fold<double>(
+      0.0,
+      (sum, r) => sum + ((r['remaining_qty'] as num?)?.toDouble() ?? 0.0),
+    );
+    final unbatched = totalAtVendor - trackedDispatches;
+
+    if (unbatched > 0) {
+      final partRows = _db.db.select(
+        'SELECT code, name FROM parts WHERE factory_id = ? AND id = ?',
+        [factoryId, partId],
+      );
+      final code =
+          partRows.isNotEmpty ? partRows.first['code'] as String? ?? '' : '';
+      final name =
+          partRows.isNotEmpty ? partRows.first['name'] as String? ?? '' : '';
+
+      list.add({
+        'id': 'OPEN-AT-FACO-$partId',
+        'batch_number': 'OPEN-$code',
+        'qty': unbatched,
+        'date': DateTime.now().toIso8601String().substring(0, 10),
+        'part_code': code,
+        'part_name': name,
+        'remaining_qty': unbatched,
+      });
+    }
+
+    return list;
   }
 }
 

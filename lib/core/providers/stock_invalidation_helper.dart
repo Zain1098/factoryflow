@@ -22,12 +22,17 @@ void refreshAllStockAndEntryProviders(WidgetRef ref) {
   // Invalidate Dashboard KPI & Stock Summary
   ref.invalidate(dashboardProvider);
 
+  // Invalidate Dispatch to Vendor batch providers
+  ref.invalidate(bpReinspectedBatchesProvider);
+  ref.invalidate(bpStockPartsForDispatchProvider);
+
   // Invalidate Inspection & Batch Stock providers used in Entries
   ref.invalidate(approvedDispatchBatchesProvider);
   ref.invalidate(recentBatchesProvider);
   ref.invalidate(pendingApStockProvider);
   ref.invalidate(apRejectedStockProvider);
   ref.invalidate(bpRejectedStockProvider);
+  ref.invalidate(bpHoldStockProvider);
   ref.invalidate(rtvCandidatesProvider);
   ref.invalidate(rtvStockProvider);
   ref.invalidate(pendingRtvReturnsProvider);

@@ -224,7 +224,7 @@ class RtvRepository {
          ORDER BY ai.date, p.code''',
       [factoryId],
     );
-    return rows.map((row) {
+    final list = rows.map((row) {
       final item = Map<String, dynamic>.from(row);
       item['available_qty'] =
           ((item['allocated_qty'] as num?)?.toDouble() ?? 0) +
@@ -234,6 +234,40 @@ class RtvRepository {
     }).where((item) {
       return ((item['available_qty'] as num?)?.toDouble() ?? 0) > 0;
     }).toList();
+
+    // Check if there is manual / opening rtv_stock in the stock ledger
+    final rtvStockBalances =
+        await _db.getBalancesByStage(StockStage.rtvStock.value);
+    for (final row in rtvStockBalances) {
+      final partId = row['id'] as String;
+      final partCode = row['code'] as String? ?? '';
+      final partName = row['name'] as String? ?? '';
+      final ledgerBalance = (row['balance'] as num?)?.toDouble() ?? 0.0;
+      if (ledgerBalance <= 0) continue;
+
+      final existingSum = list
+          .where((i) => i['part_id'] == partId)
+          .fold<double>(
+            0.0,
+            (sum, i) => sum + ((i['available_qty'] as num?)?.toDouble() ?? 0.0),
+          );
+
+      final unbatched = ledgerBalance - existingSum;
+      if (unbatched > 0) {
+        list.add({
+          'part_id': partId,
+          'part_code': partCode,
+          'part_name': partName,
+          'batch_number': 'OPEN-$partCode',
+          'available_qty': unbatched,
+          'allocated_qty': unbatched,
+          'assigned_qty': 0,
+          'repeat_qty': 0,
+        });
+      }
+    }
+
+    return list;
   }
 
   Future<List<Map<String, dynamic>>> getPendingReturns() async {

@@ -711,6 +711,15 @@ class DatabaseService {
       db.execute('ALTER TABLE stock_adjustments ADD COLUMN batch_number TEXT');
     }
     db.execute(
+      '''UPDATE stock_adjustments 
+         SET batch_number = (
+           SELECT 'OPEN-' || p.code 
+           FROM parts p 
+           WHERE p.id = stock_adjustments.part_id
+         )
+         WHERE (batch_number IS NULL OR batch_number = '') AND stage = 'bp_stock' ''',
+    );
+    db.execute(
       'CREATE INDEX IF NOT EXISTS idx_stock_adj_batch '
       'ON stock_adjustments(factory_id, part_id, stage, batch_number)',
     );

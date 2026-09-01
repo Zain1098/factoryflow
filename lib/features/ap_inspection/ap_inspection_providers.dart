@@ -68,35 +68,38 @@ class ApInspectionRepository {
             'OK ($approvedQty) + RTV hold ($rtvQty) + AP rejected ($rejectedQty) must equal Checked ($qtyChecked)',
       );
     }
-    final batchRows = _db.db.select(
-      '''SELECT COALESCE((
-           SELECT SUM(qty_received)
-           FROM receive_from_facos
-           WHERE factory_id = ? AND batch_number = ? AND part_id = ?
-         ), 0) - COALESCE((
-           SELECT SUM(qty_checked)
-           FROM ap_inspections
-           WHERE factory_id = ? AND batch_number = ? AND part_id = ?
-         ), 0) AS available_qty''',
-      [factoryId, batchNumber, partId, factoryId, batchNumber, partId],
-    );
-    final batchAvailable =
-        (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
-    if (qtyChecked > batchAvailable) {
-      return ApInspectionResult(
-        success: false,
-        error:
-            '$batchNumber: Checked qty (${qtyChecked.toInt()}) exceeds pending AP batch stock (${batchAvailable.toInt()} PCS).',
-      );
-    }
     final available =
         await _ledger.getAvailableStock(partId, StockStage.pendingAp);
     if (qtyChecked > available) {
       return ApInspectionResult(
         success: false,
         error:
-            'Checked qty ($qtyChecked) exceeds pending AP stock ($available PCS)',
+            'Checked qty (${qtyChecked.toInt()}) exceeds pending AP stock (${available.toInt()} PCS)',
       );
+    }
+
+    if (!batchNumber.startsWith('OPEN-')) {
+      final batchRows = _db.db.select(
+        '''SELECT COALESCE((
+             SELECT SUM(qty_received)
+             FROM receive_from_facos
+             WHERE factory_id = ? AND batch_number = ? AND part_id = ?
+           ), 0) - COALESCE((
+             SELECT SUM(qty_checked)
+             FROM ap_inspections
+             WHERE factory_id = ? AND batch_number = ? AND part_id = ?
+           ), 0) AS available_qty''',
+        [factoryId, batchNumber, partId, factoryId, batchNumber, partId],
+      );
+      final batchAvailable =
+          (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
+      if (qtyChecked > batchAvailable && batchAvailable > 0) {
+        return ApInspectionResult(
+          success: false,
+          error:
+              '$batchNumber: Checked qty (${qtyChecked.toInt()}) exceeds pending AP batch stock (${batchAvailable.toInt()} PCS).',
+        );
+      }
     }
 
     final id = _uuid.v4();
@@ -208,12 +211,42 @@ class ApInspectionRepository {
          ORDER BY received.batch_number, p.code''',
       [factoryId, factoryId],
     );
-    return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    final list = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+
+    // Also include any parts with active pending_ap balance in stock_ledger
+    final pendingApBalances =
+        await _db.getBalancesByStage(StockStage.pendingAp.value);
+    for (final row in pendingApBalances) {
+      final partId = row['id'] as String;
+      final partCode = row['code'] as String? ?? '';
+      final partName = row['name'] as String? ?? '';
+      final ledgerBalance = (row['balance'] as num?)?.toDouble() ?? 0.0;
+      if (ledgerBalance <= 0) continue;
+
+      final trackedSum = list
+          .where((i) => i['id'] == partId)
+          .fold<double>(
+            0.0,
+            (sum, i) => sum + ((i['balance'] as num?)?.toDouble() ?? 0.0),
+          );
+      final unbatched = ledgerBalance - trackedSum;
+      if (unbatched > 0) {
+        list.add({
+          'id': partId,
+          'code': partCode,
+          'name': partName,
+          'batch_number': 'OPEN-$partCode',
+          'balance': unbatched,
+        });
+      }
+    }
+
+    return list;
   }
 
   // ── AP Rejected Stock ──────────────────────────────────────────────────────
 
-  /// Returns AP rejected balances by source batch.
+  /// Returns AP rejected balances by source batch and ledger pool.
   Future<List<Map<String, dynamic>>> getApRejectedStock() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
@@ -235,7 +268,38 @@ class ApInspectionRepository {
          ORDER BY ai.batch_number DESC, p.name''',
       [factoryId],
     );
-    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    final items = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+
+    // Also include any parts that have AP rejected balance in stock_ledger
+    final apRejectBalances =
+        await _db.getBalancesByStage(StockStage.apRejected.value);
+    for (final row in apRejectBalances) {
+      final partId = row['id'] as String;
+      final partCode = row['code'] as String? ?? '';
+      final partName = row['name'] as String? ?? '';
+      final ledgerBalance = (row['balance'] as num?)?.toDouble() ?? 0.0;
+      if (ledgerBalance <= 0) continue;
+
+      final existingBatchSum = items
+          .where((i) => i['part_id'] == partId)
+          .fold<double>(
+            0.0,
+            (sum, i) => sum + ((i['qty'] as num?)?.toDouble() ?? 0.0),
+          );
+
+      final unbatched = ledgerBalance - existingBatchSum;
+      if (unbatched > 0) {
+        items.add({
+          'part_id': partId,
+          'part_code': partCode,
+          'part_name': partName,
+          'batch_number': 'OPEN-$partCode',
+          'qty': unbatched,
+        });
+      }
+    }
+
+    return items;
   }
 
   /// RTV outstanding grouped by vendor, batch and cycle.
@@ -345,16 +409,13 @@ class ApInspectionRepository {
         error: 'Select a vendor before sending rejected stock for rework.',
       );
     }
-    final availableForBatch = _rejectedBalanceForBatch(
-      factoryId: factoryId,
-      partId: partId,
-      batchNumber: batchNumber,
-    );
-    if (qty > availableForBatch) {
+    final totalAvailable =
+        await _ledger.getAvailableStock(partId, StockStage.apRejected);
+    if (qty > totalAvailable) {
       return ApInspectionResult(
         success: false,
         error:
-            'Action qty (${qty.toInt()} PCS) exceeds AP rejected stock for batch ${batchNumber.trim()} (${availableForBatch.toInt()} PCS).',
+            'Action qty (${qty.toInt()} PCS) exceeds available AP rejected stock (${totalAvailable.toInt()} PCS).',
       );
     }
 
@@ -404,30 +465,6 @@ class ApInspectionRepository {
 
     await _sync.schedulePendingSync();
     return ApInspectionResult(success: true, recordId: id);
-  }
-
-  /// Rejected material is held in one physical AP pool by part. Validate its
-  /// source-batch balance before posting so a selected batch cannot consume
-  /// quantity rejected by another batch.
-  double _rejectedBalanceForBatch({
-    required String factoryId,
-    required String partId,
-    required String batchNumber,
-  }) {
-    final rows = _db.db.select(
-      '''SELECT COALESCE(SUM(ai.rejected_qty), 0) - COALESCE((
-           SELECT SUM(action.qty)
-           FROM ap_rejected_actions action
-           WHERE action.factory_id = ai.factory_id
-             AND action.part_id = ai.part_id
-             AND action.batch_number = ai.batch_number
-             AND action.action IN ('scrapped', 'sent_to_faco')
-         ), 0) AS available_qty
-         FROM ap_inspections ai
-         WHERE ai.factory_id = ? AND ai.part_id = ? AND ai.batch_number = ?''',
-      [factoryId, partId, batchNumber.trim()],
-    );
-    return (rows.single['available_qty'] as num?)?.toDouble() ?? 0;
   }
 }
 

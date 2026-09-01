@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/providers/production_flow_provider.dart';
 
@@ -362,29 +363,46 @@ final rejectAnalysisProvider =
       FROM bp_inspections
       WHERE factory_id = ? AND date BETWEEN ? AND ?
       GROUP BY factory_id, part_id, date
-    )
-    SELECT
-      p.date,
-      pt.name AS part_name,
-      COALESCE(SUM(p.production_qty), 0) AS production,
-      COALESCE(SUM(p.bp_reject_qty), 0) + COALESCE(MAX(bi.qty), 0) AS bp_rej,
-      COALESCE(ap.ap_rej, 0) AS ap_rej
-    FROM productions p
-    LEFT JOIN parts pt ON pt.id = p.part_id AND pt.factory_id = p.factory_id
-    LEFT JOIN bp_inspection_rejects bi ON bi.factory_id = p.factory_id
-      AND bi.part_id = p.part_id AND bi.date = p.date
-    LEFT JOIN (
-      SELECT factory_id, part_id, date, SUM(rejected_qty) AS ap_rej
+    ), ap_inspection_rejects AS (
+      SELECT factory_id, part_id, date, SUM(rejected_qty) AS qty
       FROM ap_inspections
       WHERE factory_id = ? AND date BETWEEN ? AND ?
       GROUP BY factory_id, part_id, date
-    ) ap ON ap.factory_id = p.factory_id
-      AND ap.part_id = p.part_id AND ap.date = p.date
-    WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
-    GROUP BY p.date, p.part_id
-    ORDER BY p.date DESC
+    ), prod_rejects AS (
+      SELECT factory_id, part_id, date, SUM(production_qty) AS production, SUM(bp_reject_qty) AS mach_rej
+      FROM productions
+      WHERE factory_id = ? AND date BETWEEN ? AND ?
+      GROUP BY factory_id, part_id, date
+    ), manual_adj_rejects AS (
+      SELECT factory_id, part_id, SUBSTR(created_at, 1, 10) AS date,
+             SUM(CASE WHEN stage = 'bp_rejected' THEN adjusted_qty ELSE 0 END) AS bp_adj,
+             SUM(CASE WHEN stage = 'production_rejected' THEN adjusted_qty ELSE 0 END) AS prod_adj
+      FROM stock_adjustments
+      WHERE factory_id = ? AND stage IN ('bp_rejected', 'production_rejected')
+        AND SUBSTR(created_at, 1, 10) BETWEEN ? AND ?
+      GROUP BY factory_id, part_id, SUBSTR(created_at, 1, 10)
+    ), all_dates_parts AS (
+      SELECT factory_id, part_id, date FROM bp_inspection_rejects
+      UNION SELECT factory_id, part_id, date FROM ap_inspection_rejects
+      UNION SELECT factory_id, part_id, date FROM prod_rejects
+      UNION SELECT factory_id, part_id, date FROM manual_adj_rejects
+    )
+    SELECT adp.date, pt.name AS part_name,
+           COALESCE(pr.production, 0) AS production,
+           COALESCE(pr.mach_rej, 0) + COALESCE(bi.qty, 0) + COALESCE(ma.bp_adj, 0) + COALESCE(ma.prod_adj, 0) AS bp_rej,
+           COALESCE(ap.qty, 0) AS ap_rej
+    FROM all_dates_parts adp
+    INNER JOIN parts pt ON pt.id = adp.part_id AND pt.factory_id = adp.factory_id
+    LEFT JOIN prod_rejects pr ON pr.factory_id = adp.factory_id AND pr.part_id = adp.part_id AND pr.date = adp.date
+    LEFT JOIN bp_inspection_rejects bi ON bi.factory_id = adp.factory_id AND bi.part_id = adp.part_id AND bi.date = adp.date
+    LEFT JOIN ap_inspection_rejects ap ON ap.factory_id = adp.factory_id AND ap.part_id = adp.part_id AND ap.date = adp.date
+    LEFT JOIN manual_adj_rejects ma ON ma.factory_id = adp.factory_id AND ma.part_id = adp.part_id AND ma.date = adp.date
+    ORDER BY adp.date DESC, pt.name
   ''',
     [
+      factoryId,
+      range.fromStr,
+      range.toStr,
       factoryId,
       range.fromStr,
       range.toStr,
@@ -557,6 +575,7 @@ final facoPendingReportProvider =
   final rows = db.db.select(
     '''
     SELECT
+      df.part_id,
       pt.name AS part_name,
       v.name AS vendor_name,
       COALESCE(SUM(df.qty), 0) AS dispatched,
@@ -579,7 +598,7 @@ final facoPendingReportProvider =
     [factoryId, factoryId],
   );
 
-  return rows.map((r) {
+  final list = rows.map((r) {
     final disp = (r['dispatched'] as num).toDouble();
     final recv = (r['received'] as num).toDouble();
     return FacoPendingRow(
@@ -591,6 +610,34 @@ final facoPendingReportProvider =
       oldestDate: r['oldest_date'] as String? ?? '—',
     );
   }).toList();
+
+  // Also include any parts with active at_faco balance in stock_ledger
+  final atFacoBalances =
+      await db.getBalancesByStage(StockStage.atFaco.value);
+  for (final b in atFacoBalances) {
+    final partName = b['name'] as String? ?? '';
+    final ledgerQty = (b['balance'] as num?)?.toDouble() ?? 0.0;
+    if (ledgerQty <= 0) continue;
+
+    final trackedSum = list
+        .where((item) => item.partName == partName)
+        .fold<double>(0.0, (sum, item) => sum + item.pending);
+    final unbatched = ledgerQty - trackedSum;
+    if (unbatched > 0) {
+      list.add(
+        FacoPendingRow(
+          partName: partName,
+          vendorName: 'Assigned Vendor',
+          dispatched: unbatched,
+          received: 0,
+          pending: unbatched,
+          oldestDate: 'Opening Stock',
+        ),
+      );
+    }
+  }
+
+  return list;
 });
 
 // ─── 9. Live Stock Report ─────────────────────────────────────────────────────
@@ -844,12 +891,14 @@ final holdMaterialReportProvider =
   final bpRows = db.db.select(
     '''
     SELECT sl.date, p.code as part_code, p.name as part_name,
-           COALESCE(sa.remarks, 'BP quality hold') AS reason,
+           COALESCE(sa.remarks, bi.remarks, 'BP quality hold') AS reason,
            sl.running_balance AS qty
     FROM stock_ledger sl
     INNER JOIN parts p ON p.id = sl.part_id AND p.factory_id = sl.factory_id
     LEFT JOIN stock_adjustments sa ON sa.id = sl.ref_id
       AND sa.factory_id = sl.factory_id
+    LEFT JOIN bp_inspections bi ON bi.id = sl.ref_id
+      AND bi.factory_id = sl.factory_id
     WHERE sl.factory_id = ? AND sl.stage = 'bp_hold'
       AND sl.rowid = (
         SELECT current_row.rowid FROM stock_ledger current_row

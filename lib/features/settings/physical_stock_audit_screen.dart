@@ -46,6 +46,7 @@ class _PhysicalStockAuditScreenState
   late final TabController _tabs;
 
   String? _selectedPartId;
+  String? _selectedPartCode;
   StockStage _selectedStage = StockStage.rawMaterial;
   double _systemQty = 0.0;
   bool _isLoadingStock = false;
@@ -143,11 +144,17 @@ class _PhysicalStockAuditScreenState
             );
 
         // Also record in stock_adjustments for audit history
+        // For bp_stock stage, include the opening batch number so this stock
+        // is visible as a dispatchable batch in the Dispatch to Vendor screen.
+        final batchNumber = _selectedStage == StockStage.bpStock && _selectedPartCode != null
+            ? 'OPEN-$_selectedPartCode'
+            : null;
         await db.insertRecord('stock_adjustments', {
           'id': const Uuid().v4(),
           'factory_id': factoryId,
           'user_id': user?.id ?? 'system',
           'part_id': _selectedPartId,
+          'batch_number': batchNumber,
           'stage': _selectedStage.value,
           'previous_qty': _systemQty,
           'adjusted_qty': variance,
@@ -261,7 +268,11 @@ class _PhysicalStockAuditScreenState
                         .toList(),
                     onChanged: (val) {
                       if (val != null) {
-                        setState(() => _selectedPartId = val);
+                        final part = parts.firstWhere((p) => p['id'] == val, orElse: () => <String, dynamic>{});
+                        setState(() {
+                          _selectedPartId = val;
+                          _selectedPartCode = part['code'] as String?;
+                        });
                         _fetchSystemStock(val, _selectedStage);
                       }
                     },
@@ -286,7 +297,10 @@ class _PhysicalStockAuditScreenState
                       );
                       if (matched.isNotEmpty) {
                         final id = matched['id'] as String;
-                        setState(() => _selectedPartId = id);
+                        setState(() {
+                          _selectedPartId = id;
+                          _selectedPartCode = matched['code'] as String?;
+                        });
                         _fetchSystemStock(id, _selectedStage);
                       }
                     }

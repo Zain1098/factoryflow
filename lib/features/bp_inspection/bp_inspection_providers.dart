@@ -205,17 +205,67 @@ class BpInspectionRepository {
     return BpInspectionResult(success: true, recordId: id);
   }
 
-  Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
+  Future<List<Map<String, dynamic>>> getRecent({int limit = 100}) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final rows = _db.db.select(
-      'SELECT bi.*, p.name as part_name, p.code as part_code, m.name as machine_name '
-      'FROM bp_inspections bi '
-      'LEFT JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id '
-      'LEFT JOIN machines m ON m.id = bi.machine_id AND m.factory_id = bi.factory_id '
-      'WHERE bi.factory_id = ? '
-      'ORDER BY bi.date DESC LIMIT ?',
-      [factoryId, limit],
+      '''SELECT 
+           CASE 
+             WHEN bi.remarks LIKE 'Quality Hold Clearance%' THEN 'hold_release'
+             ELSE 'inspection'
+           END AS event_type,
+           bi.id, bi.factory_id, bi.date, bi.batch_number, bi.part_id,
+           p.name AS part_name, p.code AS part_code, m.name AS machine_name,
+           COALESCE(op.name, bi.inspector_id, 'QC Inspector') AS inspector_name,
+           bi.inspected_qty, bi.bp_reject_qty,
+           COALESCE(r.reason, bi.reject_reason_id) AS reject_reason_name,
+           bi.remarks, bi.photo_url, bi.sync_status,
+           bi.rowid AS sort_id
+         FROM bp_inspections bi
+         LEFT JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
+         LEFT JOIN machines m ON m.id = bi.machine_id AND m.factory_id = bi.factory_id
+         LEFT JOIN operators op ON op.id = bi.inspector_id AND op.factory_id = bi.factory_id
+         LEFT JOIN bp_reject_reasons r ON r.id = bi.reject_reason_id AND r.factory_id = bi.factory_id
+         WHERE bi.factory_id = ?
+
+         UNION ALL
+
+         SELECT 
+           'scrap_writeoff' AS event_type,
+           bra.id, bra.factory_id, bra.date, bra.batch_number, bra.part_id,
+           p.name AS part_name, p.code AS part_code, NULL AS machine_name,
+           COALESCE(bra.created_by, 'Authorized User') AS inspector_name,
+           bra.qty AS inspected_qty, bra.qty AS bp_reject_qty,
+           'Permanent Scrap Write-Off' AS reject_reason_name,
+           bra.remarks, NULL AS photo_url, bra.sync_status,
+           bra.rowid AS sort_id
+         FROM bp_rejected_actions bra
+         LEFT JOIN parts p ON p.id = bra.part_id AND p.factory_id = bra.factory_id
+         WHERE bra.factory_id = ?
+
+         UNION ALL
+
+         SELECT 
+           'stock_adjustment' AS event_type,
+           sa.id, sa.factory_id, SUBSTR(sa.created_at, 1, 10) AS date,
+           COALESCE(sa.batch_number, 'MANUAL-' || p.code) AS batch_number,
+           sa.part_id, p.name AS part_name, p.code AS part_code, NULL AS machine_name,
+           'Stock Manager' AS inspector_name,
+           sa.adjusted_qty AS inspected_qty,
+           CASE WHEN sa.stage = 'bp_rejected' THEN sa.adjusted_qty ELSE 0 END AS bp_reject_qty,
+           CASE 
+             WHEN sa.stage = 'bp_hold' THEN 'Manual BP Hold Placement'
+             WHEN sa.stage = 'bp_rejected' THEN 'Manual BP Rejection Placement'
+             ELSE 'Stock Adjustment'
+           END AS reject_reason_name,
+           sa.remarks, NULL AS photo_url, sa.sync_status,
+           sa.rowid AS sort_id
+         FROM stock_adjustments sa
+         LEFT JOIN parts p ON p.id = sa.part_id AND p.factory_id = sa.factory_id
+         WHERE sa.factory_id = ? AND sa.stage IN ('bp_hold', 'bp_rejected')
+
+         ORDER BY date DESC, sort_id DESC LIMIT ?''',
+      [factoryId, factoryId, factoryId, limit],
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
@@ -276,76 +326,217 @@ class BpInspectionRepository {
     required String remarks,
   }) async {
     final factoryId = _db.activeWorkspaceId.trim();
-    if (factoryId.isEmpty) return const BpInspectionResult(success: false, error: 'No active factory workspace is selected.');
-    if (batchNumber.trim().isEmpty || qty <= 0 || remarks.trim().isEmpty) return const BpInspectionResult(success: false, error: 'Batch, quantity and final-rejection note are required.');
-    final availableForBatch = _rejectedBalanceForBatch(
-      factoryId: factoryId,
-      partId: partId,
-      batchNumber: batchNumber,
-    );
-    if (qty > availableForBatch) {
+    if (factoryId.isEmpty) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'No active factory workspace is selected.',
+      );
+    }
+    if (qty <= 0 || remarks.trim().isEmpty) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'Quantity and scrap confirmation note are required.',
+      );
+    }
+
+    final totalAvailable =
+        await _ledger.getAvailableStock(partId, StockStage.bpRejected);
+    if (qty > totalAvailable) {
       return BpInspectionResult(
         success: false,
         error:
-            'Final rejection qty (${qty.toInt()} PCS) exceeds BP rejected stock for batch ${batchNumber.trim()} (${availableForBatch.toInt()} PCS).',
+            'Scrap quantity (${qty.toInt()} PCS) exceeds available BP rejected stock (${totalAvailable.toInt()} PCS).',
       );
     }
+
     final id = _uuid.v4();
     final now = DateTime.now();
     final record = {
-      'id': id, 'factory_id': factoryId,
-      'date': '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
-      'part_id': partId, 'batch_number': batchNumber.trim(), 'qty': qty, 'action': 'final_rejected',
-      'remarks': remarks.trim(), 'created_by': createdBy, 'sync_status': 'pending',
+      'id': id,
+      'factory_id': factoryId,
+      'date':
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+      'part_id': partId,
+      'batch_number':
+          batchNumber.trim().isNotEmpty ? batchNumber.trim() : 'SCRAP',
+      'qty': qty,
+      'action': 'final_rejected',
+      'remarks': remarks.trim(),
+      'created_by': createdBy,
+      'sync_status': 'pending',
     };
+
     try {
       await _db.runInTransaction(() async {
-        final ledgerResult = await _ledger.bpRejectedScrap(partId: partId, qty: qty, refId: id, triggerSync: false);
-        if (!ledgerResult.success) throw StockPostingFailure(ledgerResult.error ?? 'Unable to finalize BP rejected stock.');
+        final ledgerResult = await _ledger.bpRejectedScrap(
+          partId: partId,
+          qty: qty,
+          refId: id,
+          triggerSync: false,
+        );
+        if (!ledgerResult.success) {
+          throw StockPostingFailure(
+            ledgerResult.error ?? 'Unable to finalize BP rejected scrap.',
+          );
+        }
         await _db.insertRecord('bp_rejected_actions', record);
-        await _sync.queueInsert(tableName: 'bp_rejected_actions', recordId: id, payload: record, triggerSync: false);
+        await _sync.queueInsert(
+          tableName: 'bp_rejected_actions',
+          recordId: id,
+          payload: record,
+          triggerSync: false,
+        );
       });
     } on StockPostingFailure catch (error) {
       return BpInspectionResult(success: false, error: error.message);
     } catch (_) {
-      return const BpInspectionResult(success: false, error: 'Final rejection could not be saved. No stock was changed.');
+      return const BpInspectionResult(
+        success: false,
+        error: 'Final rejection could not be saved. No stock was changed.',
+      );
     }
     await _sync.schedulePendingSync();
     return BpInspectionResult(success: true, recordId: id);
   }
 
-  /// The ledger tracks the physical BP-rejected pool by part. This guard keeps
-  /// a selected source batch from consuming another batch's rejected quantity.
-  double _rejectedBalanceForBatch({
-    required String factoryId,
+  Future<List<Map<String, dynamic>>> getBpHoldStock() async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return [];
+    final rows = _db.db.select(
+      '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
+                COALESCE(sl.running_balance, 0) AS hold_qty,
+                COALESCE(sa.remarks, 'Quality check hold') AS reason,
+                COALESCE(sa.created_at, sl.created_at) AS hold_date,
+                COALESCE(sa.batch_number, 'OPEN-' || p.code) AS batch_number
+         FROM parts p
+         INNER JOIN stock_ledger sl ON sl.factory_id = p.factory_id
+           AND sl.part_id = p.id AND sl.stage = 'bp_hold'
+           AND sl.rowid = (
+             SELECT candidate.rowid FROM stock_ledger candidate
+             WHERE candidate.factory_id = p.factory_id
+               AND candidate.part_id = p.id
+               AND candidate.stage = 'bp_hold'
+             ORDER BY candidate.created_at DESC, candidate.rowid DESC
+             LIMIT 1
+           )
+         LEFT JOIN stock_adjustments sa ON sa.factory_id = p.factory_id
+           AND sa.part_id = p.id AND sa.stage = 'bp_hold'
+           AND sa.created_at = (
+             SELECT MAX(created_at) FROM stock_adjustments
+             WHERE factory_id = p.factory_id AND part_id = p.id AND stage = 'bp_hold'
+           )
+         WHERE p.factory_id = ? AND p.active = 1 AND sl.running_balance > 0
+         ORDER BY p.name''',
+      [factoryId],
+    );
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Releases material from BP Hold into Own BP Stock (OK) and BP Rejected (Reject)
+  Future<BpInspectionResult> releaseBpHold({
     required String partId,
     required String batchNumber,
-  }) {
-    final rows = _db.db.select(
-      '''SELECT COALESCE(SUM(bi.bp_reject_qty), 0) - COALESCE((
-           SELECT SUM(action.qty)
-           FROM bp_rejected_actions action
-           WHERE action.factory_id = bi.factory_id
-             AND action.part_id = bi.part_id
-             AND action.batch_number = bi.batch_number
-             AND action.action = 'final_rejected'
-         ), 0) AS available_qty
-         FROM bp_inspections bi
-         WHERE bi.factory_id = ? AND bi.part_id = ? AND bi.batch_number = ?''',
-      [factoryId, partId, batchNumber.trim()],
-    );
-    return (rows.single['available_qty'] as num?)?.toDouble() ?? 0;
+    required double totalQty,
+    required double okQty,
+    required double rejectQty,
+    String? rejectReason,
+    required String inspectorId,
+    String? remarks,
+    DateTime? recordedAt,
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return const BpInspectionResult(
+        success: false,
+        error: 'No active factory workspace is selected.',
+      );
+    }
+    if ((okQty + rejectQty - totalQty).abs() > 0.001) {
+      return BpInspectionResult(
+        success: false,
+        error:
+            'OK Qty (${okQty.toInt()}) + Reject Qty (${rejectQty.toInt()}) must equal Total Qty (${totalQty.toInt()}).',
+      );
+    }
+    if (rejectQty > 0 && (rejectReason == null || rejectReason.trim().isEmpty)) {
+      return const BpInspectionResult(
+        success: false,
+        error:
+            'Reject reason is required when reject quantity is greater than zero.',
+      );
+    }
+
+    final id = _uuid.v4();
+    final now = recordedAt ?? DateTime.now();
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final record = {
+      'id': id,
+      'factory_id': factoryId,
+      'batch_number': batchNumber.trim().isEmpty ? 'OPEN' : batchNumber.trim(),
+      'date': dateStr,
+      'part_id': partId,
+      'machine_id': null,
+      'inspected_qty': totalQty,
+      'bp_reject_qty': rejectQty,
+      'reject_reason_id': rejectReason,
+      'inspector_id': inspectorId,
+      'remarks': remarks?.trim().isNotEmpty == true
+          ? remarks!.trim()
+          : 'Quality Hold Clearance (${okQty.toInt()} OK, ${rejectQty.toInt()} Reject)',
+      'sync_status': 'pending',
+    };
+
+    try {
+      await _db.runInTransaction(() async {
+        final ledgerResult = await _ledger.releaseDirectBpHold(
+          partId: partId,
+          okQty: okQty,
+          rejectQty: rejectQty,
+          refId: id,
+          triggerSync: false,
+        );
+        if (!ledgerResult.success) {
+          throw StockPostingFailure(
+            ledgerResult.error ?? 'Unable to update stock for BP hold release.',
+          );
+        }
+
+        await _db.insertRecord('bp_inspections', record);
+        await _sync.queueInsert(
+          tableName: 'bp_inspections',
+          recordId: id,
+          payload: record,
+          triggerSync: false,
+        );
+      });
+    } on StockPostingFailure catch (error) {
+      return BpInspectionResult(success: false, error: error.message);
+    } catch (e) {
+      return BpInspectionResult(
+        success: false,
+        error: 'Hold release could not be saved: $e',
+      );
+    }
+
+    await _sync.schedulePendingSync();
+    return BpInspectionResult(success: true, recordId: id);
   }
 
   Future<List<Map<String, dynamic>>> getRejectedStock() async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
+
     final rows = _db.db.select(
       '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
                 bi.batch_number,
-                SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) AS qty
+                SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) AS qty,
+                COALESCE(r.reason, bi.reject_reason_id, 'Quality reject') AS reason,
+                bi.date AS reject_date
          FROM bp_inspections bi
          INNER JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
+         LEFT JOIN bp_reject_reasons r ON r.id = bi.reject_reason_id AND r.factory_id = bi.factory_id
          LEFT JOIN (
            SELECT factory_id, part_id, batch_number, SUM(qty) AS actioned_qty
            FROM bp_rejected_actions WHERE action = 'final_rejected'
@@ -358,7 +549,41 @@ class BpInspectionRepository {
          ORDER BY bi.batch_number DESC, p.name''',
       [factoryId],
     );
-    return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    final items = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+
+    // Also include any parts that have BP rejected balance in stock_ledger
+    // (e.g. from Settings → Stock Management manual adjustment)
+    final bpRejectBalances =
+        await _db.getBalancesByStage(StockStage.bpRejected.value);
+    for (final row in bpRejectBalances) {
+      final partId = row['id'] as String;
+      final partCode = row['code'] as String? ?? '';
+      final partName = row['name'] as String? ?? '';
+      final ledgerBalance = (row['balance'] as num?)?.toDouble() ?? 0.0;
+      if (ledgerBalance <= 0) continue;
+
+      final existingBatchSum = items
+          .where((i) => i['part_id'] == partId)
+          .fold<double>(
+            0.0,
+            (sum, i) => sum + ((i['qty'] as num?)?.toDouble() ?? 0.0),
+          );
+
+      final unbatched = ledgerBalance - existingBatchSum;
+      if (unbatched > 0) {
+        items.add({
+          'part_id': partId,
+          'part_code': partCode,
+          'part_name': partName,
+          'batch_number': 'OPEN-$partCode',
+          'qty': unbatched,
+          'reason': 'Manual stock entry / opening rejected',
+          'reject_date': DateTime.now().toIso8601String().substring(0, 10),
+        });
+      }
+    }
+
+    return items;
   }
 }
 
@@ -383,6 +608,11 @@ final recentBatchesProvider =
 
 final bpRejectedStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
   return ref.watch(bpInspectionRepositoryProvider).getRejectedStock();
+});
+
+final bpHoldStockProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) {
+  return ref.watch(bpInspectionRepositoryProvider).getBpHoldStock();
 });
 
 class BpInspectionResult {

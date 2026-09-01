@@ -131,74 +131,57 @@ class DispatchFacoRepository {
           error: '${item.partCode}: selected batch does not belong to this part.',
         );
       }
-      final finalMachineId =
-          _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
-      final batchRows = _db.db.select(
-        isOpeningBatch
-            ? '''SELECT COALESCE((
-                 SELECT SUM(sa.adjusted_qty) FROM stock_adjustments sa
-                 WHERE sa.factory_id = ? AND sa.batch_number = ?
-                   AND sa.part_id = ? AND sa.stage = 'bp_stock'
-               ), 0) - COALESCE((
-                 SELECT SUM(df.qty) FROM dispatch_to_facos df
-                 WHERE df.factory_id = ? AND df.batch_number = ?
-                   AND df.part_id = ?
-               ), 0) AS available_qty'''
-            :
-        '''SELECT COALESCE((
-             SELECT SUM(output.good_qty) FROM productions output
-             WHERE output.factory_id = ? AND output.batch_number = ?
-               AND output.part_id = ?
-               AND (? IS NULL OR output.machine_id = ?)
-           ), 0) - COALESCE((
-             SELECT SUM(bi.bp_reject_qty) FROM bp_inspections bi
-             WHERE bi.factory_id = ? AND bi.batch_number = ?
-               AND bi.part_id = ?
-           ), 0) - COALESCE((
-             SELECT SUM(df.qty) FROM dispatch_to_facos df
-             WHERE df.factory_id = ? AND df.batch_number = ?
-               AND df.part_id = ?
-           ), 0) AS available_qty''',
-        isOpeningBatch
-            ? [
-                factoryId,
-                item.batchNumber,
-                item.partId,
-                factoryId,
-                item.batchNumber,
-                item.partId,
-              ]
-            : [
-          factoryId,
-          item.batchNumber,
-          item.partId,
-          finalMachineId,
-          finalMachineId,
-          factoryId,
-          item.batchNumber,
-          item.partId,
-          factoryId,
-          item.batchNumber,
-          item.partId,
-              ],
-      );
-      final batchAvailable =
-          (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
-      if (item.qty > batchAvailable) {
-        return DispatchFacoResult(
-          success: false,
-          error:
-              '${item.partCode}: dispatch qty exceeds this batch balance (${batchAvailable.toInt()} PCS).',
-        );
-      }
       final available =
           await _ledger.getAvailableStock(item.partId, StockStage.bpStock);
       if (item.qty > available) {
         return DispatchFacoResult(
           success: false,
           error:
-              '${item.partCode}: dispatch qty (${item.qty}) exceeds Own BP Stock ($available PCS)',
+              '${item.partCode}: dispatch qty (${item.qty.toInt()}) exceeds Own BP Stock (${available.toInt()} PCS)',
         );
+      }
+
+      if (!isOpeningBatch) {
+        final finalMachineId =
+            _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
+        final batchRows = _db.db.select(
+          '''SELECT COALESCE((
+               SELECT SUM(output.good_qty) FROM productions output
+               WHERE output.factory_id = ? AND output.batch_number = ?
+                 AND output.part_id = ?
+                 AND (? IS NULL OR output.machine_id = ?)
+             ), 0) - COALESCE((
+               SELECT SUM(bi.bp_reject_qty) FROM bp_inspections bi
+               WHERE bi.factory_id = ? AND bi.batch_number = ?
+                 AND bi.part_id = ?
+             ), 0) - COALESCE((
+               SELECT SUM(df.qty) FROM dispatch_to_facos df
+               WHERE df.factory_id = ? AND df.batch_number = ?
+                 AND df.part_id = ?
+             ), 0) AS available_qty''',
+          [
+            factoryId,
+            item.batchNumber,
+            item.partId,
+            finalMachineId,
+            finalMachineId,
+            factoryId,
+            item.batchNumber,
+            item.partId,
+            factoryId,
+            item.batchNumber,
+            item.partId,
+          ],
+        );
+        final batchAvailable =
+            (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
+        if (item.qty > batchAvailable) {
+          return DispatchFacoResult(
+            success: false,
+            error:
+                '${item.partCode}: dispatch qty exceeds this batch balance (${batchAvailable.toInt()} PCS).',
+          );
+        }
       }
 
       if (!isOpeningBatch &&
@@ -347,8 +330,7 @@ class DispatchFacoRepository {
                     AND bi.part_id = pr.part_id
                 ), 0)
                 - COALESCE((
-                  SELECT SUM(df.qty)
-                  FROM dispatch_to_facos df
+                  SELECT SUM(df.qty) FROM dispatch_to_facos df
                   WHERE df.factory_id = pr.factory_id
                     AND df.batch_number = pr.batch_number
                     AND df.part_id = pr.part_id
@@ -363,25 +345,63 @@ class DispatchFacoRepository {
       [finalMachineId, finalMachineId, factoryId],
     );
     final batches = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+
     final openingRows = _db.db.select(
-      '''SELECT sa.batch_number, sa.part_id, p.code AS part_code,
+      '''SELECT COALESCE(NULLIF(sa.batch_number, ''), 'OPEN-' || p.code) AS batch_number,
+                sa.part_id, p.code AS part_code,
                 p.name AS part_name, MAX(sa.created_at) AS date,
                 SUM(sa.adjusted_qty) - COALESCE((
                   SELECT SUM(df.qty) FROM dispatch_to_facos df
                   WHERE df.factory_id = sa.factory_id
-                    AND df.batch_number = sa.batch_number
+                    AND df.batch_number = COALESCE(NULLIF(sa.batch_number, ''), 'OPEN-' || p.code)
                     AND df.part_id = sa.part_id
                 ), 0) AS available_qty
          FROM stock_adjustments sa
          INNER JOIN parts p ON p.id = sa.part_id AND p.factory_id = sa.factory_id
          WHERE sa.factory_id = ? AND sa.stage = 'bp_stock'
-           AND sa.batch_number LIKE 'OPEN-%'
-         GROUP BY sa.factory_id, sa.batch_number, sa.part_id, p.code, p.name
+         GROUP BY sa.factory_id, COALESCE(NULLIF(sa.batch_number, ''), 'OPEN-' || p.code), sa.part_id, p.code, p.name
          HAVING available_qty > 0
          ORDER BY date DESC LIMIT 30''',
       [factoryId],
     );
     batches.addAll(openingRows.map((r) => Map<String, dynamic>.from(r)));
+
+    // Ensure any remaining BP stock recorded in the stock ledger is also
+    // available as a dispatchable OPEN-{code} batch if not fully covered
+    // by production/adjustment batch rows above.
+    final bpBalances = await _db.getBalancesByStage(StockStage.bpStock.value);
+    for (final partBalance in bpBalances) {
+      final partId = partBalance['id'] as String;
+      final partCode = partBalance['code'] as String? ?? '';
+      final partName = partBalance['name'] as String? ?? '';
+      final ledgerBalance = (partBalance['balance'] as num?)?.toDouble() ?? 0.0;
+      if (ledgerBalance <= 0) continue;
+
+      final existingBatchSum = batches
+          .where((b) => b['part_id'] == partId)
+          .fold<double>(0.0, (sum, b) => sum + ((b['available_qty'] as num?)?.toDouble() ?? 0.0),);
+
+      final unbatched = ledgerBalance - existingBatchSum;
+      if (unbatched > 0) {
+        final openBatchNumber = 'OPEN-$partCode';
+        final existingOpenIndex = batches.indexWhere(
+            (b) => b['part_id'] == partId && b['batch_number'] == openBatchNumber,);
+        if (existingOpenIndex >= 0) {
+          batches[existingOpenIndex]['available_qty'] =
+              ((batches[existingOpenIndex]['available_qty'] as num?)?.toDouble() ?? 0.0) + unbatched;
+        } else {
+          batches.add({
+            'batch_number': openBatchNumber,
+            'part_id': partId,
+            'part_code': partCode,
+            'part_name': partName,
+            'date': DateTime.now().toIso8601String().substring(0, 10),
+            'available_qty': unbatched,
+          });
+        }
+      }
+    }
+
     final partTotals = <String, double>{};
     for (final batch in batches) {
       final partId = batch['part_id'] as String;

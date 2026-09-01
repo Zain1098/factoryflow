@@ -75,38 +75,44 @@ class SoftActionTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: Theme.of(context)
                       .colorScheme
                       .surface
                       .withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(icon, color: color, size: 19),
+                child: Icon(icon, color: color, size: 18),
               ),
-              const Spacer(),
-              Text(title, style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 3),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               Text(
                 subtitle,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 11,
                     ),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: 4),
               Row(
                 children: [
-                  Text('Open', style: Theme.of(context).textTheme.labelMedium),
+                  Text('Open', style: Theme.of(context).textTheme.labelMedium?.copyWith(fontSize: 11)),
                   const Spacer(),
-                  const Icon(Icons.arrow_forward_rounded, size: 16),
+                  const Icon(Icons.arrow_forward_rounded, size: 14),
                 ],
               ),
             ],
