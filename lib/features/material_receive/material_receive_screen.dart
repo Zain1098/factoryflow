@@ -438,6 +438,11 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
               },
               onChanged: (_) => setState(() {}),
             ),
+            const SizedBox(height: 6),
+            QuantityStepper(
+              controller: _qtyCtrl,
+              onChanged: (_) => setState(() {}),
+            ),
             const SizedBox(height: 8),
 
             // Shortfall display

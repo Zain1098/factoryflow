@@ -238,6 +238,25 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
 
             const SectionHeader('Received Quantity'),
 
+            if (_dispatchRefId != null && _pendingDispatches.isNotEmpty) ...[
+              Builder(
+                builder: (context) {
+                  final selected = _pendingDispatches.firstWhere(
+                    (d) => d['id'] == _dispatchRefId,
+                    orElse: () => <String, dynamic>{},
+                  );
+                  final rem = (selected['remaining_qty'] as num?)?.toDouble();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: LiveStockChip(
+                      stock: rem,
+                      stageName: 'Pending Vendor Return',
+                    ),
+                  );
+                },
+              ),
+            ],
+
             NumberFormField(
               label: 'Qty Received (PCS)',
               controller: _qtyCtrl,
@@ -249,6 +268,11 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                 if (n == null || n <= 0) return 'Quantity must be > 0';
                 return null;
               },
+            ),
+            const SizedBox(height: 6),
+            QuantityStepper(
+              controller: _qtyCtrl,
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
 

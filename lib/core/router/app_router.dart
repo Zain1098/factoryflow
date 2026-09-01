@@ -258,18 +258,19 @@ class EntriesMenuScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.12,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.15,
               ),
               itemCount: entries.length,
               itemBuilder: (context, index) {
                 final entry = entries[index];
                 final colors = [
-                  const Color(0xFF789FD5),
-                  const Color(0xFF77A682),
-                  const Color(0xFFD39A39),
-                  const Color(0xFFD77E8B),
+                  const Color(0xFF6B8ECC),
+                  const Color(0xFF5E9C6E),
+                  const Color(0xFFC78B28),
+                  const Color(0xFFC96978),
+                  const Color(0xFF8E69C9),
                 ];
                 return SoftActionTile(
                   title: entry.title,
