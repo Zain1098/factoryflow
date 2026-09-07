@@ -245,11 +245,6 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
             allowDecimal: false,
             prefixIcon: const Icon(Icons.undo),
           ),
-          const SizedBox(height: 6),
-          QuantityStepper(
-            controller: _rtvQtyCtrl,
-            onChanged: (_) => setState(() {}),
-          ),
           const SizedBox(height: 12),
           vendors.when(
             loading: () => const LinearProgressIndicator(),

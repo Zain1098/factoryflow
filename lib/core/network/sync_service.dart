@@ -544,6 +544,24 @@ class SyncService {
     if (triggerSync) await schedulePendingSync();
   }
 
+  Future<void> queueDelete({
+    required String tableName,
+    required String recordId,
+    required String factoryId,
+    bool triggerSync = true,
+  }) async {
+    if (factoryId.isEmpty) {
+      throw StateError('Select a company workspace before deleting data.');
+    }
+    await _db.enqueueSync(
+      tableName: tableName,
+      recordId: recordId,
+      operation: 'delete',
+      payload: await _withSyncMetadata({'id': recordId, 'factory_id': factoryId}),
+    );
+    if (triggerSync) await schedulePendingSync();
+  }
+
   /// Queues a ledger mutation for the server-side atomic stock RPC.
   Future<void> queueLedger({
     required String recordId,

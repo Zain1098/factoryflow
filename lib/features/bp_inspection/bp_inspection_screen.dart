@@ -334,11 +334,6 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                 return null;
               },
             ),
-            const SizedBox(height: 6),
-            QuantityStepper(
-              controller: _holdQtyCtrl,
-              onChanged: (_) => setState(() {}),
-            ),
             const SizedBox(height: 12),
             NumberFormField(
               label: 'Reject Qty (PCS)',
@@ -354,11 +349,6 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
                 if (n > hold) return 'Reject cannot exceed inspected qty';
                 return null;
               },
-            ),
-            const SizedBox(height: 6),
-            QuantityStepper(
-              controller: _rejectQtyCtrl,
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             if (holdQty > 0)

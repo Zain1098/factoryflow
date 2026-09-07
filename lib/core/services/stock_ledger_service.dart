@@ -37,6 +37,22 @@ class StockLedgerService {
     );
   }
 
+  Future<StockLedgerResult> materialReceiveOut({
+    required String partId,
+    required double qty,
+    required String refId,
+    bool triggerSync = true,
+  }) {
+    return _writeOut(
+      partId: partId,
+      stage: StockStage.rawMaterial,
+      qty: qty,
+      refTable: 'material_receives',
+      refId: refId,
+      triggerSync: triggerSync,
+    );
+  }
+
   Future<StockLedgerResult> productionToBpStock({
     required String partId,
     required double goodQty,

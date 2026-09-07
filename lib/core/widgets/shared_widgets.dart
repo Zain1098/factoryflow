@@ -943,60 +943,6 @@ class LiveStockChip extends StatelessWidget {
   }
 }
 
-// ─── Industrial Quantity Stepper Buttons ──────────────────────────────────────
-class QuantityStepper extends StatelessWidget {
-  const QuantityStepper({
-    super.key,
-    required this.controller,
-    this.onChanged,
-    this.steppers = const [10, 50, 100],
-  });
-
-  final TextEditingController controller;
-  final ValueChanged<String>? onChanged;
-  final List<int> steppers;
-
-  void _add(int amount) {
-    final current = double.tryParse(controller.text) ?? 0;
-    final updated = (current + amount).clamp(0, 9999999).toInt();
-    controller.text = updated.toString();
-    if (onChanged != null) onChanged!(controller.text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: ActionChip(
-              avatar: const Icon(Icons.clear, size: 14),
-              label: const Text('Clear'),
-              onPressed: () {
-                controller.clear();
-                if (onChanged != null) onChanged!('');
-              },
-            ),
-          ),
-          for (final step in steppers)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: ActionChip(
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                avatar: const Icon(Icons.add, size: 14),
-                label: Text('+$step'),
-                onPressed: () => _add(step),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─── Sticky Bottom Action Bar ─────────────────────────────────────────────────
 class StickyBottomActionBar extends StatelessWidget {
   const StickyBottomActionBar({

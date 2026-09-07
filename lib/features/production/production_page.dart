@@ -919,17 +919,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             final rejVal = double.tryParse(rejectCtrl.text) ?? 0.0;
             final goodVal = (prodVal - rejVal).clamp(0, double.infinity);
 
-            void quickAddProd(int add) {
-              final current = double.tryParse(prodCtrl.text) ?? 0.0;
-              prodCtrl.text = (current + add).toInt().toString();
-              setModalState(() {});
-            }
-
-            void quickAddRej(int add) {
-              final current = double.tryParse(rejectCtrl.text) ?? 0.0;
-              rejectCtrl.text = (current + add).toInt().toString();
-              setModalState(() {});
-            }
 
             return Padding(
                 padding: EdgeInsets.only(
@@ -1126,16 +1115,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           ),
                           onChanged: (_) => setModalState(() {}),
                         ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          children: [50, 100, 200, 500].map((val) {
-                            return ActionChip(
-                              label: Text('+$val'),
-                              onPressed: () => quickAddProd(val),
-                            );
-                          }).toList(),
-                        ),
                         const SizedBox(height: 14),
 
                         // Reject Quantity Field
@@ -1154,16 +1133,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                             border: const OutlineInputBorder(),
                           ),
                           onChanged: (_) => setModalState(() {}),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          children: [1, 5, 10, 20].map((val) {
-                            return ActionChip(
-                              label: Text('+$val'),
-                              onPressed: () => quickAddRej(val),
-                            );
-                          }).toList(),
                         ),
                         const SizedBox(height: 14),
 

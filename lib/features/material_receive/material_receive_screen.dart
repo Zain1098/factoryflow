@@ -438,12 +438,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
               },
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 6),
-            QuantityStepper(
-              controller: _qtyCtrl,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
 
             // Shortfall display
             if (_poOrderedQty != null && shortfall > 0)
@@ -567,6 +562,8 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
 
 // ─── Tab 3: History ───────────────────────────────────────────────────────────
 
+// ─── Tab 3: History ───────────────────────────────────────────────────────────
+
 class _HistoryTab extends ConsumerStatefulWidget {
   @override
   ConsumerState<_HistoryTab> createState() => _HistoryTabState();
@@ -595,8 +592,8 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
         TabBar(
           controller: _sub,
           tabs: const [
-            Tab(text: 'Orders'),
-            Tab(text: 'Received'),
+            Tab(icon: Icon(Icons.add_shopping_cart_outlined, size: 18), text: 'Orders Placed'),
+            Tab(icon: Icon(Icons.move_to_inbox_outlined, size: 18), text: 'Received Records'),
           ],
         ),
         Expanded(
@@ -611,6 +608,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
 
   Widget _buildOrdersList() {
     final list = ref.watch(purchaseOrderListProvider);
+    final theme = Theme.of(context);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
@@ -622,36 +620,80 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           itemCount: records.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final r = records[i];
             final status = r['status'] as String? ?? 'pending';
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: _statusColor(status).withValues(alpha: 0.12),
-                child: Icon(_statusIcon(status), color: _statusColor(status), size: 20),
+            final color = _statusColor(status);
+            return Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
               ),
-              title: Text(
-                '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text('${r['supplier_name'] ?? ''} · ${r['date']} ${r['time'] ?? ''}'.trim()),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${r['ordered_qty']} PCS',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _showOrderActionsSheet(context, r),
+                onLongPress: () => _showOrderActionsSheet(context, r),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: color.withValues(alpha: 0.12),
+                        child: Icon(_statusIcon(status), color: color, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${r['supplier_name'] ?? 'Unknown Supplier'} · ${r['date']} ${r['time'] ?? ''}'.trim(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (r['po_number'] != null && (r['po_number'] as String).isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'PO: ${r['po_number']}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${(r['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0'} PCS',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          const SizedBox(height: 4),
+                          _StatusChip(status),
+                        ],
+                      ),
+                    ],
                   ),
-                  _StatusChip(status),
-                ],
+                ),
               ),
-              onLongPress: status != 'received'
-                  ? () => _showStatusDialog(context, r['id'] as String, status)
-                  : null,
             );
           },
         );
@@ -661,6 +703,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
 
   Widget _buildReceivesList() {
     final list = ref.watch(materialReceiveListProvider);
+    final theme = Theme.of(context);
     return list.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
@@ -672,44 +715,101 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           itemCount: records.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, i) {
             final r = records[i];
             final isSynced = r['sync_status'] == 'synced';
             final shortfall = (r['shortfall'] as num?)?.toDouble() ?? 0;
             final orderedQty = (r['ordered_qty'] as num?)?.toDouble();
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.brown.withValues(alpha: 0.12),
-                child: const Icon(Icons.inventory_2, color: Colors.brown, size: 20),
+            final hasPo = r['po_ref_id'] != null || (r['po_id'] != null && (r['po_id'] as String).isNotEmpty);
+
+            return Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
               ),
-              title: Text('${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}'),
-              subtitle: Text(
-                '${r['supplier_name'] ?? 'Unknown'} · ${r['date']} ${r['time'] ?? ''}'.trim(),
-              ),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${r['qty']} PCS',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => _showReceiveActionsSheet(context, r),
+                onLongPress: () => _showReceiveActionsSheet(context, r),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: Colors.brown.withValues(alpha: 0.12),
+                        child: const Icon(Icons.inventory_2, color: Colors.brown, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${r['supplier_name'] ?? 'Unknown'} · ${r['date']} ${r['time'] ?? ''}'.trim(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (hasPo)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  r['po_id'] != null ? 'PO/Challan: ${r['po_id']}' : 'Linked to PO',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.brown.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${(r['qty'] as num?)?.toStringAsFixed(0) ?? '0'} PCS',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          const SizedBox(height: 2),
+                          if (shortfall > 0)
+                            Text(
+                              '−${shortfall.toStringAsFixed(0)} short',
+                              style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold),
+                            )
+                          else if (orderedQty != null)
+                            const Text('full qty', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 2),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isSynced ? Icons.cloud_done_rounded : Icons.cloud_upload_outlined,
+                                size: 13,
+                                color: isSynced ? Colors.green : Colors.orange,
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.more_horiz_rounded, size: 16, color: Colors.grey),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  if (shortfall > 0)
-                    Text(
-                      '−${shortfall.toStringAsFixed(0)} short',
-                      style: const TextStyle(color: Colors.orange, fontSize: 11),
-                    )
-                  else if (orderedQty != null)
-                    const Text('full', style: TextStyle(color: Colors.green, fontSize: 11)),
-                  Icon(
-                    isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
-                    size: 14,
-                    color: isSynced ? Colors.green : Colors.orange,
-                  ),
-                ],
+                ),
               ),
             );
           },
@@ -718,18 +818,579 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
     );
   }
 
-  Future<void> _showStatusDialog(BuildContext context, String id, String current) async {
-    final next = current == 'pending' ? 'processing' : null;
-    if (next == null) return;
+  // ─── Order Actions Bottom Sheet & Dialogs ─────────────────────────────────
+
+  void _showOrderActionsSheet(BuildContext context, Map<String, dynamic> r) {
+    final theme = Theme.of(context);
+    final status = r['status'] as String? ?? 'pending';
+
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: _statusColor(status).withValues(alpha: 0.15),
+                      child: Icon(_statusIcon(status), color: _statusColor(status), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PO: ${r['part_code'] ?? ''} (${r['ordered_qty']} PCS)',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          Text(
+                            '${r['supplier_name'] ?? ''} · Status: ${status.toUpperCase()}',
+                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                  title: const Text('Edit Purchase Order', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Update quantity, part, supplier, or date'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showEditOrderDialog(context, r);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.swap_horiz_rounded, color: Colors.orange),
+                  title: const Text('Update Order Status', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Current: $status'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showOrderStatusDialog(context, r['id'] as String, status);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                  title: const Text('Delete Purchase Order', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Permanently remove this order entry'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _confirmDeleteOrder(context, r);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditOrderDialog(BuildContext context, Map<String, dynamic> r) async {
+    final parts = await ref.read(partsProvider.future);
+    final suppliers = await ref.read(suppliersProvider.future);
+    if (!context.mounted) return;
+
+    final id = r['id'] as String;
+    String selectedPartId = r['part_id'] as String? ?? (parts.isNotEmpty ? parts.first['id'] as String : '');
+    String selectedSupplierId = r['supplier_id'] as String? ?? (suppliers.isNotEmpty ? suppliers.first['id'] as String : '');
+    final qtyCtrl = TextEditingController(text: (r['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '');
+    final poCtrl = TextEditingController(text: r['po_number'] as String? ?? '');
+    final remarksCtrl = TextEditingController(text: r['remarks'] as String? ?? '');
+    String selectedStatus = r['status'] as String? ?? 'pending';
+    DateTime recordedAt = DateTime.tryParse(r['date'] as String? ?? '') ?? DateTime.now();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Edit Purchase Order', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    RecordDateTimePicker(
+                      value: recordedAt,
+                      onChanged: (dt) => setDialogState(() => recordedAt = dt),
+                    ),
+                    const SizedBox(height: 12),
+                    AppDropdown<String>(
+                      label: 'Part',
+                      isRequired: true,
+                      value: selectedPartId.isNotEmpty ? selectedPartId : null,
+                      items: parts.map((p) => DropdownMenuItem(
+                        value: p['id'] as String,
+                        child: Text('${p['code']} – ${p['name']}'),
+                      ),).toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedPartId = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    NumberFormField(
+                      label: 'Ordered Qty (PCS)',
+                      controller: qtyCtrl,
+                      allowDecimal: false,
+                      prefixIcon: const Icon(Icons.numbers),
+                    ),
+                    const SizedBox(height: 10),
+                    AppDropdown<String>(
+                      label: 'Supplier',
+                      isRequired: true,
+                      value: selectedSupplierId.isNotEmpty ? selectedSupplierId : null,
+                      items: suppliers.map((s) => DropdownMenuItem(
+                        value: s['id'] as String,
+                        child: Text(s['name'] as String),
+                      ),).toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedSupplierId = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    AppFormField(
+                      label: 'PO Number (optional)',
+                      controller: poCtrl,
+                      prefixIcon: const Icon(Icons.receipt_outlined),
+                    ),
+                    const SizedBox(height: 10),
+                    AppDropdown<String>(
+                      label: 'Status',
+                      value: selectedStatus,
+                      items: kPoStatuses.map((s) => DropdownMenuItem(
+                        value: s,
+                        child: Text(s.toUpperCase()),
+                      ),).toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedStatus = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    AppFormField(
+                      label: 'Remarks',
+                      controller: remarksCtrl,
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final qty = double.tryParse(qtyCtrl.text) ?? 0;
+                    if (qty <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a valid quantity > 0')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(dialogCtx);
+                    final result = await ref.read(purchaseOrderRepositoryProvider).update(
+                      id: id,
+                      partId: selectedPartId,
+                      orderedQty: qty,
+                      supplierId: selectedSupplierId,
+                      poNumber: poCtrl.text.trim().isEmpty ? null : poCtrl.text.trim(),
+                      status: selectedStatus,
+                      remarks: remarksCtrl.text.trim().isEmpty ? null : remarksCtrl.text.trim(),
+                      recordedAt: recordedAt,
+                    );
+                    if (result.success) {
+                      ref.invalidate(purchaseOrderListProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Purchase order updated successfully')),
+                        );
+                      }
+                    } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.error ?? 'Update failed')),
+                      );
+                    }
+                  },
+                  child: const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showOrderStatusDialog(BuildContext context, String id, String current) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return SimpleDialog(
+          title: const Text('Change Order Status'),
+          children: kPoStatuses.map((s) {
+            final isCurrent = s == current;
+            return SimpleDialogOption(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                if (s != current) {
+                  await ref.read(purchaseOrderRepositoryProvider).updateStatus(id, s);
+                  ref.invalidate(purchaseOrderListProvider);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Order status changed to ${s.toUpperCase()}')),
+                    );
+                  }
+                }
+              },
+              child: Row(
+                children: [
+                  Icon(_statusIcon(s), color: _statusColor(s), size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      s.toUpperCase(),
+                      style: TextStyle(
+                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                        color: isCurrent ? _statusColor(s) : null,
+                      ),
+                    ),
+                  ),
+                  if (isCurrent) const Icon(Icons.check, size: 18, color: Colors.green),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteOrder(BuildContext context, Map<String, dynamic> r) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Update Status',
-      message: 'Mark this order as "$next"?',
-      confirmLabel: 'Update',
+      title: 'Delete Purchase Order?',
+      message: 'Are you sure you want to delete purchase order for ${r['part_code']} (${r['ordered_qty']} PCS)? This action cannot be undone.',
+      confirmLabel: 'Delete',
     );
     if (confirmed) {
-      await ref.read(purchaseOrderRepositoryProvider).updateStatus(id, next);
-      ref.invalidate(purchaseOrderListProvider);
+      final result = await ref.read(purchaseOrderRepositoryProvider).delete(r['id'] as String);
+      if (result.success) {
+        ref.invalidate(purchaseOrderListProvider);
+        ref.invalidate(materialReceiveListProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Purchase order deleted')),
+          );
+        }
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.error ?? 'Delete failed')),
+        );
+      }
+    }
+  }
+
+  // ─── Receive Actions Bottom Sheet & Dialogs ───────────────────────────────
+
+  void _showReceiveActionsSheet(BuildContext context, Map<String, dynamic> r) {
+    final theme = Theme.of(context);
+
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Colors.brown.withValues(alpha: 0.15),
+                      child: const Icon(Icons.inventory_2, color: Colors.brown, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${r['part_code'] ?? ''} – ${r['qty']} PCS Received',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          ),
+                          Text(
+                            '${r['supplier_name'] ?? 'Unknown'} · ${r['date']} ${r['time'] ?? ''}',
+                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                  title: const Text('Edit Material Receipt', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Adjust quantity received, supplier, PO or date (stock adjusts automatically)'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showEditReceiveDialog(context, r);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                  title: const Text('Delete Material Receipt', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Rolls back Raw Material stock and reopens linked PO'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _confirmDeleteReceive(context, r);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditReceiveDialog(BuildContext context, Map<String, dynamic> r) async {
+    final parts = await ref.read(partsProvider.future);
+    final suppliers = await ref.read(suppliersProvider.future);
+    if (!context.mounted) return;
+
+    final id = r['id'] as String;
+    String selectedPartId = r['part_id'] as String? ?? (parts.isNotEmpty ? parts.first['id'] as String : '');
+    String selectedSupplierId = r['supplier_id'] as String? ?? (suppliers.isNotEmpty ? suppliers.first['id'] as String : '');
+    final qtyCtrl = TextEditingController(text: (r['qty'] as num?)?.toStringAsFixed(0) ?? '');
+    final poCtrl = TextEditingController(text: r['po_id'] as String? ?? '');
+    final remarksCtrl = TextEditingController(text: r['remarks'] as String? ?? '');
+    String? selectedPoRefId = r['po_ref_id'] as String?;
+    DateTime recordedAt = DateTime.tryParse(r['date'] as String? ?? '') ?? DateTime.now();
+
+    List<Map<String, dynamic>> openOrders = [];
+    if (selectedPartId.isNotEmpty) {
+      openOrders = await ref.read(purchaseOrderRepositoryProvider).getOpenForPart(selectedPartId);
+    }
+    if (!context.mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, color: Colors.brown),
+                  SizedBox(width: 8),
+                  Text('Edit Material Receipt', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    RecordDateTimePicker(
+                      value: recordedAt,
+                      onChanged: (dt) => setDialogState(() => recordedAt = dt),
+                    ),
+                    const SizedBox(height: 12),
+                    AppDropdown<String>(
+                      label: 'Part',
+                      isRequired: true,
+                      value: selectedPartId.isNotEmpty ? selectedPartId : null,
+                      items: parts.map((p) => DropdownMenuItem(
+                        value: p['id'] as String,
+                        child: Text('${p['code']} – ${p['name']}'),
+                      ),).toList(),
+                      onChanged: (v) async {
+                        if (v != null) {
+                          final orders = await ref.read(purchaseOrderRepositoryProvider).getOpenForPart(v);
+                          setDialogState(() {
+                            selectedPartId = v;
+                            selectedPoRefId = null;
+                            openOrders = orders;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    NumberFormField(
+                      label: 'Qty Received (PCS)',
+                      controller: qtyCtrl,
+                      allowDecimal: false,
+                      prefixIcon: const Icon(Icons.move_to_inbox_outlined),
+                    ),
+                    const SizedBox(height: 10),
+                    AppDropdown<String>(
+                      label: 'Supplier',
+                      isRequired: true,
+                      value: selectedSupplierId.isNotEmpty ? selectedSupplierId : null,
+                      items: suppliers.map((s) => DropdownMenuItem(
+                        value: s['id'] as String,
+                        child: Text(s['name'] as String),
+                      ),).toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedSupplierId = v);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    if (openOrders.isNotEmpty) ...[
+                      AppDropdown<String>(
+                        label: 'Link to Purchase Order (optional)',
+                        value: selectedPoRefId,
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('— No link —')),
+                          ...openOrders.map((o) => DropdownMenuItem(
+                            value: o['id'] as String,
+                            child: Text('${o['po_number'] ?? 'No PO'} · ${o['ordered_qty']} PCS'),
+                          ),),
+                        ],
+                        onChanged: (v) => setDialogState(() => selectedPoRefId = v),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    AppFormField(
+                      label: 'PO / Supplier Challan Number',
+                      controller: poCtrl,
+                      prefixIcon: const Icon(Icons.receipt_outlined),
+                    ),
+                    const SizedBox(height: 10),
+                    AppFormField(
+                      label: 'Remarks',
+                      controller: remarksCtrl,
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final qty = double.tryParse(qtyCtrl.text) ?? 0;
+                    if (qty <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a valid received qty > 0')),
+                      );
+                      return;
+                    }
+                    final user = ref.read(currentUserProvider).value;
+                    Navigator.pop(dialogCtx);
+                    final result = await ref.read(materialReceiveRepositoryProvider).update(
+                      id: id,
+                      partId: selectedPartId,
+                      qty: qty,
+                      supplierId: selectedSupplierId,
+                      poNumber: poCtrl.text.trim().isEmpty ? null : poCtrl.text.trim(),
+                      poRefId: selectedPoRefId,
+                      remarks: remarksCtrl.text.trim().isEmpty ? null : remarksCtrl.text.trim(),
+                      recordedAt: recordedAt,
+                      updatedBy: user?.id ?? 'unknown',
+                    );
+                    if (result.success) {
+                      ref.invalidate(materialReceiveListProvider);
+                      ref.invalidate(purchaseOrderListProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Material receipt updated & raw material stock adjusted')),
+                        );
+                      }
+                    } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result.error ?? 'Update failed')),
+                      );
+                    }
+                  },
+                  child: const Text('Save & Adjust Stock'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteReceive(BuildContext context, Map<String, dynamic> r) async {
+    final qty = (r['qty'] as num?)?.toStringAsFixed(0) ?? '0';
+    final part = '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}';
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete Material Receipt?',
+      message: 'Are you sure you want to delete this receipt for $part ($qty PCS)?\n\n'
+          '⚠️ Notice:\n'
+          '1. $qty PCS will be rolled back (deducted) from Raw Material stock balance.\n'
+          '2. Any linked purchase order will be reopened back to Pending status.',
+      confirmLabel: 'Delete & Rollback Stock',
+    );
+    if (confirmed) {
+      final result = await ref.read(materialReceiveRepositoryProvider).delete(r['id'] as String);
+      if (result.success) {
+        ref.invalidate(materialReceiveListProvider);
+        ref.invalidate(purchaseOrderListProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Receipt deleted and $qty PCS rolled back from stock')),
+          );
+        }
+      } else if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.error ?? 'Delete failed')),
+        );
+      }
     }
   }
 
@@ -744,9 +1405,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
 
   IconData _statusIcon(String s) {
     switch (s) {
-      case 'processing': return Icons.hourglass_top;
-      case 'received': return Icons.check_circle;
-      case 'cancelled': return Icons.cancel;
+      case 'processing': return Icons.hourglass_top_rounded;
+      case 'received': return Icons.check_circle_rounded;
+      case 'cancelled': return Icons.cancel_rounded;
       default: return Icons.pending_outlined;
     }
   }
@@ -765,14 +1426,14 @@ class _StatusChip extends StatelessWidget {
       _ => Colors.orange,
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        status,
-        style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
+        status.toUpperCase(),
+        style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold),
       ),
     );
   }

@@ -269,11 +269,6 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                 return null;
               },
             ),
-            const SizedBox(height: 6),
-            QuantityStepper(
-              controller: _qtyCtrl,
-              onChanged: (_) => setState(() {}),
-            ),
             const SizedBox(height: 12),
 
             AppFormField(
