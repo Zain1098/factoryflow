@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 import '../../features/reports/report_providers.dart';
+import '../widgets/shared_widgets.dart';
 
 /// Export format selector.
 enum ExportFormat { excel, pdf }
@@ -428,8 +429,10 @@ class ExportService {
         .map((r) => [
               r.date,
               r.machineName,
-              r.startTime,
-              r.endTime ?? '—',
+              formatTimeWithoutSeconds(r.startTime),
+              r.endTime != null && r.endTime!.isNotEmpty
+                  ? formatTimeWithoutSeconds(r.endTime)
+                  : '—',
               r.durationMinutes.toString(),
               r.reason,
             ],)

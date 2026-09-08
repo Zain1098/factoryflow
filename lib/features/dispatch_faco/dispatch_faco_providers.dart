@@ -101,7 +101,8 @@ class DispatchFacoRepository {
       if ((item.batchNumber ?? '').trim().isEmpty) {
         return const DispatchFacoResult(
           success: false,
-          error: 'Select an available trace batch before dispatching to vendor.',
+          error:
+              'Select an available trace batch before dispatching to vendor.',
         );
       }
       if (item.qty <= 0) {
@@ -128,7 +129,8 @@ class DispatchFacoRepository {
       if (batchPart.isEmpty && !isOpeningBatch) {
         return DispatchFacoResult(
           success: false,
-          error: '${item.partCode}: selected batch does not belong to this part.',
+          error:
+              '${item.partCode}: selected batch does not belong to this part.',
         );
       }
       final available =
@@ -205,7 +207,7 @@ class DispatchFacoRepository {
           return DispatchFacoResult(
             success: false,
             error:
-              'Batch "${item.batchNumber}" must complete $mName before vendor dispatch.',
+                'Batch "${item.batchNumber}" must complete $mName before vendor dispatch.',
           );
         }
       }
@@ -275,19 +277,298 @@ class DispatchFacoRepository {
     return DispatchFacoResult(success: true, recordId: savedIds.first);
   }
 
-  Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
+  Future<List<Map<String, dynamic>>> getRecent({
+    int limit = 50,
+    String? date,
+  }) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
+
+    final whereClause = date != null
+        ? 'WHERE df.factory_id = ? AND (TRIM(df.date) = ? OR df.date LIKE ? OR date(df.date) = ?) '
+        : 'WHERE df.factory_id = ? ';
+    final params =
+        date != null ? [factoryId, date, '$date%', date] : [factoryId, limit];
+    final orderBy = date != null
+        ? 'ORDER BY df.date DESC, df.time DESC, df.rowid DESC'
+        : 'ORDER BY df.date DESC, df.time DESC, df.rowid DESC LIMIT ?';
+
     final rows = _db.db.select(
-      'SELECT df.*, p.name as part_name, p.code as part_code, v.name as vendor_name '
+      'SELECT df.*, p.name as part_name, p.code as part_code, '
+      'v.name as vendor_name, '
+      'vh.number_plate as vehicle_number, '
+      'd.name as driver_name, '
+      'COALESCE((SELECT SUM(rf.qty_received) FROM receive_from_facos rf '
+      '  WHERE rf.factory_id = df.factory_id AND rf.dispatch_ref_id = df.id), 0) AS received_qty '
       'FROM dispatch_to_facos df '
       'LEFT JOIN parts p ON p.id = df.part_id AND p.factory_id = df.factory_id '
       'LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id '
-      'WHERE df.factory_id = ? '
-      'ORDER BY df.date DESC, df.time DESC LIMIT ?',
-      [factoryId, limit],
+      'LEFT JOIN vehicles vh ON vh.id = df.vehicle_id AND vh.factory_id = df.factory_id '
+      'LEFT JOIN drivers d ON d.id = df.driver_id AND d.factory_id = df.factory_id '
+      '$whereClause'
+      '$orderBy',
+      params,
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Safely delete a vendor dispatch record and revert its stock movement.
+  /// Reversal:
+  /// - Deducts qty from at_faco (Vendor Stock)
+  /// - Returns qty to bp_stock (Own BP Stock)
+  /// If material was already received from vendor downstream, deletion is blocked!
+  Future<({bool success, String error})> deleteDispatchRecord({
+    required String dispatchId,
+    required String userId,
+    String reason = 'Vendor dispatch deleted by user',
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM dispatch_to_facos WHERE factory_id = ? AND id = ?',
+      [factoryId, dispatchId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Dispatch record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final qty = (rec['qty'] as num).toDouble();
+
+    // Check if downstream Faco receipt has already consumed this dispatch
+    final receivedRows = _db.db.select(
+      'SELECT COALESCE(SUM(qty_received), 0) AS total_received '
+      'FROM receive_from_facos WHERE factory_id = ? AND dispatch_ref_id = ?',
+      [factoryId, dispatchId],
+    );
+    final totalReceived =
+        (receivedRows.first['total_received'] as num).toDouble();
+    if (totalReceived > 0) {
+      return (
+        success: false,
+        error:
+            'Cannot delete dispatch: $totalReceived PCS has already been received from vendor downstream.',
+      );
+    }
+
+    // Verify vendor stock has enough balance to reverse
+    final atVendorBalance =
+        await _ledger.getAvailableStock(partId, StockStage.atFaco);
+    if (atVendorBalance < qty) {
+      return (
+        success: false,
+        error:
+            'Cannot delete dispatch: vendor stock balance (${atVendorBalance.toInt()} PCS) is less than dispatch qty (${qty.toInt()} PCS).',
+      );
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        // 1. Remove qty from at_faco (Vendor Stock)
+        await _ledger.manualAdjustment(
+          partId: partId,
+          stage: StockStage.atFaco,
+          direction: LedgerDirection.out,
+          qty: qty,
+          refId: dispatchId,
+          triggerSync: false,
+        );
+
+        // 2. Return qty to bp_stock (Own BP Stock)
+        await _ledger.manualAdjustment(
+          partId: partId,
+          stage: StockStage.bpStock,
+          direction: LedgerDirection.in_,
+          qty: qty,
+          refId: dispatchId,
+          triggerSync: false,
+        );
+
+        // 3. Backup and delete record
+        await _db.backupAndDeleteRecord(
+          table: 'dispatch_to_facos',
+          recordId: dispatchId,
+          userId: userId,
+          factoryId: factoryId,
+          reason: reason,
+        );
+      });
+
+      await _sync.schedulePendingSync();
+      return (success: true, error: '');
+    } catch (e) {
+      return (success: false, error: 'Failed to delete dispatch: $e');
+    }
+  }
+
+  /// Safely edit an existing dispatch record (quantity, vendor, vehicle, driver, challan, remarks).
+  /// Automatically adjusts stock between bp_stock and at_faco for any quantity difference.
+  Future<({bool success, String error})> updateDispatchRecord({
+    required String dispatchId,
+    required double newQty,
+    required String vendorId,
+    String? vehicleId,
+    String? driverId,
+    String? challanNumber,
+    String? remarks,
+    required String userId,
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+    if (newQty <= 0) {
+      return (
+        success: false,
+        error: 'Dispatch quantity must be greater than 0.',
+      );
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM dispatch_to_facos WHERE factory_id = ? AND id = ?',
+      [factoryId, dispatchId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Dispatch record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final oldQty = (rec['qty'] as num).toDouble();
+    final qtyDiff = newQty - oldQty;
+
+    // Check downstream receipts against new quantity
+    final receivedRows = _db.db.select(
+      'SELECT COALESCE(SUM(qty_received), 0) AS total_received '
+      'FROM receive_from_facos WHERE factory_id = ? AND dispatch_ref_id = ?',
+      [factoryId, dispatchId],
+    );
+    final totalReceived =
+        (receivedRows.first['total_received'] as num).toDouble();
+    if (newQty < totalReceived) {
+      return (
+        success: false,
+        error:
+            'New quantity (${newQty.toInt()} PCS) cannot be less than already received quantity (${totalReceived.toInt()} PCS).',
+      );
+    }
+
+    // Check stock availability
+    if (qtyDiff > 0) {
+      // Need more stock from bp_stock
+      final bpBalance =
+          await _ledger.getAvailableStock(partId, StockStage.bpStock);
+      if (bpBalance < qtyDiff) {
+        return (
+          success: false,
+          error:
+              'Insufficient Own BP Stock. Available: ${bpBalance.toInt()} PCS, needed: ${qtyDiff.toInt()} PCS more.',
+        );
+      }
+    } else if (qtyDiff < 0) {
+      // Reducing dispatch, need to verify at_faco has enough to deduct
+      final reduction = qtyDiff.abs();
+      final atFacoBalance =
+          await _ledger.getAvailableStock(partId, StockStage.atFaco);
+      if (atFacoBalance < reduction) {
+        return (
+          success: false,
+          error:
+              'Cannot reduce dispatch: Vendor Stock balance (${atFacoBalance.toInt()} PCS) is less than needed reduction (${reduction.toInt()} PCS).',
+        );
+      }
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        if (qtyDiff > 0) {
+          // Move additional qty from bp_stock -> at_faco
+          await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.bpStock,
+            direction: LedgerDirection.out,
+            qty: qtyDiff,
+            refId: dispatchId,
+            triggerSync: false,
+          );
+          await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.atFaco,
+            direction: LedgerDirection.in_,
+            qty: qtyDiff,
+            refId: dispatchId,
+            triggerSync: false,
+          );
+        } else if (qtyDiff < 0) {
+          final reduction = qtyDiff.abs();
+          // Return reduced qty from at_faco -> bp_stock
+          await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.atFaco,
+            direction: LedgerDirection.out,
+            qty: reduction,
+            refId: dispatchId,
+            triggerSync: false,
+          );
+          await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.bpStock,
+            direction: LedgerDirection.in_,
+            qty: reduction,
+            refId: dispatchId,
+            triggerSync: false,
+          );
+        }
+
+        // Update database record
+        _db.db.execute(
+          'UPDATE dispatch_to_facos SET '
+          'qty = ?, '
+          'vendor_id = ?, '
+          'vehicle_id = ?, '
+          'driver_id = ?, '
+          'challan_number = ?, '
+          'remarks = ?, '
+          'sync_status = ? '
+          'WHERE factory_id = ? AND id = ?',
+          [
+            newQty,
+            vendorId,
+            vehicleId,
+            driverId,
+            challanNumber,
+            remarks,
+            'pending',
+            factoryId,
+            dispatchId,
+          ],
+        );
+
+        await _sync.queueUpdate(
+          tableName: 'dispatch_to_facos',
+          recordId: dispatchId,
+          payload: {
+            'qty': newQty,
+            'vendor_id': vendorId,
+            'vehicle_id': vehicleId,
+            'driver_id': driverId,
+            'challan_number': challanNumber,
+            'remarks': remarks,
+            'sync_status': 'pending',
+          },
+          triggerSync: false,
+        );
+      });
+
+      await _sync.schedulePendingSync();
+      return (success: true, error: '');
+    } catch (e) {
+      return (success: false, error: 'Failed to update dispatch: $e');
+    }
   }
 
   Future<List<String>> getRecentBatches() async {
@@ -377,18 +658,25 @@ class DispatchFacoRepository {
       final ledgerBalance = (partBalance['balance'] as num?)?.toDouble() ?? 0.0;
       if (ledgerBalance <= 0) continue;
 
-      final existingBatchSum = batches
-          .where((b) => b['part_id'] == partId)
-          .fold<double>(0.0, (sum, b) => sum + ((b['available_qty'] as num?)?.toDouble() ?? 0.0),);
+      final existingBatchSum =
+          batches.where((b) => b['part_id'] == partId).fold<double>(
+                0.0,
+                (sum, b) =>
+                    sum + ((b['available_qty'] as num?)?.toDouble() ?? 0.0),
+              );
 
       final unbatched = ledgerBalance - existingBatchSum;
       if (unbatched > 0) {
         final openBatchNumber = 'OPEN-$partCode';
         final existingOpenIndex = batches.indexWhere(
-            (b) => b['part_id'] == partId && b['batch_number'] == openBatchNumber,);
+          (b) => b['part_id'] == partId && b['batch_number'] == openBatchNumber,
+        );
         if (existingOpenIndex >= 0) {
           batches[existingOpenIndex]['available_qty'] =
-              ((batches[existingOpenIndex]['available_qty'] as num?)?.toDouble() ?? 0.0) + unbatched;
+              ((batches[existingOpenIndex]['available_qty'] as num?)
+                          ?.toDouble() ??
+                      0.0) +
+                  unbatched;
         } else {
           batches.add({
             'batch_number': openBatchNumber,
@@ -402,17 +690,37 @@ class DispatchFacoRepository {
       }
     }
 
+    // Deduplicate batches by part_id and batch_number, aggregating available_qty
+    final Map<String, Map<String, dynamic>> dedupedBatches = {};
+    for (final b in batches) {
+      final key = '${b['batch_number']}|${b['part_id']}';
+      if (dedupedBatches.containsKey(key)) {
+        dedupedBatches[key]!['available_qty'] =
+            ((dedupedBatches[key]!['available_qty'] as num?)?.toDouble() ??
+                    0.0) +
+                ((b['available_qty'] as num?)?.toDouble() ?? 0.0);
+      } else {
+        dedupedBatches[key] = Map<String, dynamic>.from(b);
+      }
+    }
+
+    final uniqueBatches = dedupedBatches.values
+        .where((b) => ((b['available_qty'] as num?)?.toDouble() ?? 0.0) > 0)
+        .toList();
+
     final partTotals = <String, double>{};
-    for (final batch in batches) {
+    for (final batch in uniqueBatches) {
       final partId = batch['part_id'] as String;
       partTotals[partId] = (partTotals[partId] ?? 0) +
           ((batch['available_qty'] as num?)?.toDouble() ?? 0);
     }
-    return batches
-        .map((batch) => {
-              ...batch,
-              'part_available_qty': partTotals[batch['part_id']] ?? 0,
-            },)
+    return uniqueBatches
+        .map(
+          (batch) => {
+            ...batch,
+            'part_available_qty': partTotals[batch['part_id']] ?? 0,
+          },
+        )
         .toList();
   }
 }
@@ -426,9 +734,25 @@ final dispatchFacoRepositoryProvider = Provider<DispatchFacoRepository>((ref) {
   );
 });
 
+class DispatchFacoHistoryDateFilterNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setDate(DateTime? date) => state = date;
+}
+
+final dispatchFacoHistoryDateFilterProvider =
+    NotifierProvider<DispatchFacoHistoryDateFilterNotifier, DateTime?>(
+  DispatchFacoHistoryDateFilterNotifier.new,
+);
+
 final dispatchFacoListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.watch(dispatchFacoRepositoryProvider).getRecent();
+  final date = ref.watch(dispatchFacoHistoryDateFilterProvider);
+  final dateStr = date != null
+      ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+      : null;
+  return ref.watch(dispatchFacoRepositoryProvider).getRecent(date: dateStr);
 });
 
 final bpStockPartsForDispatchProvider =

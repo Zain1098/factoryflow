@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../constants/app_constants.dart';
 import '../constants/stock_stages.dart';
 
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
@@ -142,6 +143,28 @@ class DatabaseService {
           {int limit = 50,}) async =>
       [];
   Future<void> updatePurchaseOrderStatus(String id, String status) async {}
+
+  Future<String> getNextPoNumber(
+    String factoryId,
+    DateTime date,
+    String prefix,
+  ) async {
+    final list = _tables['purchase_orders'] ?? [];
+    int maxSeq = 0;
+    for (final row in list) {
+      if (row['factory_id'] == factoryId) {
+        final po = row['po_number'] as String?;
+        if (po != null && po.startsWith(prefix)) {
+          final remainder = po.substring(prefix.length);
+          final seq = int.tryParse(remainder);
+          if (seq != null && seq > maxSeq) {
+            maxSeq = seq;
+          }
+        }
+      }
+    }
+    return AppConstants.poNumberPattern(date, maxSeq + 1);
+  }
 
   Future<List<Map<String, dynamic>>> getActiveParts() async =>
       List<Map<String, dynamic>>.from(_tables['parts'] ?? []);

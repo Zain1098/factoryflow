@@ -878,6 +878,50 @@ class RecordDateTimePicker extends StatelessWidget {
       a.minute == b.minute;
 }
 
+/// Formats any raw time string (e.g. "10:35:00", "10:35", "10:35:00.123", "2026-09-01T10:35:00")
+/// into a clean time string without seconds (e.g. "10:35").
+/// Returns empty string if input is null or empty.
+String formatTimeWithoutSeconds(String? timeStr) {
+  if (timeStr == null) return '';
+  final trimmed = timeStr.trim();
+  if (trimmed.isEmpty) return '';
+
+  // If full ISO timestamp (e.g. 2026-09-01T10:35:00 or 2026-09-01 10:35:00)
+  if (trimmed.contains('T') ||
+      (trimmed.contains('-') && trimmed.contains(':') && trimmed.contains(' '))) {
+    final parsed = DateTime.tryParse(trimmed);
+    if (parsed != null) {
+      final h = parsed.hour.toString().padLeft(2, '0');
+      final m = parsed.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+  }
+
+  // Handle strings with AM/PM (e.g. "10:35:00 AM", "10:35 AM", "10:35:00")
+  final parts = trimmed.split(RegExp(r'\s+'));
+  final timePart = parts[0];
+  final suffix = parts.length > 1 ? ' ${parts.sublist(1).join(' ')}' : '';
+
+  final colonParts = timePart.split(':');
+  if (colonParts.length >= 2) {
+    final h = colonParts[0].padLeft(2, '0');
+    final m = colonParts[1].padLeft(2, '0');
+    return '$h:$m$suffix';
+  }
+
+  return trimmed;
+}
+
+/// Formats date and optional time together cleanly without seconds
+/// (e.g. "2026-09-08 10:35" or "2026-09-08").
+String formatDateTimeLabel(String? dateStr, String? timeStr) {
+  final d = (dateStr ?? '').trim();
+  final t = formatTimeWithoutSeconds(timeStr);
+  if (d.isEmpty) return t;
+  if (t.isEmpty) return d;
+  return '$d $t';
+}
+
 // ─── Live Stock Balance Chip ──────────────────────────────────────────────────
 class LiveStockChip extends StatelessWidget {
   const LiveStockChip({

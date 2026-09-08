@@ -56,6 +56,44 @@ class _MaterialReceiveScreenState extends ConsumerState<MaterialReceiveScreen>
   }
 }
 
+class _CardSectionHeader extends StatelessWidget {
+  const _CardSectionHeader({
+    required this.icon,
+    required this.title,
+    this.badge,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          if (badge != null) ...[
+            const Spacer(),
+            badge!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Tab 1: Place Order ───────────────────────────────────────────────────────
 
 class _PlaceOrderTab extends ConsumerStatefulWidget {
@@ -74,9 +112,29 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
   final _poCtrl = TextEditingController();
   final _remarksCtrl = TextEditingController();
   bool _isSaving = false;
+  DateTime? _lastSubmitTime;
   String? _error;
   String? _success;
   DateTime _recordedAt = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _generatePoNumber();
+    });
+  }
+
+  Future<void> _generatePoNumber() async {
+    final po = await ref
+        .read(purchaseOrderRepositoryProvider)
+        .generateNextPoNumber(date: _recordedAt);
+    if (mounted) {
+      setState(() {
+        _poCtrl.text = po;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -87,8 +145,21 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
   }
 
   Future<void> _save() async {
+    final now = DateTime.now();
+    if (_isSaving ||
+        (_lastSubmitTime != null &&
+            now.difference(_lastSubmitTime!) <
+                const Duration(milliseconds: 1500))) {
+      return;
+    }
+    _lastSubmitTime = now;
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isSaving = true; _error = null; _success = null; });
+    _isSaving = true;
+    setState(() {
+      _error = null;
+      _success = null;
+    });
+
     try {
       final user = ref.read(currentUserProvider).value;
       final result = await ref.read(purchaseOrderRepositoryProvider).save(
@@ -118,22 +189,23 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
   void _reset() {
     _formKey.currentState?.reset();
     _qtyCtrl.clear();
-    _poCtrl.clear();
     _remarksCtrl.clear();
     setState(() {
       _partId = null;
       _supplierId = null;
       _recordedAt = DateTime.now();
     });
+    _generatePoNumber();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final parts = ref.watch(partsProvider);
     final suppliers = ref.watch(suppliersProvider);
 
     return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Form(
         key: _formKey,
         child: Column(
@@ -141,83 +213,141 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
           children: [
             RecordDateTimePicker(
               value: _recordedAt,
-              onChanged: (dt) => setState(() => _recordedAt = dt),
-            ),
-            const SizedBox(height: 16),
-
-            const SectionHeader('Order Details'),
-
-            parts.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load parts: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Part',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.category_outlined),
-                value: _partId,
-                items: list.map((p) => DropdownMenuItem(
-                  value: p['id'] as String,
-                  child: Text('${p['code']} – ${p['name']}'),
-                ),).toList(),
-                onChanged: (v) => setState(() => _partId = v),
-                validator: (v) => v == null ? 'Part is required' : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            NumberFormField(
-              label: 'Ordered Qty (PCS)',
-              controller: _qtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.numbers),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n <= 0) return 'Must be > 0';
-                return null;
+              onChanged: (dt) {
+                final oldDate = _recordedAt;
+                setState(() => _recordedAt = dt);
+                if (oldDate.day != dt.day || oldDate.month != dt.month) {
+                  if (_poCtrl.text.trim().isEmpty || _poCtrl.text.startsWith('PO-')) {
+                    _generatePoNumber();
+                  }
+                }
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            const SectionHeader('Supplier & PO'),
+            // Card 1: Order Identification
+            EntryInfoSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _CardSectionHeader(
+                    icon: Icons.tag_rounded,
+                    title: 'Order Identification',
+                    badge: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'AUTO-GENERATED',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  AppFormField(
+                    label: 'PO Number',
+                    controller: _poCtrl,
+                    prefixIcon: const Icon(Icons.receipt_outlined),
+                    hint: 'e.g. PO-0709-01 (editable)',
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_poCtrl.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear, size: 20),
+                            tooltip: 'Clear',
+                            onPressed: () => setState(() => _poCtrl.clear()),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.refresh, size: 20),
+                          tooltip: 'Generate new PO',
+                          onPressed: _generatePoNumber,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
 
-            suppliers.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load suppliers: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Supplier',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.business_outlined),
-                value: _supplierId,
-                items: list.map((s) => DropdownMenuItem(
-                  value: s['id'] as String,
-                  child: Text(s['name'] as String),
-                ),).toList(),
-                onChanged: (v) => setState(() => _supplierId = v),
-                validator: (v) => v == null ? 'Supplier is required' : null,
+            // Card 2: Material & Supplier
+            EntryInfoSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _CardSectionHeader(
+                    icon: Icons.inventory_2_outlined,
+                    title: 'Material & Vendor',
+                  ),
+                  parts.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                    data: (list) => AppDropdown<String>(
+                      label: 'Part',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.category_outlined),
+                      value: _partId,
+                      items: list.map((p) => DropdownMenuItem(
+                        value: p['id'] as String,
+                        child: Text('${p['code']} – ${p['name']}'),
+                      ),).toList(),
+                      onChanged: (v) => setState(() => _partId = v),
+                      validator: (v) => v == null ? 'Part is required' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  NumberFormField(
+                    label: 'Ordered Qty (PCS)',
+                    controller: _qtyCtrl,
+                    allowDecimal: false,
+                    prefixIcon: const Icon(Icons.format_list_numbered_rounded),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Required';
+                      final n = double.tryParse(v);
+                      if (n == null || n <= 0) return 'Must be > 0';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  suppliers.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) => ErrorBanner('Could not load suppliers: $e'),
+                    data: (list) => AppDropdown<String>(
+                      label: 'Supplier',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.business_outlined),
+                      value: _supplierId,
+                      items: list.map((s) => DropdownMenuItem(
+                        value: s['id'] as String,
+                        child: Text(s['name'] as String),
+                      ),).toList(),
+                      onChanged: (v) => setState(() => _supplierId = v),
+                      validator: (v) => v == null ? 'Supplier is required' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AppFormField(
+                    label: 'Remarks (optional)',
+                    controller: _remarksCtrl,
+                    maxLines: 2,
+                    prefixIcon: const Icon(Icons.notes),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
-
-            AppFormField(
-              label: 'PO Number (optional)',
-              controller: _poCtrl,
-              prefixIcon: const Icon(Icons.receipt_outlined),
-              hint: 'Leave blank if no PO',
-            ),
-            const SizedBox(height: 12),
-
-            AppFormField(
-              label: 'Remarks (optional)',
-              controller: _remarksCtrl,
-              maxLines: 2,
-              prefixIcon: const Icon(Icons.notes),
-            ),
-            const SizedBox(height: 16),
 
             if (_error != null) ErrorBanner(_error!),
             if (_success != null) SuccessBanner(_success!),
-            const SizedBox(height: 16),
+            if (_error != null || _success != null) const SizedBox(height: 10),
 
             SaveButton(
               onPressed: _save,
@@ -249,6 +379,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
   final _remarksCtrl = TextEditingController();
   List<Map<String, dynamic>> _openOrders = [];
   bool _isSaving = false;
+  DateTime? _lastSubmitTime;
   String? _error;
   String? _success;
   double? _lastShortfall;
@@ -290,6 +421,11 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
       _supplierId = po['supplier_id'] as String?;
       // Pre-fill qty with ordered qty
       _qtyCtrl.text = _poOrderedQty!.toStringAsFixed(0);
+      // Auto-fill PO / Challan field with linked PO number
+      final poNum = (po['po_number'] as String?)?.trim();
+      if (poNum != null && poNum.isNotEmpty) {
+        _poCtrl.text = poNum;
+      }
     });
   }
 
@@ -300,8 +436,22 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
   }
 
   Future<void> _save() async {
+    final now = DateTime.now();
+    if (_isSaving ||
+        (_lastSubmitTime != null &&
+            now.difference(_lastSubmitTime!) <
+                const Duration(milliseconds: 1500))) {
+      return;
+    }
+    _lastSubmitTime = now;
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isSaving = true; _error = null; _success = null; _lastShortfall = null; });
+    _isSaving = true;
+    setState(() {
+      _error = null;
+      _success = null;
+      _lastShortfall = null;
+    });
+
     try {
       final user = ref.read(currentUserProvider).value;
       final result = await ref.read(materialReceiveRepositoryProvider).save(
@@ -350,12 +500,13 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final parts = ref.watch(partsProvider);
     final suppliers = ref.watch(suppliersProvider);
     final shortfall = _shortfall;
 
     return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Form(
         key: _formKey,
         child: Column(
@@ -365,167 +516,194 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
               value: _recordedAt,
               onChanged: (dt) => setState(() => _recordedAt = dt),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
 
-            const SectionHeader('Part'),
-
-            parts.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load parts: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Part',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.category_outlined),
-                value: _partId,
-                items: list.map((p) => DropdownMenuItem(
-                  value: p['id'] as String,
-                  child: Text('${p['code']} – ${p['name']}'),
-                ),).toList(),
-                onChanged: _onPartChanged,
-                validator: (v) => v == null ? 'Part is required' : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Link to open PO
-            if (_openOrders.isNotEmpty) ...[
-              AppDropdown<String>(
-                label: 'Link to Purchase Order (optional)',
-                prefixIcon: const Icon(Icons.link),
-                value: _poRefId,
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('— No link —')),
-                  ..._openOrders.map((o) => DropdownMenuItem(
-                    value: o['id'] as String,
-                    child: Text(
-                      '${o['po_number'] ?? 'No PO'} · ${o['ordered_qty']} PCS · ${o['date']} ${o['time'] ?? ''}'.trim(),
+            // Card 1: Intake Item & Purchase Order Link
+            EntryInfoSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _CardSectionHeader(
+                    icon: Icons.category_outlined,
+                    title: 'Intake Item',
+                  ),
+                  parts.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                    data: (list) => AppDropdown<String>(
+                      label: 'Part',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.category_outlined),
+                      value: _partId,
+                      items: list.map((p) => DropdownMenuItem(
+                        value: p['id'] as String,
+                        child: Text('${p['code']} – ${p['name']}'),
+                      ),).toList(),
+                      onChanged: _onPartChanged,
+                      validator: (v) => v == null ? 'Part is required' : null,
                     ),
-                  ),),
+                  ),
+                  if (_openOrders.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    AppDropdown<String>(
+                      label: 'Link to Purchase Order (optional)',
+                      prefixIcon: const Icon(Icons.link),
+                      value: _poRefId,
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('— No link (Independent) —')),
+                        ..._openOrders.map((o) {
+                          final poNum = (o['po_number'] as String?)?.trim();
+                          final displayPo = (poNum != null && poNum.isNotEmpty) ? poNum : 'PO';
+                          final qtyStr = (o['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0';
+                          return DropdownMenuItem(
+                            value: o['id'] as String,
+                            child: Text('$displayPo · $qtyStr PCS'),
+                          );
+                        }),
+                      ],
+                      onChanged: _onPoSelected,
+                    ),
+                  ],
                 ],
-                onChanged: _onPoSelected,
               ),
-              const SizedBox(height: 12),
-            ],
-
-            // Ordered qty info chip
-            if (_poOrderedQty != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 16),
-                    const SizedBox(width: 8),
-                    Text('Ordered: ${_poOrderedQty!.toStringAsFixed(0)} PCS'),
-                  ],
-                ),
-              ),
-            if (_poOrderedQty != null) const SizedBox(height: 12),
-
-            NumberFormField(
-              label: 'Qty Received (PCS)',
-              controller: _qtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.move_to_inbox_outlined),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n <= 0) return 'Must be > 0';
-                return null;
-              },
-              onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            // Shortfall display
-            if (_poOrderedQty != null && shortfall > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_outlined, color: Colors.orange, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Shortfall: ${shortfall.toStringAsFixed(0)} PCS',
-                      style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
+            // Card 2: Quantity & Live Reconciliation
+            EntryInfoSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _CardSectionHeader(
+                    icon: Icons.balance_rounded,
+                    title: 'Quantity & Reconciliation',
+                    badge: _poOrderedQty != null
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: (shortfall > 0 ? Colors.orange : Colors.green).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: (shortfall > 0 ? Colors.orange : Colors.green).withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Text(
+                              shortfall > 0
+                                  ? 'SHORTFALL: ${shortfall.toStringAsFixed(0)} PCS'
+                                  : 'ORDER FULFILLED',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: shortfall > 0 ? Colors.orange.shade800 : Colors.green.shade800,
+                              ),
+                            ),
+                          )
+                        : null,
+                  ),
+                  if (_poOrderedQty != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.assignment_outlined, size: 16),
+                              const SizedBox(width: 6),
+                              Text('Ordered from Supplier:', style: theme.textTheme.bodySmall),
+                            ],
+                          ),
+                          Text(
+                            '${_poOrderedQty!.toStringAsFixed(0)} PCS',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                ),
+                  NumberFormField(
+                    label: 'Qty Received (PCS)',
+                    controller: _qtyCtrl,
+                    allowDecimal: false,
+                    prefixIcon: const Icon(Icons.move_to_inbox_outlined),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Required';
+                      final n = double.tryParse(v);
+                      if (n == null || n <= 0) return 'Must be > 0';
+                      return null;
+                    },
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ],
               ),
-            if (_poOrderedQty != null && shortfall == 0 && _qtyCtrl.text.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.check_circle_outline, color: Colors.green, size: 18),
-                    SizedBox(width: 8),
-                    Text('Full quantity received', style: TextStyle(color: Colors.green)),
-                  ],
-                ),
-              ),
+            ),
+            const SizedBox(height: 10),
 
-            const SectionHeader('Supplier & PO'),
-
-            suppliers.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load suppliers: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Supplier',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.business_outlined),
-                value: _supplierId,
-                items: list.map((s) => DropdownMenuItem(
-                  value: s['id'] as String,
-                  child: Text(s['name'] as String),
-                ),).toList(),
-                onChanged: (v) => setState(() => _supplierId = v),
-                validator: (v) => v == null ? 'Supplier is required' : null,
+            // Card 3: Vendor & Challan Reference
+            EntryInfoSurface(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _CardSectionHeader(
+                    icon: Icons.local_shipping_outlined,
+                    title: 'Supplier & Challan',
+                  ),
+                  suppliers.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (e, _) => ErrorBanner('Could not load suppliers: $e'),
+                    data: (list) => AppDropdown<String>(
+                      label: 'Supplier',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.business_outlined),
+                      value: _supplierId,
+                      items: list.map((s) => DropdownMenuItem(
+                        value: s['id'] as String,
+                        child: Text(s['name'] as String),
+                      ),).toList(),
+                      onChanged: (v) => setState(() => _supplierId = v),
+                      validator: (v) => v == null ? 'Supplier is required' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AppFormField(
+                    label: 'PO / Supplier Challan Number (optional)',
+                    controller: _poCtrl,
+                    prefixIcon: const Icon(Icons.receipt_outlined),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.qr_code_scanner_rounded),
+                      tooltip: 'Scan Challan / PO Barcode',
+                      onPressed: () async {
+                        final code = await BarcodeScannerView.scan(
+                          context,
+                          title: 'Scan Supplier Challan / PO',
+                        );
+                        if (code != null && code.isNotEmpty) {
+                          _poCtrl.text = code;
+                        }
+                      },
+                    ),
+                    hint: 'Scan or type PO / Challan number',
+                  ),
+                  const SizedBox(height: 10),
+                  AppFormField(
+                    label: 'Remarks (optional)',
+                    controller: _remarksCtrl,
+                    maxLines: 2,
+                    prefixIcon: const Icon(Icons.notes),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
 
-            AppFormField(
-              label: 'PO / Supplier Challan Number (optional)',
-              controller: _poCtrl,
-              prefixIcon: const Icon(Icons.receipt_outlined),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.qr_code_scanner_rounded),
-                tooltip: 'Scan Challan / PO Barcode',
-                onPressed: () async {
-                  final code = await BarcodeScannerView.scan(
-                    context,
-                    title: 'Scan Supplier Challan / PO',
-                  );
-                  if (code != null && code.isNotEmpty) {
-                    _poCtrl.text = code;
-                  }
-                },
-              ),
-              hint: 'Scan or type PO / Challan number',
-            ),
-            const SizedBox(height: 12),
-
-            AppFormField(
-              label: 'Remarks (optional)',
-              controller: _remarksCtrl,
-              maxLines: 2,
-              prefixIcon: const Icon(Icons.notes),
-            ),
-            const SizedBox(height: 16),
-
-            // Post-save shortfall banner
             if (_lastShortfall != null && _lastShortfall! > 0)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -542,7 +720,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
                     Expanded(
                       child: Text(
                         'Shortfall of ${_lastShortfall!.toStringAsFixed(0)} PCS recorded.',
-                        style: const TextStyle(color: Colors.orange),
+                        style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
@@ -551,7 +729,8 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
 
             if (_error != null) ErrorBanner(_error!),
             if (_success != null) SuccessBanner(_success!),
-            const SizedBox(height: 16),
+            if (_error != null || _success != null) const SizedBox(height: 10),
+
             SaveButton(onPressed: _save, isLoading: _isSaving),
           ],
         ),
@@ -657,7 +836,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '${r['supplier_name'] ?? 'Unknown Supplier'} · ${r['date']} ${r['time'] ?? ''}'.trim(),
+                              '${r['supplier_name'] ?? 'Unknown Supplier'} · ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)}'.trim(),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -755,7 +934,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              '${r['supplier_name'] ?? 'Unknown'} · ${r['date']} ${r['time'] ?? ''}'.trim(),
+                              '${r['supplier_name'] ?? 'Unknown'} · ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)}'.trim(),
                               style: TextStyle(
                                 fontSize: 11,
                                 color: theme.colorScheme.onSurfaceVariant,
@@ -1166,7 +1345,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                           ),
                           Text(
-                            '${r['supplier_name'] ?? 'Unknown'} · ${r['date']} ${r['time'] ?? ''}',
+                            '${r['supplier_name'] ?? 'Unknown'} · ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)}',
                             style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
                           ),
                         ],
@@ -1290,12 +1469,26 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                         value: selectedPoRefId,
                         items: [
                           const DropdownMenuItem(value: null, child: Text('— No link —')),
-                          ...openOrders.map((o) => DropdownMenuItem(
-                            value: o['id'] as String,
-                            child: Text('${o['po_number'] ?? 'No PO'} · ${o['ordered_qty']} PCS'),
-                          ),),
+                          ...openOrders.map((o) {
+                            final poNum = (o['po_number'] as String?)?.trim();
+                            final displayPo = (poNum != null && poNum.isNotEmpty) ? poNum : 'PO';
+                            final qtyStr = (o['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0';
+                            return DropdownMenuItem(
+                              value: o['id'] as String,
+                              child: Text('$displayPo · $qtyStr PCS'),
+                            );
+                          }),
                         ],
-                        onChanged: (v) => setDialogState(() => selectedPoRefId = v),
+                        onChanged: (v) => setDialogState(() {
+                          selectedPoRefId = v;
+                          if (v != null) {
+                            final match = openOrders.firstWhere((o) => o['id'] == v);
+                            final poNum = (match['po_number'] as String?)?.trim();
+                            if (poNum != null && poNum.isNotEmpty) {
+                              poCtrl.text = poNum;
+                            }
+                          }
+                        }),
                       ),
                       const SizedBox(height: 10),
                     ],

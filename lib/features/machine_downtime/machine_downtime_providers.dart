@@ -22,6 +22,7 @@ class MachineDowntimeRepository {
     String? endTime,
     required String reason,
     String? operatorId,
+    String? photoUrl,
     String? remarks,
     required String createdBy,
     DateTime? recordedAt,
@@ -68,6 +69,7 @@ class MachineDowntimeRepository {
       'duration_minutes': durationMinutes,
       'reason': reason,
       'operator_id': operatorId,
+      'photo_url': photoUrl,
       'remarks': remarks,
       'created_by': createdBy,
       'sync_status': 'pending',
@@ -93,6 +95,89 @@ class MachineDowntimeRepository {
     await _sync.schedulePendingSync();
     unawaited(_alerts.checkOpenDowntime());
     return DowntimeResult(success: true, recordId: id);
+  }
+
+  Future<DowntimeResult> update({
+    required String id,
+    required String machineId,
+    required String startTime,
+    String? endTime,
+    required String reason,
+    String? operatorId,
+    String? photoUrl,
+    String? remarks,
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return const DowntimeResult(success: false, error: 'No active factory workspace.');
+    }
+
+    if (endTime != null && endTime.isNotEmpty) {
+      final start = _parseTime(startTime);
+      final end = _parseTime(endTime);
+      if (end != null && start != null && !end.isAfter(start)) {
+        return const DowntimeResult(success: false, error: 'End time must be after start time.');
+      }
+    }
+
+    int? durationMinutes;
+    if (endTime != null && endTime.isNotEmpty) {
+      final start = _parseTime(startTime);
+      final end = _parseTime(endTime);
+      if (start != null && end != null) {
+        durationMinutes = end.difference(start).inMinutes;
+      }
+    }
+
+    try {
+      _db.db.execute(
+        'UPDATE machine_downtimes SET '
+        'machine_id = ?, '
+        'start_time = ?, '
+        'end_time = ?, '
+        'duration_minutes = ?, '
+        'reason = ?, '
+        'operator_id = ?, '
+        'photo_url = COALESCE(?, photo_url), '
+        'remarks = ?, '
+        'sync_status = ? '
+        'WHERE factory_id = ? AND id = ?',
+        [
+          machineId,
+          startTime,
+          endTime?.isEmpty == true ? null : endTime,
+          durationMinutes,
+          reason,
+          operatorId,
+          photoUrl,
+          remarks,
+          'pending',
+          factoryId,
+          id,
+        ],
+      );
+      await _sync.schedulePendingSync();
+      return const DowntimeResult(success: true);
+    } catch (e) {
+      return DowntimeResult(success: false, error: e.toString());
+    }
+  }
+
+  Future<DowntimeResult> delete(String id) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return const DowntimeResult(success: false, error: 'No active factory workspace.');
+    }
+    try {
+      _db.db.execute(
+        'DELETE FROM machine_downtimes WHERE factory_id = ? AND id = ?',
+        [factoryId, id],
+      );
+      await _sync.schedulePendingSync();
+      return const DowntimeResult(success: true);
+    } catch (e) {
+      return DowntimeResult(success: false, error: e.toString());
+    }
   }
 
   Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {

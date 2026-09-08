@@ -572,9 +572,17 @@ class ProductionRepository {
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> getRecent({int limit = 50}) async {
+  Future<List<Map<String, dynamic>>> getRecent({int limit = 50, String? date}) async {
     final factoryId = _activeFactoryId;
     if (factoryId == null) return [];
+    final whereClause = date != null
+        ? 'WHERE pr.factory_id = ? AND (TRIM(pr.date) = ? OR pr.date LIKE ? OR date(pr.date) = ?) '
+        : 'WHERE pr.factory_id = ? ';
+    final params = date != null ? [factoryId, date, '$date%', date] : [factoryId, limit];
+    final limitClause = date != null ? '' : 'LIMIT ?';
+    final orderBy = date != null
+        ? 'ORDER BY pr.time ASC, pr.created_at ASC'
+        : 'ORDER BY pr.created_at DESC';
     final rows = _db.db.select(
       'SELECT pr.*, p.name as part_name, p.code as part_code, '
       'm.name as machine_name, m.sequence_order, o.name as operator_name '
@@ -585,11 +593,336 @@ class ProductionRepository {
       'AND m.factory_id = pr.factory_id '
       'LEFT JOIN operators o ON o.id = pr.operator_id '
       'AND o.factory_id = pr.factory_id '
-      'WHERE pr.factory_id = ? '
-      'ORDER BY pr.created_at DESC LIMIT ?',
-      [factoryId, limit],
+      '$whereClause'
+      '$orderBy $limitClause',
+      params,
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Delete a single production record and reverse its stock movements safely.
+  Future<({bool success, String error})> deleteProductionRecord({
+    required String productionId,
+    required String userId,
+    String reason = 'Production entry deleted by user',
+  }) async {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM productions WHERE factory_id = ? AND id = ?',
+      [factoryId, productionId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Production record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final machineId = rec['machine_id'] as String;
+    final prodQty = (rec['production_qty'] as num).toDouble();
+    final rejectQty = (rec['bp_reject_qty'] as num).toDouble();
+    final goodQty = (rec['good_qty'] as num).toDouble();
+
+    // Determine stages
+    final sequenceIndex = _flow.requiredMachineIds.indexOf(machineId);
+    final inputStage = (!_flow.isMultiStage || sequenceIndex <= 0)
+        ? 'raw_material'
+        : productionWipStage(_flow.requiredMachineIds[sequenceIndex - 1]);
+    final isFinal = !_flow.isMultiStage || _flow.isFinalMachine(machineId);
+    final outputStage = isFinal ? 'bp_stock' : productionWipStage(machineId);
+
+    // Verify output stock hasn't been consumed yet
+    final availableOutput = await _db.getCurrentBalance(partId, outputStage);
+    if (availableOutput < goodQty) {
+      return (
+        success: false,
+        error:
+            'Cannot delete: output stock has already been consumed downstream. '
+            '(Available in $outputStage: ${availableOutput.toInt()} PCS, needed: ${goodQty.toInt()} PCS).',
+      );
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        // 1. Return input quantity back to input stage
+        await _db.writeStockLedgerEntryForStage(
+          id: _uuid.v4(),
+          factoryId: factoryId,
+          partId: partId,
+          stage: inputStage,
+          stageLabel: inputStage,
+          direction: LedgerDirection.in_,
+          qty: prodQty,
+          refTable: 'productions_reversal',
+          refId: productionId,
+        );
+
+        // 2. Remove good output from output stage
+        if (goodQty > 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: outputStage,
+            stageLabel: outputStage,
+            direction: LedgerDirection.out,
+            qty: goodQty,
+            refTable: 'productions_reversal',
+            refId: productionId,
+          );
+        }
+
+        // 3. Remove rejects from production_rejected stage
+        if (rejectQty > 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: 'production_rejected',
+            stageLabel: 'Production Rejected',
+            direction: LedgerDirection.out,
+            qty: rejectQty,
+            refTable: 'productions_reversal',
+            refId: productionId,
+          );
+        }
+
+        // 4. Back up and delete the record
+        await _db.backupAndDeleteRecord(
+          table: 'productions',
+          recordId: productionId,
+          userId: userId,
+          factoryId: factoryId,
+          reason: reason,
+        );
+      });
+
+      await _sync.schedulePendingSync();
+      return (success: true, error: '');
+    } catch (e) {
+      return (success: false, error: 'Failed to delete production entry: $e');
+    }
+  }
+
+  /// Delete an entire batch and reverse all its machine stages in reverse order.
+  Future<({bool success, String error})> deleteProductionBatch({
+    required String batchNumber,
+    required String userId,
+    String reason = 'Batch deleted by user',
+  }) async {
+    final records = getBatchRecords(batchNumber);
+    if (records.isEmpty) {
+      return (success: false, error: 'No records found for batch $batchNumber.');
+    }
+
+    // Process in reverse chronological order so later stages free up their WIP/FG first
+    final reversed = records.reversed.toList();
+    for (final r in reversed) {
+      final res = await deleteProductionRecord(
+        productionId: r['id'] as String,
+        userId: userId,
+        reason: reason,
+      );
+      if (!res.success) return res;
+    }
+    return (success: true, error: '');
+  }
+
+  /// Direct edit of a production record with automatic stock ledger adjustment.
+  Future<({bool success, String error})> updateProductionRecord({
+    required String productionId,
+    required double newProductionQty,
+    required double newRejectQty,
+    required String operatorId,
+    required String shiftId,
+    required String machineStatus,
+    required String remarks,
+    required String userId,
+  }) async {
+    final factoryId = _activeFactoryId;
+    if (factoryId == null) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+
+    if (newProductionQty <= 0) {
+      return (success: false, error: 'Production quantity must be greater than 0.');
+    }
+    if (newRejectQty > newProductionQty) {
+      return (success: false, error: 'Reject quantity cannot exceed production quantity.');
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM productions WHERE factory_id = ? AND id = ?',
+      [factoryId, productionId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Production record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final machineId = rec['machine_id'] as String;
+    final oldProdQty = (rec['production_qty'] as num).toDouble();
+    final oldRejectQty = (rec['bp_reject_qty'] as num).toDouble();
+    final oldGoodQty = (rec['good_qty'] as num).toDouble();
+    final newGoodQty = (newProductionQty - newRejectQty).clamp(0.0, double.infinity);
+
+    // Determine stages
+    final sequenceIndex = _flow.requiredMachineIds.indexOf(machineId);
+    final inputStage = (!_flow.isMultiStage || sequenceIndex <= 0)
+        ? 'raw_material'
+        : productionWipStage(_flow.requiredMachineIds[sequenceIndex - 1]);
+    final isFinal = !_flow.isMultiStage || _flow.isFinalMachine(machineId);
+    final outputStage = isFinal ? 'bp_stock' : productionWipStage(machineId);
+
+    // Stock differences
+    final inputDiff = newProductionQty - oldProdQty;
+    final goodDiff = newGoodQty - oldGoodQty;
+    final rejDiff = newRejectQty - oldRejectQty;
+
+    // Check available stock before committing
+    if (inputDiff > 0) {
+      final availableInput = await _db.getCurrentBalance(partId, inputStage);
+      if (availableInput < inputDiff) {
+        return (
+          success: false,
+          error:
+              'Insufficient stock in $inputStage. Available: ${availableInput.toInt()} PCS, needed: ${inputDiff.toInt()} PCS more.',
+        );
+      }
+    }
+
+    if (goodDiff < 0) {
+      final neededReduction = goodDiff.abs();
+      final availableOutput = await _db.getCurrentBalance(partId, outputStage);
+      if (availableOutput < neededReduction) {
+        return (
+          success: false,
+          error:
+              'Cannot reduce good quantity: downstream has already consumed stock. '
+              '(Available in $outputStage: ${availableOutput.toInt()} PCS, needed reduction: ${neededReduction.toInt()} PCS).',
+        );
+      }
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        // Adjust Input Stage
+        if (inputDiff > 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: inputStage,
+            stageLabel: inputStage,
+            direction: LedgerDirection.out,
+            qty: inputDiff,
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        } else if (inputDiff < 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: inputStage,
+            stageLabel: inputStage,
+            direction: LedgerDirection.in_,
+            qty: inputDiff.abs(),
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        }
+
+        // Adjust Output Stage
+        if (goodDiff > 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: outputStage,
+            stageLabel: outputStage,
+            direction: LedgerDirection.in_,
+            qty: goodDiff,
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        } else if (goodDiff < 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: outputStage,
+            stageLabel: outputStage,
+            direction: LedgerDirection.out,
+            qty: goodDiff.abs(),
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        }
+
+        // Adjust Reject Stage
+        if (rejDiff > 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: 'production_rejected',
+            stageLabel: 'Production Rejected',
+            direction: LedgerDirection.in_,
+            qty: rejDiff,
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        } else if (rejDiff < 0) {
+          await _db.writeStockLedgerEntryForStage(
+            id: _uuid.v4(),
+            factoryId: factoryId,
+            partId: partId,
+            stage: 'production_rejected',
+            stageLabel: 'Production Rejected',
+            direction: LedgerDirection.out,
+            qty: rejDiff.abs(),
+            refTable: 'productions_edit',
+            refId: productionId,
+          );
+        }
+
+        // Update production record
+        _db.db.execute(
+          'UPDATE productions SET '
+          'production_qty = ?, '
+          'bp_reject_qty = ?, '
+          'good_qty = ?, '
+          'operator_id = ?, '
+          'shift_id = ?, '
+          'machine_status_id = ?, '
+          'remarks = ?, '
+          'sync_status = ? '
+          'WHERE factory_id = ? AND id = ?',
+          [
+            newProductionQty,
+            newRejectQty,
+            newGoodQty,
+            operatorId,
+            shiftId,
+            machineStatus,
+            remarks.isEmpty ? null : remarks,
+            'pending',
+            factoryId,
+            productionId,
+          ],
+        );
+      });
+
+      await _sync.schedulePendingSync();
+      return (success: true, error: '');
+    } catch (e) {
+      return (success: false, error: 'Failed to update production entry: $e');
+    }
   }
 }
 
@@ -622,9 +955,25 @@ final productionRepositoryProvider = Provider<ProductionRepository>((ref) {
   );
 });
 
+class ProductionHistoryDateFilterNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setDate(DateTime? date) => state = date;
+}
+
+final productionHistoryDateFilterProvider =
+    NotifierProvider<ProductionHistoryDateFilterNotifier, DateTime?>(
+  ProductionHistoryDateFilterNotifier.new,
+);
+
 final productionListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.watch(productionRepositoryProvider).getRecent();
+  final date = ref.watch(productionHistoryDateFilterProvider);
+  final dateStr = date != null
+      ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+      : null;
+  return ref.watch(productionRepositoryProvider).getRecent(date: dateStr);
 });
 
 final wipBatchesProvider =

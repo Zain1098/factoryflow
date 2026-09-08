@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:uuid/uuid.dart';
 
+import '../constants/app_constants.dart';
 import '../constants/stock_stages.dart';
 
 final databaseServiceProvider = Provider<DatabaseService>((ref) {
@@ -1627,6 +1628,29 @@ class DatabaseService {
       'UPDATE purchase_orders SET status = ? WHERE factory_id = ? AND id = ?',
       [status, factoryId, id],
     );
+  }
+
+  Future<String> getNextPoNumber(
+    String factoryId,
+    DateTime date,
+    String prefix,
+  ) async {
+    final rows = db.select(
+      'SELECT po_number FROM purchase_orders WHERE factory_id = ? AND po_number LIKE ?',
+      [factoryId, '$prefix%'],
+    );
+    int maxSeq = 0;
+    for (final row in rows) {
+      final po = row['po_number'] as String?;
+      if (po != null && po.startsWith(prefix)) {
+        final remainder = po.substring(prefix.length);
+        final seq = int.tryParse(remainder);
+        if (seq != null && seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+    return AppConstants.poNumberPattern(date, maxSeq + 1);
   }
 
   // ── Backup & Erase ────────────────────────────────────────────────────

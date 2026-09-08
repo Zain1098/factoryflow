@@ -172,18 +172,330 @@ class ReceiveFacoRepository {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
+  Future<List<Map<String, dynamic>>> getRecent({
+    int limit = 50,
+    String? date,
+  }) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
+
+    final whereClause = date != null
+        ? 'WHERE rf.factory_id = ? AND (TRIM(rf.date) = ? OR rf.date LIKE ? OR date(rf.date) = ?) '
+        : 'WHERE rf.factory_id = ? ';
+    final params =
+        date != null ? [factoryId, date, '$date%', date] : [factoryId, limit];
+    final orderBy = date != null
+        ? 'ORDER BY rf.date DESC, rf.rowid DESC'
+        : 'ORDER BY rf.date DESC, rf.rowid DESC LIMIT ?';
+
     final rows = _db.db.select(
-      'SELECT rf.*, p.name as part_name, p.code as part_code '
-      'FROM receive_from_facos rf '
-      'LEFT JOIN parts p ON p.id = rf.part_id AND p.factory_id = rf.factory_id '
-      'WHERE rf.factory_id = ? '
-      'ORDER BY rf.date DESC LIMIT ?',
-      [factoryId, limit],
+      '''SELECT rf.*,
+                p.name as part_name,
+                p.code as part_code,
+                v.name as vendor_name,
+                df.qty as dispatched_qty,
+                df.batch_number as dispatch_batch_number,
+                df.challan_number as dispatch_challan
+         FROM receive_from_facos rf
+         LEFT JOIN parts p ON p.id = rf.part_id AND p.factory_id = rf.factory_id
+         LEFT JOIN dispatch_to_facos df ON df.id = rf.dispatch_ref_id AND df.factory_id = rf.factory_id
+         LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = rf.factory_id
+         $whereClause
+         $orderBy''',
+      params,
     );
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  /// Safely delete a vendor receipt record and revert its stock movement.
+  /// Reversal:
+  /// - Deducts received qty from pendingAp (Pending AP Inspection)
+  /// - Returns received qty back to at_faco (Vendor Stock)
+  /// If material was already inspected or consumed downstream, deletion is blocked!
+  Future<({bool success, String error})> deleteReceiptRecord({
+    required String receiptId,
+    required String userId,
+    String reason = 'Vendor receipt deleted by user',
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM receive_from_facos WHERE factory_id = ? AND id = ?',
+      [factoryId, receiptId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Receipt record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final qtyReceived = (rec['qty_received'] as num).toDouble();
+
+    // Downstream safety: Check if pendingAp stock has enough balance.
+    // If pendingAp < qtyReceived, downstream AP inspection has already consumed this material.
+    final currentPendingAp =
+        await _ledger.getAvailableStock(partId, StockStage.pendingAp);
+    if (currentPendingAp < qtyReceived) {
+      return (
+        success: false,
+        error:
+            'Cannot delete receipt: Available Pending AP stock (${currentPendingAp.toInt()} PCS) is less than receipt quantity (${qtyReceived.toInt()} PCS). Downstream AP Inspection has already consumed this material.',
+      );
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        // Revert stock: Deduct from Pending AP, Return to Vendor Stock
+        final outPendingResult = await _ledger.manualAdjustment(
+          partId: partId,
+          stage: StockStage.pendingAp,
+          direction: LedgerDirection.out,
+          qty: qtyReceived,
+          refId: 'REC-REV-$receiptId',
+          triggerSync: false,
+        );
+        if (!outPendingResult.success) {
+          throw StockPostingFailure(
+            outPendingResult.error ?? 'Failed to deduct from Pending AP stock.',
+          );
+        }
+
+        final inVendorResult = await _ledger.manualAdjustment(
+          partId: partId,
+          stage: StockStage.atFaco,
+          direction: LedgerDirection.in_,
+          qty: qtyReceived,
+          refId: 'REC-REV-$receiptId',
+          triggerSync: false,
+        );
+        if (!inVendorResult.success) {
+          throw StockPostingFailure(
+            inVendorResult.error ?? 'Failed to return to Vendor stock.',
+          );
+        }
+
+        // Back up before deleting
+        await _db.backupAndDeleteRecord(
+          table: 'receive_from_facos',
+          recordId: receiptId,
+          userId: userId,
+          factoryId: factoryId,
+          reason: reason,
+        );
+
+        await _sync.queueDelete(
+          tableName: 'receive_from_facos',
+          recordId: receiptId,
+          factoryId: factoryId,
+          triggerSync: false,
+        );
+      });
+    } on StockPostingFailure catch (e) {
+      return (success: false, error: e.message);
+    } catch (e) {
+      return (success: false, error: 'Failed to delete receipt: $e');
+    }
+
+    await _sync.schedulePendingSync();
+    return (success: true, error: '');
+  }
+
+  /// Safely update a vendor receipt record and automatically adjust stock differences.
+  Future<({bool success, String error})> updateReceiptRecord({
+    required String receiptId,
+    required double newQty,
+    String? supplierChallan,
+    String? remarks,
+    required String userId,
+  }) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return (success: false, error: 'No active factory workspace selected.');
+    }
+    if (newQty <= 0) {
+      return (
+        success: false,
+        error: 'Received quantity must be greater than zero.',
+      );
+    }
+
+    final rows = _db.db.select(
+      'SELECT * FROM receive_from_facos WHERE factory_id = ? AND id = ?',
+      [factoryId, receiptId],
+    );
+    if (rows.isEmpty) {
+      return (success: false, error: 'Receipt record not found.');
+    }
+
+    final rec = rows.first;
+    final partId = rec['part_id'] as String;
+    final oldQty = (rec['qty_received'] as num).toDouble();
+    final dispatchRefId = rec['dispatch_ref_id'] as String?;
+    final qtyDiff = newQty - oldQty;
+
+    // Dispatched qty check for shortage recalculation & capacity
+    double? dispatchedQty;
+    if (dispatchRefId != null && !dispatchRefId.startsWith('OPEN-')) {
+      final dispRows = _db.db.select(
+        'SELECT qty FROM dispatch_to_facos WHERE factory_id = ? AND id = ?',
+        [factoryId, dispatchRefId],
+      );
+      if (dispRows.isNotEmpty) {
+        dispatchedQty = (dispRows.first['qty'] as num).toDouble();
+        final otherReceipts = _db.db.select(
+          'SELECT COALESCE(SUM(qty_received), 0) AS total_other '
+          'FROM receive_from_facos WHERE factory_id = ? AND dispatch_ref_id = ? AND id != ?',
+          [factoryId, dispatchRefId, receiptId],
+        );
+        final otherTotal =
+            (otherReceipts.first['total_other'] as num).toDouble();
+        if (newQty + otherTotal > dispatchedQty) {
+          final maxAllowed = dispatchedQty - otherTotal;
+          return (
+            success: false,
+            error:
+                'Received qty (${newQty.toInt()}) exceeds remaining dispatch qty (${maxAllowed.toInt()} PCS).',
+          );
+        }
+      }
+    }
+
+    if (qtyDiff > 0) {
+      // User is increasing received quantity: requires more stock from Vendor (atFaco)
+      final availableAtFaco =
+          await _ledger.getAvailableStock(partId, StockStage.atFaco);
+      if (availableAtFaco < qtyDiff) {
+        return (
+          success: false,
+          error:
+              'Cannot increase receipt: Available Vendor Stock (${availableAtFaco.toInt()} PCS) is less than additional required (${qtyDiff.toInt()} PCS).',
+        );
+      }
+    } else if (qtyDiff < 0) {
+      // User is reducing received quantity: requires returning material from Pending AP
+      final reduction = -qtyDiff;
+      final currentPendingAp =
+          await _ledger.getAvailableStock(partId, StockStage.pendingAp);
+      if (currentPendingAp < reduction) {
+        return (
+          success: false,
+          error:
+              'Cannot reduce receipt: Available Pending AP stock (${currentPendingAp.toInt()} PCS) is less than reduction (${reduction.toInt()} PCS). Downstream AP Inspection has already consumed this material.',
+        );
+      }
+    }
+
+    final isShortage = dispatchedQty != null && newQty < dispatchedQty;
+
+    try {
+      await _db.runInTransaction(() async {
+        if (qtyDiff > 0) {
+          // Move additional from atFaco -> pendingAp
+          final outResult = await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.atFaco,
+            direction: LedgerDirection.out,
+            qty: qtyDiff,
+            refId: 'REC-UPD-$receiptId',
+            triggerSync: false,
+          );
+          if (!outResult.success) {
+            throw StockPostingFailure(
+              outResult.error ?? 'Failed to deduct from Vendor stock.',
+            );
+          }
+
+          final inResult = await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.pendingAp,
+            direction: LedgerDirection.in_,
+            qty: qtyDiff,
+            refId: 'REC-UPD-$receiptId',
+            triggerSync: false,
+          );
+          if (!inResult.success) {
+            throw StockPostingFailure(
+              inResult.error ?? 'Failed to add to Pending AP stock.',
+            );
+          }
+        } else if (qtyDiff < 0) {
+          // Return reduction from pendingAp -> atFaco
+          final reduction = -qtyDiff;
+          final outResult = await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.pendingAp,
+            direction: LedgerDirection.out,
+            qty: reduction,
+            refId: 'REC-UPD-$receiptId',
+            triggerSync: false,
+          );
+          if (!outResult.success) {
+            throw StockPostingFailure(
+              outResult.error ?? 'Failed to deduct from Pending AP stock.',
+            );
+          }
+
+          final inResult = await _ledger.manualAdjustment(
+            partId: partId,
+            stage: StockStage.atFaco,
+            direction: LedgerDirection.in_,
+            qty: reduction,
+            refId: 'REC-UPD-$receiptId',
+            triggerSync: false,
+          );
+          if (!inResult.success) {
+            throw StockPostingFailure(
+              inResult.error ?? 'Failed to return to Vendor stock.',
+            );
+          }
+        }
+
+        // Update database row
+        _db.db.execute(
+          '''UPDATE receive_from_facos
+             SET qty_received = ?,
+                 supplier_challan = ?,
+                 remarks = ?,
+                 shortage_flag = ?,
+                 sync_status = 'pending'
+             WHERE factory_id = ? AND id = ?''',
+          [
+            newQty,
+            supplierChallan?.trim().isEmpty == true
+                ? null
+                : supplierChallan?.trim(),
+            remarks?.trim().isEmpty == true ? null : remarks?.trim(),
+            isShortage ? 1 : 0,
+            factoryId,
+            receiptId,
+          ],
+        );
+
+        final updatedRows = _db.db.select(
+          'SELECT * FROM receive_from_facos WHERE factory_id = ? AND id = ?',
+          [factoryId, receiptId],
+        );
+        if (updatedRows.isNotEmpty) {
+          final payload = Map<String, dynamic>.from(updatedRows.first);
+          await _sync.queueUpdate(
+            tableName: 'receive_from_facos',
+            recordId: receiptId,
+            payload: payload,
+            triggerSync: false,
+          );
+        }
+      });
+    } on StockPostingFailure catch (e) {
+      return (success: false, error: e.message);
+    } catch (e) {
+      return (success: false, error: 'Failed to update receipt: $e');
+    }
+
+    await _sync.schedulePendingSync();
+    return (success: true, error: '');
   }
 
   Future<List<Map<String, dynamic>>> getPendingDispatches(String partId) async {
@@ -248,9 +560,25 @@ final receiveFacoRepositoryProvider = Provider<ReceiveFacoRepository>((ref) {
   );
 });
 
+class ReceiveFacoHistoryDateFilterNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setDate(DateTime? date) => state = date;
+}
+
+final receiveFacoHistoryDateFilterProvider =
+    NotifierProvider<ReceiveFacoHistoryDateFilterNotifier, DateTime?>(
+  ReceiveFacoHistoryDateFilterNotifier.new,
+);
+
 final receiveFacoListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.watch(receiveFacoRepositoryProvider).getRecent();
+  final date = ref.watch(receiveFacoHistoryDateFilterProvider);
+  final dateStr = date != null
+      ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+      : null;
+  return ref.watch(receiveFacoRepositoryProvider).getRecent(date: dateStr);
 });
 
 class ReceiveFacoResult {

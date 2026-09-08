@@ -58,4 +58,15 @@ class AppConstants {
         '${date.day.toString().padLeft(2, '0')}';
     return '$partCode-$dateStr-${sequence.toString().padLeft(3, '0')}';
   }
+
+  /// PO Number format: PO-{DDMM}-{Sequence 2 digits}; e.g. PO-0709-01.
+  static String poNumberPattern(
+    DateTime date,
+    int sequence,
+  ) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final seq = sequence.toString().padLeft(2, '0');
+    return 'PO-$day$month-$seq';
+  }
 }

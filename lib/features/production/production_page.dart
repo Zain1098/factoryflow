@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/providers/master_data_providers.dart';
 import '../../core/providers/production_flow_provider.dart';
@@ -76,11 +77,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
   }
 
   String _suggestShift(DateTime dateTime) {
-    final hour = dateTime.hour;
-    // Default shift suggestion by time — actual shift IDs come from DB
-    if (hour >= 6 && hour < 14) return 'A';
-    if (hour >= 14 && hour < 22) return 'B';
-    return 'C';
+    final timeInMinutes = dateTime.hour * 60 + dateTime.minute;
+    // Shift C: 12:30 AM (30 mins) to 7:30 AM (450 mins)
+    if (timeInMinutes >= 30 && timeInMinutes < 450) return 'C';
+    // Shift A: 7:30 AM (450 mins) to 4:00 PM (960 mins) / handover to 4:30 PM (990 mins)
+    if (timeInMinutes >= 450 && timeInMinutes < 990) return 'A';
+    // Shift B: 4:30 PM (990 mins) to 12:30 AM (30 mins next day)
+    return 'B';
   }
 
   bool _isToday(DateTime dt) {
@@ -364,7 +367,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     final isMasterDataLoading =
         machinesAsync.isLoading || operatorsAsync.isLoading;
     final masterDataError = machinesAsync.hasError || operatorsAsync.hasError;
-    final flow = ref.watch(productionFlowProvider);
+    ref.watch(productionFlowProvider);
     final rawMaterialAsync = _partId == null
         ? null
         : ref.watch(productionRawMaterialProvider(_partId!));
@@ -437,27 +440,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 style: TextStyle(color: theme.colorScheme.onErrorContainer),
               ),
             ),
-          )
-        else
-          Card(
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.45),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  const Icon(Icons.account_tree_outlined),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      flow.isMultiStage
-                          ? 'Active route: ${_productionRouteLabel(flow, machinesAsync.value ?? const [])}'
-                          : 'Active route: Raw Material → Finished Production',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
         if (_didRepairFlow) ...[
           const SizedBox(height: 8),
@@ -466,82 +448,111 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
           ),
         ],
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Production details', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 12),
-                RecordDateTimePicker(
-                  value: _recordedAt,
-                  onChanged: (dt) => setState(() {
-                    _recordedAt = dt;
-                    _shiftId = _suggestShift(dt);
-                  }),
-                ),
-                if (!_isToday(_recordedAt)) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Backdated entry: ${_recordedAt.day == DateTime.now().subtract(const Duration(days: 1)).day ? 'Yesterday' : _formatDate(_recordedAt)}. Tap date to correct.',
-                            style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w500),
-                          ),
-                        ),
-                        TextButton(
-                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                          onPressed: () => setState(() {
-                            _recordedAt = DateTime.now();
-                            _shiftId = _suggestShift(_recordedAt);
-                          }),
-                          child: const Text('Use Today', style: TextStyle(fontSize: 11)),
-                        ),
-                      ],
+        const SizedBox(height: 8),
+        EntryInfoSurface(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.tune_outlined, size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Production details',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 'A', label: Text('Shift A')),
-                    ButtonSegment(value: 'B', label: Text('Shift B')),
-                    ButtonSegment(value: 'C', label: Text('Shift C')),
-                  ],
-                  selected: {_shiftId},
-                  onSelectionChanged: (value) => _setShift(value.first),
-                ),
-                const SizedBox(height: 16),
-                partsAsync.when(
-                  loading: () => const LinearProgressIndicator(),
-                  error: (error, _) => Text('Parts could not load: $error'),
-                  data: (parts) => OutlinedButton.icon(
-                    icon: const Icon(Icons.category_outlined),
-                    label: Text(_partId == null
-                        ? 'Select finished part'
-                        : _partCode ?? 'Selected part',),
-                    onPressed: () => _pickPart(parts),
+              ),
+              const SizedBox(height: 12),
+              RecordDateTimePicker(
+                value: _recordedAt,
+                onChanged: (dt) => setState(() {
+                  _recordedAt = dt;
+                  _shiftId = _suggestShift(dt);
+                }),
+              ),
+              if (!_isToday(_recordedAt)) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Backdated entry: ${_recordedAt.day == DateTime.now().subtract(const Duration(days: 1)).day ? 'Yesterday' : _formatDate(_recordedAt)}. Tap date to correct.',
+                          style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                        onPressed: () => setState(() {
+                          _recordedAt = DateTime.now();
+                          _shiftId = _suggestShift(_recordedAt);
+                        }),
+                        child: const Text('Use Today', style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
                   ),
                 ),
               ],
-            ),
+              const SizedBox(height: 12),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'A', label: Text('Shift A')),
+                  ButtonSegment(value: 'B', label: Text('Shift B')),
+                  ButtonSegment(value: 'C', label: Text('Shift C')),
+                ],
+                selected: {_shiftId},
+                onSelectionChanged: (value) => _setShift(value.first),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _shiftId == 'A'
+                    ? 'Shift A: 07:30 AM – 04:00 PM'
+                    : _shiftId == 'B'
+                        ? 'Shift B: 04:30 PM – 12:30 AM'
+                        : 'Shift C: 12:30 AM – 07:30 AM',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 14),
+              partsAsync.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (error, _) => Text('Parts could not load: $error'),
+                data: (parts) => OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
+                    alignment: Alignment.centerLeft,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.category_outlined),
+                  label: Text(
+                    _partId == null
+                        ? 'Select finished part'
+                        : _partCode ?? 'Selected part',
+                    style: TextStyle(
+                      fontWeight: _partId != null ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  onPressed: () => _pickPart(parts),
+                ),
+              ),
+            ],
           ),
         ),
         if (_partId != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           rawMaterialAsync!.when(
             loading: () => const LinearProgressIndicator(),
             error: (error, _) => Text(
@@ -551,75 +562,222 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
             data: (rawQty) {
               final availableQty = hasWipInput ? _wipLastGoodQty! : rawQty;
               final available = availableQty > 0;
-              return Card(
-                color: (available ? Colors.teal : Colors.red)
-                    .withValues(alpha: 0.10),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Icon(
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: (available ? Colors.teal : Colors.red).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: (available ? Colors.teal : Colors.red).withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      available ? Icons.inventory_2_outlined : Icons.warning_amber_outlined,
+                      color: available ? Colors.teal.shade800 : Colors.red.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
                         available
-                            ? Icons.inventory_2_outlined
-                            : Icons.warning_amber_outlined,
-                        color: available
-                            ? Colors.teal.shade800
-                            : Colors.red.shade700,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          available
-                              ? '${hasWipInput ? 'Previous-stage WIP' : 'Raw material'} available: ${availableQty.toInt()} PCS'
-                              : 'No raw material is available for $_partCode. Receive material before entering production.',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                            ? '${hasWipInput ? 'Previous-stage WIP' : 'Raw material'} available: ${availableQty.toInt()} PCS'
+                            : 'No raw material is available for $_partCode. Receive material before entering production.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: available ? Colors.teal.shade900 : Colors.red.shade900,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             },
           ),
         ],
         const SizedBox(height: 16),
-        Text('Machine entries', style: theme.textTheme.titleMedium),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Machine entries', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            if (_sessionEntries.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_sessionEntries.length} ${_sessionEntries.length == 1 ? 'Stage' : 'Stages'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         if (_sessionEntries.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                  'Select a part, then add each machine stage for this batch.',),
+          EntryInfoSurface(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            child: Row(
+              children: [
+                Icon(Icons.precision_manufacturing_outlined, color: theme.colorScheme.outline, size: 26),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Select a part, then add each machine stage for this batch.',
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
             ),
           )
         else
           ..._sessionEntries.map(
             (entry) {
               final entryIndex = _sessionEntries.indexOf(entry);
-              return Card(
-                child: ListTile(
-                  title: Text(entry.machineName),
-                  subtitle: Text(
-                      '${entry.operatorName} · Input ${entry.productionQty.toInt()} · OK ${entry.goodQty.toInt()}',),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: EntryInfoSurface(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('${entry.rejectQty.toInt()} reject'),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined),
-                        tooltip: 'Edit machine entry',
-                        onPressed: () => _showAddEntryModal(
-                          existingEntry: entry,
-                          index: entryIndex,
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '#${entry.sequenceIndex > 0 ? entry.sequenceIndex : entryIndex + 1}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              entry.machineName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (entry.status == 'Running' ? Colors.green : Colors.orange).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              entry.status,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: entry.status == 'Running' ? Colors.green.shade800 : Colors.orange.shade900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, size: 20),
+                            tooltip: 'Edit machine entry',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _showAddEntryModal(
+                              existingEntry: entry,
+                              index: entryIndex,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            tooltip: 'Remove machine entry',
+                            visualDensity: VisualDensity.compact,
+                            color: Colors.red.shade400,
+                            onPressed: () => setState(
+                              () => _sessionEntries.removeAt(entryIndex),
+                            ),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        tooltip: 'Remove machine entry',
-                        onPressed: () => setState(
-                          () => _sessionEntries.removeAt(entryIndex),
-                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.person_outline, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Text(
+                            entry.operatorName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Input', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
+                                  Text('${entry.productionQty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.teal.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Good (OK)', style: TextStyle(fontSize: 10, color: Colors.teal)),
+                                  Text('${entry.goodQty.toInt()} PCS', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.teal)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: (entry.rejectQty > 0 ? Colors.red : Colors.grey).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Reject', style: TextStyle(fontSize: 10, color: entry.rejectQty > 0 ? Colors.red : Colors.grey)),
+                                  Text('${entry.rejectQty.toInt()} PCS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: entry.rejectQty > 0 ? Colors.red : Colors.grey)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -665,22 +823,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
     );
   }
 
-  String _productionRouteLabel(
-    ProductionFlowConfig flow,
-    List<Map<String, dynamic>> machines,
-  ) {
-    final namesById = {
-      for (final machine in machines)
-        if (machine['id'] is String)
-          machine['id'] as String:
-              machine['name'] as String? ?? 'Unnamed machine',
-    };
-    final names = flow.requiredMachineIds
-        .map((id) => namesById[id] ?? 'Unavailable machine')
-        .toList(growable: false);
-    return ['Raw Material', ...names, 'Finished Production'].join(' → ');
-  }
-
   Future<void> _pickPart(List<Map<String, dynamic>> parts) async {
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -715,9 +857,11 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.82,
-        child: _buildHistoryTab(),
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * 0.85,
+        child: Consumer(
+          builder: (context, ref, _) => _buildHistoryTab(context, ref),
+        ),
       ),
     );
   }
@@ -835,6 +979,32 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
       return null;
     }
 
+    // Auto-carry the good output produced from the previous machine stage as the
+    // default input quantity for the next machine stage, while allowing user edits.
+    double? previousStageGoodQty(String machineId) {
+      if (flow.isMultiStage) {
+        final sequenceIndex = flow.getMachineSequenceIndex(machineId);
+        if (sequenceIndex > 1) {
+          final previousMachineId = flow.requiredMachineIds[sequenceIndex - 2];
+          for (final entry in _sessionEntries.reversed) {
+            if (entry.machineId == previousMachineId) {
+              return entry.goodQty;
+            }
+          }
+        }
+      }
+      if (_wipLastGoodQty != null && _wipLastGoodQty! > 0) {
+        return _wipLastGoodQty;
+      }
+      if (index != null && index > 0) {
+        return _sessionEntries[index - 1].goodQty;
+      }
+      if (index == null && _sessionEntries.isNotEmpty) {
+        return _sessionEntries.last.goodQty;
+      }
+      return null;
+    }
+
     final suggestedOperator =
         existingEntry == null ? previousStageOperator(localMachineId) : null;
     if (suggestedOperator != null) {
@@ -868,11 +1038,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
     if (!mounted) return;
 
-    // Availability is only a limit; actual output must always be entered by
-    // the user because a machine can produce less than available material.
+    final suggestedGoodOutput =
+        existingEntry == null ? previousStageGoodQty(localMachineId) : null;
     final initialProductionQty = existingEntry != null
         ? existingEntry.productionQty.toInt().toString()
-        : '';
+        : (suggestedGoodOutput != null && suggestedGoodOutput > 0
+            ? suggestedGoodOutput.toInt().toString()
+            : '');
     final initialRejectQty = existingEntry != null
         ? existingEntry.rejectQty.toInt().toString()
         : '0';
@@ -902,18 +1074,6 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                 : 0;
             final isFinal =
                 flow.isMultiStage ? flow.isFinalMachine(localMachineId) : true;
-            final previousMachineName = seqIdx > 1
-                ? (machines.firstWhere(
-                      (m) => m['id'] == flow.requiredMachineIds[seqIdx - 2],
-                      orElse: () => <String, dynamic>{},
-                    )['name'] as String? ??
-                    'Previous Machine')
-                : null;
-            final inputLocation = previousMachineName == null
-                ? 'Raw Material'
-                : '$previousMachineName WIP';
-            final outputLocation =
-                isFinal ? 'Finished Production' : '$mName WIP';
 
             final prodVal = double.tryParse(prodCtrl.text) ?? 0.0;
             final rejVal = double.tryParse(rejectCtrl.text) ?? 0.0;
@@ -952,49 +1112,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           ],
                         ),
                         const Divider(),
-                        const SizedBox(height: 8),
-
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(ctx)
-                                .colorScheme
-                                .primaryContainer
-                                .withValues(alpha: 0.45),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.account_tree_outlined,
-                                  color: Theme.of(ctx).colorScheme.primary,),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '$inputLocation  →  $outputLocation',
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Good output moves automatically. Rejects go to Production Rejected.',
-                                      style: TextStyle(
-                                        color: Theme.of(ctx)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
 
                         // Operator Dropdown
                         AppDropdown<String>(
@@ -1076,6 +1194,10 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                                         localOperatorId = suggested['id'] as String;
                                         localOperatorName = suggested['name'] as String;
                                       }
+                                      final autoGood = previousStageGoodQty(mId);
+                                      if (autoGood != null && autoGood > 0) {
+                                        prodCtrl.text = autoGood.toInt().toString();
+                                      }
                                     }
                                   });
                                 }
@@ -1101,19 +1223,24 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         const SizedBox(height: 14),
 
                         // Input Quantity Field
-                        TextFormField(
-                          controller: prodCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: 'Input Quantity (PCS)',
-                            helperText: 'Material consumed from $inputLocation',
-                            prefixIcon: const Icon(Icons.input_outlined),
-                            suffixText: maxAllowedProdQty != null
-                                ? 'Max: ${maxAllowedProdQty.toInt()}'
-                                : null,
-                            border: const OutlineInputBorder(),
-                          ),
-                          onChanged: (_) => setModalState(() {}),
+                        Builder(
+                          builder: (_) {
+                            final currentStageMax = previousStageGoodQty(localMachineId) ?? maxAllowedProdQty;
+                            return TextFormField(
+                              controller: prodCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'Input Quantity (PCS)',
+                                helperText: 'Material consumed from previous stage',
+                                prefixIcon: const Icon(Icons.input_outlined),
+                                suffixText: currentStageMax != null
+                                    ? 'Max: ${currentStageMax.toInt()}'
+                                    : null,
+                                border: const OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => setModalState(() {}),
+                            );
+                          },
                         ),
                         const SizedBox(height: 14),
 
@@ -1139,22 +1266,23 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                         // Calculated Good Qty Preview
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10,),
+                              horizontal: 14, vertical: 12,),
                           decoration: BoxDecoration(
-                            color: Colors.teal.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.teal.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                                color: Colors.teal.withValues(alpha: 0.3),),
+                                color: Colors.teal.withValues(alpha: 0.35),),
                           ),
                           child: Row(
                             children: [
+                              const Icon(Icons.check_circle_outline, color: Colors.teal, size: 22),
+                              const SizedBox(width: 10),
                               const Expanded(
                                 child: Text(
                                   'Good Output (automatic):',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                 ),
                               ),
-                              const SizedBox(width: 8),
                               Text(
                                 '${goodVal.toInt()} PCS',
                                 style: const TextStyle(
@@ -1208,12 +1336,13 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                               return;
                             }
 
-                            if (maxAllowedProdQty != null &&
-                                enteredProd > maxAllowedProdQty) {
+                            final currentStageMax = previousStageGoodQty(localMachineId) ?? maxAllowedProdQty;
+                            if (currentStageMax != null &&
+                                enteredProd > currentStageMax) {
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Production Qty (${enteredProd.toInt()}) exceeds previous stage good Qty (${maxAllowedProdQty.toInt()} PCS).',
+                                    'Production Qty (${enteredProd.toInt()}) exceeds available good Qty (${currentStageMax.toInt()} PCS).',
                                   ),
                                 ),
                               );
@@ -1532,7 +1661,8 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                           title: Text(
                               '${r['machine_name']} (${r['operator_name']})',),
                           subtitle: Text(
-                              'Date: ${r['date']} ${r['time'] ?? ''} · Status: ${r['machine_status_id']}',),
+                            'Date: ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)} · Status: ${r['machine_status_id']}',
+                          ),
                           trailing: Text(
                             '${(r['good_qty'] as num?)?.toInt() ?? 0} OK',
                             style: const TextStyle(
@@ -1553,74 +1683,863 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
 
   // ─── TAB 3: PRODUCTION HISTORY ──────────────────────────────────────────────
 
-  Widget _buildHistoryTab() {
+  Widget _buildHistoryTab(BuildContext context, WidgetRef ref) {
     final historyAsync = ref.watch(productionListProvider);
+    final selectedDate = ref.watch(productionHistoryDateFilterProvider);
+    final flow = ref.watch(productionFlowProvider);
+    final machinesAsync = ref.watch(machinesProvider);
+    final theme = Theme.of(context);
 
-    return historyAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) =>
-          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
-      data: (records) {
-        if (records.isEmpty) {
-          return const EmptyState(
-            message: 'No production records created yet.',
-            icon: Icons.precision_manufacturing_outlined,
-          );
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: records.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, i) {
-            final r = records[i];
-            final isSynced = r['sync_status'] == 'synced';
-            final goodQty = (r['good_qty'] as num?)?.toInt() ?? 0;
-            final prodQty = (r['production_qty'] as num?)?.toInt() ?? 0;
-            final rejQty = (r['bp_reject_qty'] as num?)?.toInt() ?? 0;
-
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.teal.withValues(alpha: 0.12),
-                child: const Icon(Icons.precision_manufacturing,
-                    color: Colors.teal, size: 20,),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 6, 8),
+          child: Row(
+            children: [
+              Icon(Icons.history, color: theme.colorScheme.primary, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        'Production History',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (historyAsync.value != null && historyAsync.value!.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${historyAsync.value!.length}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              title: Text(
-                r['batch_number'] ?? '—',
-                style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,),
+              IconButton(
+                icon: Icon(
+                  selectedDate != null ? Icons.calendar_month : Icons.calendar_month_outlined,
+                  color: selectedDate != null ? theme.colorScheme.primary : null,
+                ),
+                tooltip: selectedDate != null ? 'Change Date' : 'Filter by Date',
+                onPressed: () => _pickHistoryDate(context, ref, selectedDate),
               ),
-              subtitle: Text(
-                '${r['part_code'] ?? ''} · ${r['machine_name'] ?? ''}\nOperator: ${r['operator_name'] ?? ''} · ${r['date']}',
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
               ),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
+            ],
+          ),
+        ),
+        if (selectedDate != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
                 children: [
-                  Text(
-                    '$goodQty OK',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal,
-                        fontSize: 14,),
-                  ),
-                  Text('Prod: $prodQty | Rej: $rejQty',
-                      style: const TextStyle(fontSize: 10),),
-                  const SizedBox(height: 2),
                   Icon(
-                    isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
-                    size: 14,
-                    color: isSynced ? Colors.green : Colors.orange,
+                    Icons.event_available_rounded,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          DateFormat('EEEE, dd MMMM yyyy').format(selectedDate),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          'Filtered by selected date',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                    tooltip: 'Change Date',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _pickHistoryDate(context, ref, selectedDate),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Clear Date Filter (Show All)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      ref.read(productionHistoryDateFilterProvider.notifier).setDate(null);
+                      ref.invalidate(productionListProvider);
+                    },
                   ),
                 ],
               ),
+            ),
+          ),
+        const Divider(height: 1),
+        Expanded(
+          child: historyAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) =>
+                EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            data: (records) {
+              if (records.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.precision_manufacturing_outlined,
+                        size: 48,
+                        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        selectedDate != null
+                            ? 'No production records on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                            : 'No production records created yet.',
+                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      if (selectedDate != null) ...[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            ref
+                                .read(productionHistoryDateFilterProvider.notifier)
+                                .setDate(null);
+                            ref.invalidate(productionListProvider);
+                          },
+                          icon: const Icon(Icons.clear, size: 16),
+                          label: const Text('Show All Records'),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }
+
+              // Group records by shift
+              final groupedByShift = <String, List<Map<String, dynamic>>>{};
+              for (final r in records) {
+                final rawShift = (r['shift_id'] as String?)?.trim().toUpperCase() ?? '';
+                final shiftKey = rawShift.contains('B')
+                    ? 'Shift B'
+                    : (rawShift.contains('C')
+                        ? 'Shift C'
+                        : (rawShift.contains('A') ? 'Shift A' : (rawShift.isNotEmpty ? 'Shift $rawShift' : 'Shift A')));
+                groupedByShift.putIfAbsent(shiftKey, () => []).add(r);
+              }
+
+              final sortedShiftKeys = groupedByShift.keys.toList()
+                ..sort((a, b) {
+                  int order(String k) {
+                    if (k == 'Shift A') return 1;
+                    if (k == 'Shift B') return 2;
+                    if (k == 'Shift C') return 3;
+                    return 4;
+                  }
+                  return order(a).compareTo(order(b));
+                });
+
+              final partTotals = selectedDate != null
+                  ? _calculatePartGoodTotals(
+                      records,
+                      flow,
+                      machines: machinesAsync.value,
+                    )
+                  : <String, int>{};
+
+              return Stack(
+                children: [
+                  ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      8,
+                      12,
+                      selectedDate != null && partTotals.isNotEmpty ? 110 : 20,
+                    ),
+                    children: [
+                      for (final shiftKey in sortedShiftKeys) ...[
+                        _buildShiftSectionHeader(
+                          context,
+                          shiftKey: shiftKey,
+                          count: groupedByShift[shiftKey]!.length,
+                          color: _shiftHeaderColor(shiftKey),
+                        ),
+                        for (final r in groupedByShift[shiftKey]!)
+                          _buildHistoryRecordCard(context, r, theme),
+                        const SizedBox(height: 8),
+                      ],
+                    ],
+                  ),
+                  if (selectedDate != null && partTotals.isNotEmpty)
+                    Positioned(
+                      bottom: 16,
+                      right: 16,
+                      child: _buildPartGoodSummaryBox(context, partTotals, theme),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickHistoryDate(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime? current,
+  ) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? now,
+      firstDate: DateTime(2023),
+      lastDate: now.add(const Duration(days: 1)),
+    );
+    if (picked != null) {
+      ref.read(productionHistoryDateFilterProvider.notifier).setDate(picked);
+      ref.invalidate(productionListProvider);
+    }
+  }
+
+  Color _shiftHeaderColor(String shift) {
+    if (shift.contains('A')) return Colors.blue.shade700;
+    if (shift.contains('B')) return Colors.indigo.shade700;
+    if (shift.contains('C')) return Colors.purple.shade700;
+    return Colors.teal.shade700;
+  }
+
+  Widget _buildShiftSectionHeader(
+    BuildContext context, {
+    required String shiftKey,
+    required int count,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.schedule, size: 15, color: color),
+            const SizedBox(width: 6),
+            Text(
+              shiftKey,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: color,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count ${count == 1 ? 'record' : 'records'}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, int> _calculatePartGoodTotals(
+    List<Map<String, dynamic>> records,
+    ProductionFlowConfig flow, {
+    List<Map<String, dynamic>>? machines,
+  }) =>
+      calculatePartGoodTotals(records, flow, machines: machines);
+
+  Widget _buildPartGoodSummaryBox(
+    BuildContext context,
+    Map<String, int> partTotals,
+    ThemeData theme,
+  ) {
+    return Material(
+      elevation: 6,
+      shadowColor: Colors.black38,
+      borderRadius: BorderRadius.circular(12),
+      color: theme.colorScheme.surface,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 220, minWidth: 130),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.teal.shade600,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle_outline, size: 14, color: Colors.teal),
+                const SizedBox(width: 5),
+                Text(
+                  'Total Good PCS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 8, thickness: 1),
+            ...partTotals.entries.map((e) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      '${e.key} : ',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    '${e.value}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.teal,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistoryRecordCard(
+    BuildContext context,
+    Map<String, dynamic> r,
+    ThemeData theme,
+  ) {
+    final isSynced = r['sync_status'] == 'synced';
+    final goodQty = (r['good_qty'] as num?)?.toInt() ?? 0;
+    final prodQty = (r['production_qty'] as num?)?.toInt() ?? 0;
+    final rejQty = (r['bp_reject_qty'] as num?)?.toInt() ?? 0;
+    final remarks = r['remarks'] as String?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: EntryInfoSurface(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.qr_code_2, size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    r['batch_number'] ?? '—',
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (r['machine_status_id'] == 'Running' ? Colors.green : Colors.orange).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    r['machine_status_id'] ?? 'Running',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: r['machine_status_id'] == 'Running' ? Colors.green.shade800 : Colors.orange.shade900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                  size: 16,
+                  color: isSynced ? Colors.green : Colors.orange,
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  tooltip: 'Edit quantity / details',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _showEditHistoryModal(r),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  tooltip: 'Delete & revert stock',
+                  visualDensity: VisualDensity.compact,
+                  color: Colors.red.shade400,
+                  onPressed: () => _confirmDeleteHistoryRecord(r),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${r['part_code']} · ${r['machine_name']} · ${r['operator_name'] ?? '—'}',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Icon(Icons.calendar_today_outlined, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Text(
+                  '${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)} · Shift ${r['shift_id'] ?? '—'}',
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            if (remarks != null && remarks.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.notes, size: 12, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      remarks,
+                      style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Input', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
+                        Text('$prodQty PCS', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Good (OK)', style: TextStyle(fontSize: 10, color: Colors.teal)),
+                        Text('$goodQty PCS', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.teal)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: (rejQty > 0 ? Colors.red : Colors.grey).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Reject', style: TextStyle(fontSize: 10, color: rejQty > 0 ? Colors.red : Colors.grey)),
+                        Text('$rejQty PCS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: rejQty > 0 ? Colors.red : Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEditHistoryModal(Map<String, dynamic> record) async {
+    final operators = ref.read(operatorsProvider).value ?? [];
+    final currentProd = (record['production_qty'] as num?)?.toDouble() ?? 0.0;
+    final currentRej = (record['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+
+    String localOperatorId = record['operator_id'] as String? ?? (operators.isNotEmpty ? operators.first['id'] as String : '');
+    String localShiftId = record['shift_id'] as String? ?? 'A';
+    String localStatus = record['machine_status_id'] as String? ?? 'Running';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _MachineEntryControllerScope(
+        initialProductionQty: currentProd.toInt().toString(),
+        initialRejectQty: currentRej.toInt().toString(),
+        initialRemarks: record['remarks'] as String? ?? '',
+        builder: (prodCtrl, rejectCtrl, remarksCtrl) => StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final prodVal = double.tryParse(prodCtrl.text) ?? 0.0;
+            final rejVal = double.tryParse(rejectCtrl.text) ?? 0.0;
+            final goodVal = (prodVal - rejVal).clamp(0, double.infinity);
+
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Edit Production Record',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              '${record['batch_number']} · ${record['machine_name']}',
+                              style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    const SizedBox(height: 10),
+
+                    // Operator dropdown
+                    if (operators.isNotEmpty) ...[
+                      AppDropdown<String>(
+                        label: 'Operator Name',
+                        isRequired: true,
+                        prefixIcon: const Icon(Icons.person_outline),
+                        value: localOperatorId.isNotEmpty ? localOperatorId : operators.first['id'] as String,
+                        items: operators.map((o) => DropdownMenuItem(value: o['id'] as String, child: Text(o['name'] as String))).toList(),
+                        onChanged: (v) {
+                          if (v != null) setModalState(() => localOperatorId = v);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // Shift selection
+                    SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(value: 'A', label: Text('Shift A')),
+                        ButtonSegment(value: 'B', label: Text('Shift B')),
+                        ButtonSegment(value: 'C', label: Text('Shift C')),
+                      ],
+                      selected: {localShiftId},
+                      onSelectionChanged: (value) => setModalState(() => localShiftId = value.first),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Machine Status
+                    AppDropdown<String>(
+                      label: 'Machine Status',
+                      isRequired: true,
+                      prefixIcon: const Icon(Icons.build_circle_outlined),
+                      value: localStatus,
+                      items: kMachineStatuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                      onChanged: (v) => setModalState(() => localStatus = v ?? 'Running'),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Input Quantity
+                    TextFormField(
+                      controller: prodCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Input Quantity (PCS)',
+                        prefixIcon: Icon(Icons.input_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setModalState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Reject Quantity
+                    TextFormField(
+                      controller: rejectCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Reject Quantity (PCS)',
+                        errorText: rejVal > prodVal ? 'Reject cannot exceed input quantity' : null,
+                        prefixIcon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setModalState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Calculated Good Qty
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.teal.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_outline, color: Colors.teal, size: 22),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Recalculated Good Output:',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                          ),
+                          Text(
+                            '${goodVal.toInt()} PCS',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Remarks
+                    TextFormField(
+                      controller: remarksCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Remarks / Notes (optional)',
+                        prefixIcon: Icon(Icons.notes_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Submit
+                    FilledButton(
+                      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      onPressed: () async {
+                        final newProd = double.tryParse(prodCtrl.text) ?? 0.0;
+                        final newRej = double.tryParse(rejectCtrl.text) ?? 0.0;
+                        if (newProd <= 0) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Please enter a valid production quantity (> 0).')),
+                          );
+                          return;
+                        }
+                        if (newRej > newProd) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Reject quantity cannot exceed input quantity.')),
+                          );
+                          return;
+                        }
+
+                        final user = ref.read(currentUserProvider).value;
+                        final repo = ref.read(productionRepositoryProvider);
+                        final result = await repo.updateProductionRecord(
+                          productionId: record['id'] as String,
+                          newProductionQty: newProd,
+                          newRejectQty: newRej,
+                          operatorId: localOperatorId,
+                          shiftId: localShiftId,
+                          machineStatus: localStatus,
+                          remarks: remarksCtrl.text.trim(),
+                          userId: user?.id ?? 'unknown',
+                        );
+
+                        if (!ctx.mounted) return;
+                        if (!result.success) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text(result.error), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+
+                        Navigator.pop(ctx);
+                        ref.invalidate(productionListProvider);
+                        ref.invalidate(wipBatchesProvider);
+                        if (_partId != null) ref.invalidate(productionRawMaterialProvider(_partId!));
+
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Production record updated and stock adjusted successfully.'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      },
+                      child: const Text('Save Changes & Adjust Stock'),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
-        );
-      },
+        ),
+      ),
     );
+  }
+
+  Future<void> _confirmDeleteHistoryRecord(Map<String, dynamic> record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Delete Entry?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Batch: ${record['batch_number']}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text('Machine: ${record['machine_name']} (${record['date']})'),
+            const SizedBox(height: 12),
+            const Text(
+              'Deleting this entry will automatically revert stock movements:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text('• Return ${(record['production_qty'] as num).toInt()} PCS back to input stock'),
+            Text('• Remove ${(record['good_qty'] as num).toInt()} PCS from output stock'),
+            if ((record['bp_reject_qty'] as num) > 0)
+              Text('• Remove ${(record['bp_reject_qty'] as num).toInt()} PCS from rejected stock'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('Delete & Revert Stock'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final user = ref.read(currentUserProvider).value;
+      final repo = ref.read(productionRepositoryProvider);
+      final result = await repo.deleteProductionRecord(
+        productionId: record['id'] as String,
+        userId: user?.id ?? 'unknown',
+        reason: 'Operator deleted production entry from history',
+      );
+
+      if (!mounted) return;
+      if (!result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.error), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      ref.invalidate(productionListProvider);
+      ref.invalidate(wipBatchesProvider);
+      if (_partId != null) ref.invalidate(productionRawMaterialProvider(_partId!));
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Production entry deleted and stock movements reverted successfully.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 }
 
@@ -1678,4 +2597,154 @@ class _MachineEntryControllerScopeState
     _rejectController,
     _remarksController,
   );
+}
+
+/// Calculates the total finished good pieces for each part on a selected date.
+/// Strictly counts ONLY output from the final machine in the production routing,
+/// because intermediate machines only produce WIP that is not yet ready for dispatch.
+Map<String, int> calculatePartGoodTotals(
+  List<Map<String, dynamic>> records,
+  ProductionFlowConfig flow, {
+  List<Map<String, dynamic>>? machines,
+}) {
+  final partTotals = <String, int>{};
+  final byPart = <String, List<Map<String, dynamic>>>{};
+  for (final r in records) {
+    final partKey = (r['part_code'] as String?)?.trim().isNotEmpty == true
+        ? (r['part_code'] as String).trim()
+        : ((r['part_name'] as String?)?.trim().isNotEmpty == true
+            ? (r['part_name'] as String).trim()
+            : 'Unknown');
+    byPart.putIfAbsent(partKey, () => []).add(r);
+  }
+
+  // 1. Identify all identifiers for the terminal (final) machine stage:
+  // - Machine IDs (handles multiple entries / UUID syncs)
+  // - Machine Name (e.g. 'End Forming')
+  // - Sequence Order (e.g. 3)
+  final finalMachineIds = <String>{};
+  String? finalMachineName;
+  int? finalSequenceOrder;
+
+  // From flow config
+  if (flow.requiredMachineIds.isNotEmpty) {
+    final lastId = flow.requiredMachineIds.last.trim();
+    finalMachineIds.add(lastId);
+
+    if (machines != null && machines.isNotEmpty) {
+      Map<String, dynamic>? match;
+      for (final m in machines) {
+        if ((m['id'] as String?)?.trim() == lastId) {
+          match = m;
+          break;
+        }
+      }
+      if (match != null) {
+        finalMachineName = (match['name'] as String?)?.trim();
+        finalSequenceOrder = (match['sequence_order'] as num?)?.toInt();
+      }
+    }
+  }
+
+  // From active machines list (highest sequence order is final machine)
+  if (machines != null && machines.isNotEmpty) {
+    final active = machines.where((m) => m['active'] != 0).toList()
+      ..sort((a, b) => ((a['sequence_order'] as num?)?.toInt() ?? 0)
+          .compareTo((b['sequence_order'] as num?)?.toInt() ?? 0),);
+    if (active.isNotEmpty) {
+      final lastMachine = active.last;
+      finalSequenceOrder ??= (lastMachine['sequence_order'] as num?)?.toInt();
+      finalMachineName ??= (lastMachine['name'] as String?)?.trim();
+      final id = (lastMachine['id'] as String?)?.trim();
+      if (id != null && id.isNotEmpty) finalMachineIds.add(id);
+    }
+
+    // Include any machine sharing the final machine name or highest sequence order
+    for (final m in machines) {
+      final mName = (m['name'] as String?)?.trim();
+      final mSeq = (m['sequence_order'] as num?)?.toInt();
+      final mId = (m['id'] as String?)?.trim();
+      if (mId == null || mId.isEmpty) continue;
+
+      final isMatchByName = finalMachineName != null &&
+          finalMachineName.isNotEmpty &&
+          mName != null &&
+          mName.toLowerCase() == finalMachineName.toLowerCase();
+      final isMatchBySeq = finalSequenceOrder != null &&
+          finalSequenceOrder > 1 &&
+          mSeq == finalSequenceOrder;
+
+      if (isMatchByName || isMatchBySeq) {
+        finalMachineIds.add(mId);
+      }
+    }
+  }
+
+  // Fallback from records ONLY IF finalMachineIds is empty
+  if (finalMachineIds.isEmpty && (finalSequenceOrder == null || finalSequenceOrder <= 1)) {
+    int maxSeq = -1;
+    for (final r in records) {
+      final seq = (r['sequence_order'] as num?)?.toInt() ?? 0;
+      if (seq > maxSeq && seq > 1) {
+        maxSeq = seq;
+        finalSequenceOrder = seq;
+        finalMachineName = (r['machine_name'] as String?)?.trim();
+        final mId = (r['machine_id'] as String?)?.trim();
+        if (mId != null && mId.isNotEmpty) {
+          finalMachineIds.clear();
+          finalMachineIds.add(mId);
+        }
+      }
+    }
+  }
+
+  final normFinalName = finalMachineName?.trim().toLowerCase();
+
+  for (final entry in byPart.entries) {
+    final partRecords = entry.value;
+    int total = 0;
+    for (final r in partRecords) {
+      final mId = (r['machine_id'] as String?)?.trim();
+      final mName = (r['machine_name'] as String?)?.trim().toLowerCase();
+      final mSeq = (r['sequence_order'] as num?)?.toInt();
+
+      // Check if this record belongs to the final machine stage
+      bool isFinal = false;
+      if (finalMachineIds.isNotEmpty && mId != null && finalMachineIds.contains(mId)) {
+        isFinal = true;
+      } else if (normFinalName != null &&
+          normFinalName.isNotEmpty &&
+          mName != null &&
+          mName == normFinalName) {
+        isFinal = true;
+      } else if (finalSequenceOrder != null &&
+          finalSequenceOrder > 1 &&
+          mSeq == finalSequenceOrder) {
+        isFinal = true;
+      } else if (mName != null && mName.contains('end forming')) {
+        // Industry standard safety: End Forming is always the terminal stage
+        isFinal = true;
+      } else if (finalMachineIds.isEmpty && (finalSequenceOrder == null || finalSequenceOrder <= 1)) {
+        // Single machine direct production mode
+        isFinal = true;
+      }
+
+      if (isFinal) {
+        total += (r['good_qty'] as num?)?.toInt() ?? 0;
+      }
+    }
+    if (total > 0) {
+      partTotals[entry.key] = total;
+    }
+  }
+
+  // If no part had final machine output on this date (e.g. only intermediate WIP ran),
+  // show 0 for the parts worked on so the user clearly sees 0 finished pieces.
+  if (partTotals.isEmpty && byPart.isNotEmpty) {
+    for (final key in byPart.keys) {
+      partTotals[key] = 0;
+    }
+  }
+
+  return partTotals;
 }

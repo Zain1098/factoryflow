@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/stock_stages.dart';
 import '../../core/database/database_service.dart';
 import '../../core/providers/production_flow_provider.dart';
+import '../../core/widgets/shared_widgets.dart';
 
 // ─── Date Range Model ─────────────────────────────────────────────────────────
 
@@ -28,6 +29,11 @@ class DateRange {
     return DateRange(from, now);
   }
 
+  static DateRange yesterday() {
+    final y = DateTime.now().subtract(const Duration(days: 1));
+    return DateRange(y, y);
+  }
+
   static DateRange thisMonth() {
     final now = DateTime.now();
     return DateRange(DateTime(now.year, now.month, 1), now);
@@ -38,6 +44,17 @@ class DateRange {
     return DateRange(now.subtract(const Duration(days: 29)), now);
   }
 }
+
+// ─── Shift Filter Provider ───────────────────────────────────────────────────
+/// null = All Shifts, 'A' = Shift A, 'B' = Shift B, 'C' = Shift C
+class _ShiftFilterNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void set(String? s) => state = s;
+}
+
+final reportShiftFilterProvider =
+    NotifierProvider<_ShiftFilterNotifier, String?>(_ShiftFilterNotifier.new);
 
 // ─── Date Range Provider ──────────────────────────────────────────────────────
 
@@ -61,6 +78,13 @@ class DailyProductionRow {
     required this.target,
     required this.efficiency,
     required this.rejectPct,
+    this.shiftAGood = 0,
+    this.shiftBGood = 0,
+    this.shiftCGood = 0,
+    this.shiftAProd = 0,
+    this.shiftBProd = 0,
+    this.shiftCProd = 0,
+    this.downtimeMinutes = 0,
   });
   final String date;
   final double totalProduction;
@@ -69,6 +93,13 @@ class DailyProductionRow {
   final double target;
   final double efficiency;
   final double rejectPct;
+  final double shiftAGood;
+  final double shiftBGood;
+  final double shiftCGood;
+  final double shiftAProd;
+  final double shiftBProd;
+  final double shiftCProd;
+  final int downtimeMinutes;
 }
 
 final dailyProductionReportProvider =
@@ -76,65 +107,191 @@ final dailyProductionReportProvider =
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
   final flow = ref.watch(productionFlowProvider);
+  final shiftFilter = ref.watch(reportShiftFilterProvider);
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) return [];
+
   final finalMachineId = flow.isMultiStage && flow.requiredMachineIds.isNotEmpty
       ? flow.requiredMachineIds.last
       : null;
 
-  final rows = db.db.select(
+  // 1. Fetch raw production entries within date range
+  final prodRows = db.db.select(
     '''
     SELECT
       p.date,
-       COALESCE(SUM(CASE WHEN ? = 1 THEN p.production_qty
-         WHEN (? IS NULL OR p.machine_id = ?)
-         THEN p.production_qty ELSE 0 END), 0) AS total_prod,
-       COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
-       COALESCE(SUM(CASE WHEN ? = 1 THEN p.good_qty
-         WHEN (? IS NULL OR p.machine_id = ?)
-         THEN p.good_qty ELSE 0 END), 0) AS good,
-      COALESCE(t.target, 0) AS target
+      p.machine_id,
+      p.shift_id,
+      s.name AS shift_name,
+      COALESCE(p.production_qty, 0) AS prod_qty,
+      COALESCE(p.bp_reject_qty, 0) AS rej_qty,
+      COALESCE(p.good_qty, p.production_qty - COALESCE(p.bp_reject_qty, 0)) AS good_qty
     FROM productions p
-    LEFT JOIN (
-      SELECT day_of_week, SUM(target_qty) AS target
-      FROM target_master
-      WHERE factory_id = ?
-      GROUP BY day_of_week
-    ) t ON t.day_of_week = (CAST(strftime('%w', p.date) AS INTEGER))
+    LEFT JOIN shifts s ON s.id = p.shift_id AND s.factory_id = p.factory_id
     WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
-    GROUP BY p.date
     ORDER BY p.date DESC
-  ''',
-    [
-      flow.countsAllStageOutput ? 1 : 0,
-      finalMachineId,
-      finalMachineId,
-      flow.countsAllStageOutput ? 1 : 0,
-      finalMachineId,
-      finalMachineId,
-      factoryId,
-      factoryId,
-      range.fromStr,
-      range.toStr,
-    ],
+    ''',
+    [factoryId, range.fromStr, range.toStr],
   );
 
-  return rows.map((r) {
-    final prod = (r['total_prod'] as num).toDouble();
-    final bp = (r['bp_rej'] as num).toDouble();
-    final good = (r['good'] as num).toDouble();
-    final target = (r['target'] as num).toDouble();
+  // 2. Fetch downtime grouped by date
+  final dtRows = db.db.select(
+    '''
+    SELECT date, COALESCE(SUM(duration_minutes), 0) AS dt_mins
+    FROM machine_downtimes
+    WHERE factory_id = ? AND date BETWEEN ? AND ?
+    GROUP BY date
+    ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
+  final downtimeMap = <String, int>{};
+  for (final r in dtRows) {
+    downtimeMap[r['date'] as String] = (r['dt_mins'] as num).toInt();
+  }
+
+  // 3. Fetch day-of-week targets
+  final targetRows = db.db.select(
+    '''
+    SELECT day_of_week, SUM(target_qty) AS target
+    FROM target_master
+    WHERE factory_id = ?
+    GROUP BY day_of_week
+    ''',
+    [factoryId],
+  );
+  final targetMap = <int, double>{};
+  for (final r in targetRows) {
+    targetMap[(r['day_of_week'] as num).toInt()] =
+        (r['target'] as num).toDouble();
+  }
+
+  // 4. Group production entries by date and calculate totals
+  final grouped = <String, _DailyAccumulator>{};
+
+  // Ensure dates with downtime are also included if relevant
+  for (final d in downtimeMap.keys) {
+    grouped.putIfAbsent(d, () => _DailyAccumulator(date: d));
+  }
+
+  for (final row in prodRows) {
+    final date = row['date'] as String;
+    final shiftStr = (row['shift_name'] as String?) ??
+        (row['shift_id'] as String?) ??
+        '';
+    final machineId = row['machine_id'] as String?;
+    final prodQty = (row['prod_qty'] as num).toDouble();
+    final rejQty = (row['rej_qty'] as num).toDouble();
+    final goodQty = (row['good_qty'] as num).toDouble();
+
+    // Check shift filter: if user filtered by A, B, or C
+    if (shiftFilter != null && shiftFilter.isNotEmpty) {
+      if (!shiftStr.toUpperCase().contains(shiftFilter.toUpperCase())) {
+        continue;
+      }
+    }
+
+    final acc = grouped.putIfAbsent(date, () => _DailyAccumulator(date: date));
+
+    // Floor production input and rejections always reflect actual floor activity
+    acc.totalProd += prodQty;
+    acc.bpReject += rejQty;
+    acc.stageGoodQty += goodQty;
+
+    // Determine if this entry counts toward final finished good output
+    final countsAsFinal =
+        flow.countsAllStageOutput || finalMachineId == null || machineId == finalMachineId;
+    if (countsAsFinal) {
+      acc.finalGoodQty += goodQty;
+    }
+
+    // Shift breakdown
+    final upperShift = shiftStr.toUpperCase();
+    if (upperShift.contains('B') || shiftStr == 'B') {
+      acc.shiftBProd += prodQty;
+      acc.shiftBStageGood += goodQty;
+      if (countsAsFinal) acc.shiftBFinalGood += goodQty;
+    } else if (upperShift.contains('C') || shiftStr == 'C') {
+      acc.shiftCProd += prodQty;
+      acc.shiftCStageGood += goodQty;
+      if (countsAsFinal) acc.shiftCFinalGood += goodQty;
+    } else {
+      // Shift A or unassigned / standard shift
+      acc.shiftAProd += prodQty;
+      acc.shiftAStageGood += goodQty;
+      if (countsAsFinal) acc.shiftAFinalGood += goodQty;
+    }
+  }
+
+  // 5. Convert accumulated maps to DailyProductionRow sorted descending
+  final sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+  return sortedDates.map((d) {
+    final acc = grouped[d]!;
+    final dtMins = downtimeMap[d] ?? 0;
+
+    // If final stage output exists on this date, use it; otherwise fallback to
+    // stageGoodQty so intermediate machine work is never reported as 0.
+    final effectiveGood = acc.finalGoodQty > 0 ? acc.finalGoodQty : acc.stageGoodQty;
+    final effShiftAGood = acc.shiftAFinalGood > 0 ? acc.shiftAFinalGood : acc.shiftAStageGood;
+    final effShiftBGood = acc.shiftBFinalGood > 0 ? acc.shiftBFinalGood : acc.shiftBStageGood;
+    final effShiftCGood = acc.shiftCFinalGood > 0 ? acc.shiftCFinalGood : acc.shiftCStageGood;
+
+    // Calculate target for this weekday: SQLite strftime('%w') 0=Sunday, 6=Saturday.
+    // In Dart: DateTime.weekday gives 1=Monday...7=Sunday.
+    double target = 0.0;
+    try {
+      final parsed = DateTime.parse(d);
+      final sqliteDow = parsed.weekday % 7; // Sunday (7) becomes 0
+      target = targetMap[sqliteDow] ?? 0.0;
+    } catch (_) {}
+
+    final efficiency =
+        target > 0 ? (effectiveGood / target * 100).clamp(0.0, 999.0) : 0.0;
+    final rejectPct =
+        acc.totalProd > 0 ? (acc.bpReject / acc.totalProd * 100) : 0.0;
+
     return DailyProductionRow(
-      date: r['date'] as String,
-      totalProduction: prod,
-      bpReject: bp,
-      goodQty: good,
+      date: d,
+      totalProduction: acc.totalProd,
+      bpReject: acc.bpReject,
+      goodQty: effectiveGood,
       target: target,
-      efficiency: target > 0 ? (good / target * 100).clamp(0, 999) : 0,
-      rejectPct: prod > 0 ? (bp / prod * 100) : 0,
+      efficiency: efficiency,
+      rejectPct: rejectPct,
+      shiftAGood: effShiftAGood,
+      shiftBGood: effShiftBGood,
+      shiftCGood: effShiftCGood,
+      shiftAProd: acc.shiftAProd,
+      shiftBProd: acc.shiftBProd,
+      shiftCProd: acc.shiftCProd,
+      downtimeMinutes: dtMins,
     );
+  }).where((r) {
+    // If shift filtered, only return rows that have activity or downtime
+    if (shiftFilter != null && shiftFilter.isNotEmpty) {
+      return r.totalProduction > 0 || r.bpReject > 0 || r.goodQty > 0;
+    }
+    return true;
   }).toList();
 });
+
+class _DailyAccumulator {
+  _DailyAccumulator({required this.date});
+  final String date;
+  double totalProd = 0;
+  double bpReject = 0;
+  double finalGoodQty = 0;
+  double stageGoodQty = 0;
+  double shiftAFinalGood = 0;
+  double shiftAStageGood = 0;
+  double shiftBFinalGood = 0;
+  double shiftBStageGood = 0;
+  double shiftCFinalGood = 0;
+  double shiftCStageGood = 0;
+  double shiftAProd = 0;
+  double shiftBProd = 0;
+  double shiftCProd = 0;
+}
 
 // ─── 2. Machine-wise Report ───────────────────────────────────────────────────
 
@@ -675,6 +832,20 @@ class LiveStockRow {
   final double rtvStock;
   final double rtvAtVendor;
   final double totalStock;
+
+  /// Combined BP Rejection (Machine Scrap + Inspection Rejection)
+  double get totalCombinedBpRejection => productionRejected + bpRejected;
+
+  /// Group 1: Total BP Pipeline
+  double get totalBpGroup =>
+      rawMaterial + productionRejected + bpStock + bpHold + bpRejected;
+
+  /// Group 2: Total AP Pipeline
+  double get totalApGroup =>
+      pendingAp + approvedAp + apRejected + rtvStock;
+
+  /// Group 3: Total With Vendor (Subcontracting + Rework)
+  double get totalVendorGroup => atFaco + rtvAtVendor;
 }
 
 final liveStockReportProvider =
@@ -971,5 +1142,149 @@ final holdMaterialReportProvider =
   return HoldMaterialReportData(
     bpHoldList: bpHoldList,
     rtvHoldList: rtvHoldList,
+  );
+});
+
+// ─── 12. Vendor Movement (Sent & Received Detailed Logs) ──────────────────────
+
+class VendorDispatchRow {
+  const VendorDispatchRow({
+    required this.id,
+    required this.date,
+    required this.time,
+    required this.partName,
+    required this.vendorName,
+    required this.qty,
+    required this.challanNumber,
+    required this.batchNumber,
+    required this.remarks,
+  });
+  final String id;
+  final String date;
+  final String time;
+  final String partName;
+  final String vendorName;
+  final double qty;
+  final String challanNumber;
+  final String batchNumber;
+  final String remarks;
+}
+
+class VendorReceiveRow {
+  const VendorReceiveRow({
+    required this.id,
+    required this.date,
+    required this.partName,
+    required this.vendorName,
+    required this.qtyReceived,
+    required this.supplierChallan,
+    required this.batchNumber,
+    required this.remarks,
+    required this.dispatchChallan,
+  });
+  final String id;
+  final String date;
+  final String partName;
+  final String vendorName;
+  final double qtyReceived;
+  final String supplierChallan;
+  final String batchNumber;
+  final String remarks;
+  final String dispatchChallan;
+}
+
+class VendorMovementData {
+  const VendorMovementData({
+    required this.dispatches,
+    required this.receipts,
+  });
+  final List<VendorDispatchRow> dispatches;
+  final List<VendorReceiveRow> receipts;
+
+  double get totalDispatched =>
+      dispatches.fold(0.0, (sum, item) => sum + item.qty);
+  double get totalReceived =>
+      receipts.fold(0.0, (sum, item) => sum + item.qtyReceived);
+  double get netPending => (totalDispatched - totalReceived).clamp(0, double.infinity);
+}
+
+final vendorMovementProvider =
+    FutureProvider.autoDispose<VendorMovementData>((ref) async {
+  final db = ref.watch(databaseServiceProvider);
+  final range = ref.watch(reportDateRangeProvider);
+  final factoryId = db.activeWorkspaceId.trim();
+  if (factoryId.isEmpty) {
+    return const VendorMovementData(dispatches: [], receipts: []);
+  }
+
+  // 1. Dispatches to Vendor
+  final dRows = db.db.select(
+    '''
+    SELECT df.id, df.date, df.time, pt.name AS part_name, v.name AS vendor_name,
+           df.qty, COALESCE(df.challan_number, '') AS challan_number,
+           COALESCE(df.batch_number, '') AS batch_number,
+           COALESCE(df.remarks, '') AS remarks
+    FROM dispatch_to_facos df
+    LEFT JOIN parts pt ON pt.id = df.part_id AND pt.factory_id = df.factory_id
+    LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
+    WHERE df.factory_id = ? AND df.date BETWEEN ? AND ?
+    ORDER BY df.date DESC, df.time DESC
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
+
+  final dispatches = dRows
+      .map(
+        (r) => VendorDispatchRow(
+          id: r['id'] as String,
+          date: r['date'] as String,
+          time: formatTimeWithoutSeconds(r['time'] as String?),
+          partName: r['part_name'] as String? ?? '—',
+          vendorName: r['vendor_name'] as String? ?? '—',
+          qty: (r['qty'] as num).toDouble(),
+          challanNumber: r['challan_number'] as String,
+          batchNumber: r['batch_number'] as String,
+          remarks: r['remarks'] as String,
+        ),
+      )
+      .toList();
+
+  // 2. Receipts from Vendor
+  final rRows = db.db.select(
+    '''
+    SELECT rf.id, rf.date, pt.name AS part_name, v.name AS vendor_name,
+           rf.qty_received, COALESCE(rf.supplier_challan, '') AS supplier_challan,
+           COALESCE(rf.batch_number, '') AS batch_number,
+           COALESCE(rf.remarks, '') AS remarks,
+           COALESCE(df.challan_number, '') AS dispatch_challan
+    FROM receive_from_facos rf
+    LEFT JOIN parts pt ON pt.id = rf.part_id AND pt.factory_id = rf.factory_id
+    LEFT JOIN dispatch_to_facos df ON df.id = rf.dispatch_ref_id AND df.factory_id = rf.factory_id
+    LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
+    WHERE rf.factory_id = ? AND rf.date BETWEEN ? AND ?
+    ORDER BY rf.date DESC
+  ''',
+    [factoryId, range.fromStr, range.toStr],
+  );
+
+  final receipts = rRows
+      .map(
+        (r) => VendorReceiveRow(
+          id: r['id'] as String,
+          date: r['date'] as String,
+          partName: r['part_name'] as String? ?? '—',
+          vendorName: r['vendor_name'] as String? ?? '—',
+          qtyReceived: (r['qty_received'] as num).toDouble(),
+          supplierChallan: r['supplier_challan'] as String,
+          batchNumber: r['batch_number'] as String,
+          remarks: r['remarks'] as String,
+          dispatchChallan: r['dispatch_challan'] as String,
+        ),
+      )
+      .toList();
+
+  return VendorMovementData(
+    dispatches: dispatches,
+    receipts: receipts,
   );
 });

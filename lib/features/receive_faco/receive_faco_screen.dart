@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/barcode_scanner_view.dart';
@@ -36,6 +37,9 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -130,11 +134,77 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     });
   }
 
+  Future<void> _pickHistoryDate(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime? current,
+  ) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? now,
+      firstDate: DateTime(2023),
+      lastDate: now.add(const Duration(days: 1)),
+    );
+    if (picked != null) {
+      ref.read(receiveFacoHistoryDateFilterProvider.notifier).setDate(picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedDate = ref.watch(receiveFacoHistoryDateFilterProvider);
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Receive from Vendor'),
+        actions: [
+          if (_tabController.index == 1) ...[
+            if (selectedDate != null)
+              IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Clear Date Filter',
+                onPressed: () {
+                  ref
+                      .read(receiveFacoHistoryDateFilterProvider.notifier)
+                      .setDate(null);
+                },
+              ),
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    selectedDate != null
+                        ? Icons.calendar_month
+                        : Icons.calendar_month_outlined,
+                    color: selectedDate != null
+                        ? theme.colorScheme.primary
+                        : null,
+                  ),
+                  tooltip:
+                      selectedDate != null ? 'Change Date' : 'Filter by Date',
+                  onPressed: () =>
+                      _pickHistoryDate(context, ref, selectedDate),
+                ),
+                if (selectedDate != null)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -335,66 +405,893 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   }
 
   Widget _buildHistory() {
-    final list = ref.watch(receiveFacoListProvider);
-    return list.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) =>
-          EmptyState(message: 'Error: $e', icon: Icons.error_outline),
-      data: (records) {
-        if (records.isEmpty) {
-          return const EmptyState(
-            message: 'No vendor receipts yet.',
-            icon: Icons.move_to_inbox_outlined,
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: records.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, i) {
-            final r = records[i];
-            final shortage = (r['shortage_flag'] as int?) == 1;
-            final isSynced = r['sync_status'] == 'synced';
-            return ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.purple.withValues(alpha: 0.12),
-                child: const Icon(Icons.move_to_inbox,
-                    color: Colors.purple, size: 20,),
+    final listAsync = ref.watch(receiveFacoListProvider);
+    final selectedDate = ref.watch(receiveFacoHistoryDateFilterProvider);
+    final theme = Theme.of(context);
+    final user = ref.watch(currentUserProvider).value;
+
+    return Column(
+      children: [
+        if (selectedDate != null) _buildActiveDateBanner(selectedDate, theme),
+        Expanded(
+          child: listAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: EmptyState(
+                  message: 'Error: $e',
+                  icon: Icons.error_outline,
+                ),
               ),
-              title: Text(
-                r['batch_number'] ?? '—',
-                style: const TextStyle(
-                    fontFamily: 'monospace', fontWeight: FontWeight.w600,),
-              ),
-              subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
+            ),
+            data: (records) {
+              if (records.isEmpty) {
+                return Center(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (shortage)
-                        const Icon(Icons.warning_amber,
-                            size: 14, color: Colors.orange,),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${r['qty_received']} PCS',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      Icon(
+                        Icons.move_to_inbox_outlined,
+                        size: 48,
+                        color: theme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.4),
                       ),
+                      const SizedBox(height: 12),
+                      Text(
+                        selectedDate != null
+                            ? 'No vendor receipts on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                            : 'No vendor receipts yet.',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (selectedDate != null) ...[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            ref
+                                .read(
+                                  receiveFacoHistoryDateFilterProvider
+                                      .notifier,
+                                )
+                                .setDate(null);
+                          },
+                          icon: const Icon(Icons.clear, size: 16),
+                          label: const Text('Clear Date Filter'),
+                        ),
+                      ],
                     ],
                   ),
-                  Icon(
-                    isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
-                    size: 14,
-                    color: isSynced ? Colors.green : Colors.orange,
+                );
+              }
+
+              // Calculate part-wise totals
+              final partTotals = <String, double>{};
+              for (final r in records) {
+                final pName = (r['part_name'] as String? ??
+                        r['part_code'] as String? ??
+                        'Unknown')
+                    .trim();
+                final qty = (r['qty_received'] as num?)?.toDouble() ?? 0.0;
+                partTotals[pName] = (partTotals[pName] ?? 0.0) + qty;
+              }
+
+              return Stack(
+                children: [
+                  ListView.separated(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      12,
+                      12,
+                      selectedDate != null && partTotals.isNotEmpty ? 130 : 24,
+                    ),
+                    itemCount: records.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) => _buildReceiptHistoryCard(
+                      context,
+                      records[i],
+                      theme,
+                      user,
+                    ),
+                  ),
+                  if (partTotals.isNotEmpty)
+                    _buildDailyTotalSummaryBox(
+                      partTotals,
+                      selectedDate,
+                      theme,
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActiveDateBanner(DateTime selectedDate, ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.primary.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.calendar_month,
+            size: 20,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  DateFormat('EEEE, dd MMMM yyyy').format(selectedDate),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  'Filtered by selected receipt date',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_calendar_outlined, size: 20),
+            tooltip: 'Change Date',
+            onPressed: () => _pickHistoryDate(context, ref, selectedDate),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            tooltip: 'Clear Filter',
+            onPressed: () {
+              ref
+                  .read(receiveFacoHistoryDateFilterProvider.notifier)
+                  .setDate(null);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReceiptHistoryCard(
+    BuildContext context,
+    Map<String, dynamic> r,
+    ThemeData theme,
+    dynamic user,
+  ) {
+    final batchNum = (r['batch_number'] as String? ?? '').trim();
+    final partCode = (r['part_code'] as String? ?? '—').trim();
+    final partName = (r['part_name'] as String? ?? '').trim();
+    final vendorName = (r['vendor_name'] as String? ?? 'Vendor').trim();
+    final supplierChallan = (r['supplier_challan'] as String?)?.trim();
+    final remarks = (r['remarks'] as String?)?.trim();
+    final dateStr = r['date'] as String? ?? '';
+    final timeStr = formatTimeWithoutSeconds(r['time'] as String?);
+    final qtyReceived = (r['qty_received'] as num?)?.toDouble() ?? 0.0;
+    final dispatchedQty = (r['dispatched_qty'] as num?)?.toDouble();
+    final isShortage = (r['shortage_flag'] as int?) == 1;
+    final isSynced = r['sync_status'] == 'synced';
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Header: Batch & Actions
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    batchNum.isNotEmpty ? batchNum : 'OPEN BATCH',
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                if (isShortage) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 12,
+                          color: Colors.orange,
+                        ),
+                        SizedBox(width: 3),
+                        Text(
+                          'Shortage',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                Icon(
+                  isSynced ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                  size: 16,
+                  color: isSynced ? Colors.green : Colors.orange,
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  tooltip: 'Edit Receipt',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _showEditReceiptModal(context, r),
+                ),
+                const SizedBox(width: 10),
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: Colors.red,
+                  ),
+                  tooltip: 'Delete Receipt',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _confirmDeleteReceipt(context, r),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Part Info & Received Qty
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        partCode,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (partName.isNotEmpty)
+                        Text(
+                          partName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.purple.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '+${qtyReceived == qtyReceived.toInt() ? qtyReceived.toInt() : qtyReceived} PCS',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.purple,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            if (dispatchedQty != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Dispatched: ${dispatchedQty == dispatchedQty.toInt() ? dispatchedQty.toInt() : dispatchedQty} PCS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blueGrey.shade800,
+                      ),
+                    ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ],
+
+            const SizedBox(height: 8),
+
+            // Logistics chips
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _buildInfoBadge(
+                  Icons.calendar_today_outlined,
+                  formatDateTimeLabel(dateStr, timeStr),
+                  Colors.grey,
+                ),
+                if (vendorName.isNotEmpty)
+                  _buildInfoBadge(Icons.business, vendorName, Colors.teal),
+                if (supplierChallan != null && supplierChallan.isNotEmpty)
+                  _buildInfoBadge(
+                    Icons.receipt_outlined,
+                    'Ch: $supplierChallan',
+                    Colors.blueGrey,
+                  ),
+              ],
+            ),
+
+            if (remarks != null && remarks.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Remarks: $remarks',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
+  }
+
+  Widget _buildInfoBadge(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: color is MaterialColor ? color.shade800 : color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailyTotalSummaryBox(
+    Map<String, double> partTotals,
+    DateTime? selectedDate,
+    ThemeData theme,
+  ) {
+    final grandTotal = partTotals.values.fold(0.0, (sum, q) => sum + q);
+
+    return Positioned(
+      right: 12,
+      bottom: 12,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surfaceContainerHigh,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 240),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.colorScheme.primary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.summarize_outlined,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    selectedDate != null
+                        ? 'Total (${DateFormat('dd MMM').format(selectedDate)})'
+                        : 'Total Received',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 8, thickness: 0.5),
+              ...partTotals.entries.take(4).map(
+                    (e) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 1.5),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              e.key,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${e.value == e.value.toInt() ? e.value.toInt() : e.value} PCS',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              if (partTotals.length > 4)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '+${partTotals.length - 4} more parts',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total Received:',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${grandTotal == grandTotal.toInt() ? grandTotal.toInt() : grandTotal} PCS',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditReceiptModal(BuildContext context, Map<String, dynamic> r) {
+    final receiptId = r['id'] as String;
+    final currentQty = (r['qty_received'] as num?)?.toDouble() ?? 0.0;
+    final partCode = r['part_code'] as String? ?? '—';
+    final partName = r['part_name'] as String? ?? '';
+    final batchNum = r['batch_number'] as String? ?? '';
+    final vendorName = r['vendor_name'] as String? ?? 'Vendor';
+
+    final qtyCtrl = TextEditingController(
+      text: currentQty == currentQty.toInt()
+          ? currentQty.toInt().toString()
+          : currentQty.toString(),
+    );
+    final challanCtrl = TextEditingController(
+      text: r['supplier_challan'] as String? ?? '',
+    );
+    final remarksCtrl = TextEditingController(
+      text: r['remarks'] as String? ?? '',
+    );
+
+    double newQty = currentQty;
+    bool isSaving = false;
+    String? modalError;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final qtyDiff = newQty - currentQty;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              left: 16,
+              right: 16,
+              top: 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Edit Vendor Receipt',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '$partCode – $partName ($batchNum)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+
+                  if (modalError != null) ...[
+                    ErrorBanner(modalError!),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Qty Input
+                  TextFormField(
+                    controller: qtyCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Received Quantity (PCS) *',
+                      prefixIcon: const Icon(Icons.numbers_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      setModalState(() {
+                        newQty = double.tryParse(val) ?? currentQty;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Real-time Stock adjustment explanation preview
+                  if (qtyDiff != 0)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: (qtyDiff > 0 ? Colors.purple : Colors.orange)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: (qtyDiff > 0 ? Colors.purple : Colors.orange)
+                              .withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            qtyDiff > 0
+                                ? '▲ Increasing receipt by +${qtyDiff.toInt()} PCS:'
+                                : '▼ Decreasing receipt by ${qtyDiff.toInt()} PCS:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color:
+                                  qtyDiff > 0 ? Colors.purple : Colors.orange,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            qtyDiff > 0
+                                ? '• Moves +${qtyDiff.toInt()} PCS from Vendor Stock ($vendorName) into Pending AP Stock'
+                                : '• Returns ${(-qtyDiff).toInt()} PCS from Pending AP Stock back to Vendor Stock ($vendorName)',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+
+                  // Supplier Challan
+                  TextFormField(
+                    controller: challanCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Supplier Challan Number',
+                      prefixIcon: const Icon(Icons.receipt_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Remarks
+                  TextFormField(
+                    controller: remarksCtrl,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: 'Remarks',
+                      prefixIcon: const Icon(Icons.notes_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final parsedQty = double.tryParse(qtyCtrl.text);
+                            if (parsedQty == null || parsedQty <= 0) {
+                              setModalState(() {
+                                modalError =
+                                    'Enter a valid quantity greater than zero.';
+                              });
+                              return;
+                            }
+
+                            setModalState(() {
+                              isSaving = true;
+                              modalError = null;
+                            });
+
+                            final user = ref.read(currentUserProvider).value;
+                            final repo =
+                                ref.read(receiveFacoRepositoryProvider);
+                            final res = await repo.updateReceiptRecord(
+                              receiptId: receiptId,
+                              newQty: parsedQty,
+                              supplierChallan: challanCtrl.text,
+                              remarks: remarksCtrl.text,
+                              userId: user?.id ?? 'unknown',
+                            );
+
+                            if (!ctx.mounted) return;
+
+                            if (!res.success) {
+                              setModalState(() {
+                                isSaving = false;
+                                modalError = res.error;
+                              });
+                            } else {
+                              Navigator.pop(ctx);
+                              ref.invalidate(receiveFacoListProvider);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Vendor receipt updated & stock adjusted successfully.',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                    icon: isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check),
+                    label: Text(isSaving ? 'Updating...' : 'Save Changes'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteReceipt(
+    BuildContext context,
+    Map<String, dynamic> r,
+  ) async {
+    final receiptId = r['id'] as String;
+    final qty = (r['qty_received'] as num?)?.toDouble() ?? 0.0;
+    final partCode = r['part_code'] as String? ?? '—';
+    final partName = r['part_name'] as String? ?? '';
+    final batchNum = r['batch_number'] as String? ?? '';
+    final vendorName = r['vendor_name'] as String? ?? 'Vendor';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Vendor Receipt?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to delete this receipt for $partCode?'),
+            const SizedBox(height: 8),
+            Text(
+              'Batch: $batchNum\nPart: $partName\nQuantity: ${qty.toInt()} PCS\nVendor: $vendorName',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Deleting this receipt will automatically revert stock:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '• Deduct ${qty.toInt()} PCS from Pending AP Stock',
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '• Return ${qty.toInt()} PCS back into Vendor Stock (At Faco)',
+              style: const TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.delete, size: 16),
+            label: const Text('Delete & Revert Stock'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final user = ref.read(currentUserProvider).value;
+    final repo = ref.read(receiveFacoRepositoryProvider);
+    final res = await repo.deleteReceiptRecord(
+      receiptId: receiptId,
+      userId: user?.id ?? 'unknown',
+    );
+
+    if (!context.mounted) return;
+
+    if (!res.success) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cannot Delete Receipt'),
+          content: Text(res.error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      ref.invalidate(receiveFacoListProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Vendor receipt deleted and stock reversed to Vendor Stock.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 }

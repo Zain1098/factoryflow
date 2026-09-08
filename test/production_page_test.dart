@@ -83,8 +83,17 @@ void main() {
     expect(find.text('Production details'), findsOneWidget);
     expect(find.text('Select finished part'), findsOneWidget);
     expect(find.text('Machine entries'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Add machine entry'), 250);
+    await tester.scrollUntilVisible(
+      find.text('Add machine entry'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Add machine entry'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Save production job'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Save production job'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -107,7 +116,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('V21'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Add machine entry'), 250);
+    await tester.scrollUntilVisible(
+      find.text('Add machine entry'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('Add machine entry'));
     await tester.pumpAndSettle();
 
@@ -160,7 +173,11 @@ void main() {
       find.textContaining('No raw material is available for V21'),
       findsOneWidget,
     );
-    await tester.scrollUntilVisible(find.text('Add machine entry'), 250);
+    await tester.scrollUntilVisible(
+      find.text('Add machine entry'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     final button = tester.widget<FilledButton>(
       find.ancestor(
         of: find.text('Add machine entry'),

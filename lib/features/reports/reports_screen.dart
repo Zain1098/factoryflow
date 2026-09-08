@@ -94,11 +94,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           () => _push(context, const LiveStockReport()),
         ),
         _ReportTile(
-          'Vendor Pending Subcontracting',
-          Icons.pending_actions_rounded,
+          'Vendor Movement (Sent & Received)',
+          Icons.swap_horizontal_circle_outlined,
           Colors.amber.shade800,
-          'Material dispatched to FACO still awaiting return',
-          () => _push(context, const _FacoPendingReport()),
+          'Sent to vendor (subcontract/rework) vs received & pending balance',
+          () => _push(context, const _VendorMovementReport()),
         ),
         _ReportTile(
           'Finished Goods Dispatch',
@@ -182,16 +182,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [
-          // ── Analytics Range & Header Banner ────────────────────────────────
-          _ReportsHero(
-            range: range,
-            onChooseRange: () => _pickRange(context, ref, range),
-          ),
-
-          const SizedBox(height: 12),
-
           // ── Quick Date Range Preset Chips ──────────────────────────────────
           _DateRangeChips(
             range: range,
@@ -370,110 +362,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
 // ─── Date Range Quick Chips ───────────────────────────────────────────────────
 
-class _ReportsHero extends StatelessWidget {
-  const _ReportsHero({required this.range, required this.onChooseRange});
-
-  final DateRange range;
-  final VoidCallback onChooseRange;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            scheme.primaryContainer.withValues(alpha: 0.7),
-            scheme.surface,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: scheme.primary.withValues(alpha: 0.15),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.analytics_rounded, color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Plant Intelligence Hub',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Filtered: ${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yyyy').format(range.to)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onChooseRange,
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.calendar_month_rounded, size: 15, color: scheme.primary),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Dates',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: scheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _DateRangeChips extends ConsumerWidget {
   const _DateRangeChips({required this.range, required this.onCustomPick});
   final DateRange range;
@@ -483,6 +371,7 @@ class _DateRangeChips extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final presets = [
       ('Today', DateRange.today()),
+      ('Yesterday', DateRange.yesterday()),
       ('This Week', DateRange.thisWeek()),
       ('This Month', DateRange.thisMonth()),
       ('Last 30d', DateRange.last30()),
@@ -1040,44 +929,59 @@ class _DailyProductionReport extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(dailyProductionReportProvider);
     final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
+
     return _loadingOrError(async, () {
       final data = async.value!;
-      return _ReportPage(
-        title: 'Daily Production',
-        color: Colors.teal,
-        summaryCards: [
-          _SummaryCard('Finished OK', _n(data.totalGood)),
-          _SummaryCard('All-stage Reject', _n(data.totalBpReject)),
-          _SummaryCard('Final Input', _n(data.totalProd)),
-          _SummaryCard('Avg Eff.', _pct(data.avgEfficiency)),
-          _SummaryCard('Rej %', _pct(data.overallRejectPct)),
-        ],
-        tableHeader: const [
-          'Date',
-          'Final Input',
-          'All Rej',
-          'Finished OK',
-          'Target',
-          'Eff %',
-          'Rej %',
-        ],
-        rows: data
-            .map(
-              (r) => [
-                _fmtDate(r.date),
-                _n(r.totalProduction),
-                _n(r.bpReject),
-                _n(r.goodQty),
-                _n(r.target),
-                _pct(r.efficiency),
-                _pct(r.rejectPct),
+      final totalGood = data.fold(0.0, (s, r) => s + r.goodQty);
+      final totalReject = data.fold(0.0, (s, r) => s + r.bpReject);
+      final totalDowntime = data.fold(0, (s, r) => s + r.downtimeMinutes);
+
+      return Scaffold(
+        appBar: AppBar(
+          title: InkWell(
+            onTap: () => _pickDateRange(context, ref, range),
+            borderRadius: BorderRadius.circular(6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Daily Production & Loss',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yyyy').format(range.to)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.normal,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      size: 13,
+                      color: Colors.teal.shade700,
+                    ),
+                  ],
+                ),
               ],
-            )
-            .toList(),
-        emptyMessage: 'No production data for selected range',
-        onExport: data.isEmpty
-            ? null
-            : () => ExportSheet.show(
+            ),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.date_range_rounded),
+              tooltip: 'Change Date Range',
+              onPressed: () => _pickDateRange(context, ref, range),
+            ),
+            if (data.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.download_rounded),
+                tooltip: 'Export',
+                onPressed: () => ExportSheet.show(
                   context: context,
                   onExcel: () => ExportService.exportProductionReport(
                     context: context,
@@ -1094,8 +998,340 @@ class _DailyProductionReport extends ConsumerWidget {
                     format: ExportFormat.pdf,
                   ),
                 ),
+              ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // Date Quick Filter Chips
+            ColoredBox(
+              color: Colors.teal.withValues(alpha: 0.04),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
+                child: _DateRangeChips(
+                  range: range,
+                  onCustomPick: () => _pickDateRange(context, ref, range),
+                ),
+              ),
+            ),
+
+            // Shift Selector Chips Row
+            ColoredBox(
+              color: Colors.teal.withValues(alpha: 0.08),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Shift:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        _buildShiftFilterChip(context, ref, null, 'All'),
+                        _buildShiftFilterChip(context, ref, 'A', 'Shift A'),
+                        _buildShiftFilterChip(context, ref, 'B', 'Shift B'),
+                        _buildShiftFilterChip(context, ref, 'C', 'Shift C'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Top Summary Row
+            ColoredBox(
+              color: Colors.teal.withValues(alpha: 0.04),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Finished Good',
+                        value: _n(totalGood),
+                        color: Colors.teal.shade800,
+                        icon: Icons.check_circle_outline,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Rejection Loss',
+                        value: _n(totalReject),
+                        color: Colors.red.shade700,
+                        icon: Icons.cancel_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Total Halt Time',
+                        value: _mins(totalDowntime),
+                        color: Colors.orange.shade800,
+                        icon: Icons.timer_outlined,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Daily List with Shift A/B/C breakdown & Rejection loss
+            Expanded(
+              child: data.isEmpty
+                  ? const EmptyState(
+                      message: 'No production records found for selected filters',
+                      icon: Icons.precision_manufacturing_outlined,
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 28),
+                      itemCount: data.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final r = data[i];
+                        final hasLoss = r.bpReject > 0 || r.downtimeMinutes > 0;
+
+                        return EntryInfoSurface(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Date Header Row
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today_outlined, size: 15, color: Colors.teal),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _fmtDate(r.date),
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.teal.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Good: ${_n(r.goodQty)} PCS',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.teal.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 12),
+
+                              // Shift A / B / C Distribution Badges
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _ShiftPill(
+                                      shift: 'Shift A',
+                                      good: r.shiftAGood,
+                                      total: r.shiftAProd,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: _ShiftPill(
+                                      shift: 'Shift B',
+                                      good: r.shiftBGood,
+                                      total: r.shiftBProd,
+                                      color: Colors.indigo,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: _ShiftPill(
+                                      shift: 'Shift C',
+                                      good: r.shiftCGood,
+                                      total: r.shiftCProd,
+                                      color: Colors.purple,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Target & Efficiency
+                              Row(
+                                children: [
+                                  Text(
+                                    'Input: ${_n(r.totalProduction)} | Target: ${_n(r.target)}',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    'Eff: ${_pct(r.efficiency)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: r.efficiency >= 80 ? Colors.teal : Colors.orange,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              // Loss Bar (Rejection & Downtime Halt)
+                              if (hasLoss) ...[
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Loss: ${_n(r.bpReject)} Rej (${_pct(r.rejectPct)})',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                      if (r.downtimeMinutes > 0) ...[
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '| Halt: ${_mins(r.downtimeMinutes)}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.orange.shade800,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       );
     });
+  }
+
+  Widget _buildShiftFilterChip(
+    BuildContext context,
+    WidgetRef ref,
+    String? shiftCode,
+    String label,
+  ) {
+    final current = ref.watch(reportShiftFilterProvider);
+    final isSelected = current == shiftCode;
+    final theme = Theme.of(context);
+
+    return InkWell(
+      onTap: () =>
+          ref.read(reportShiftFilterProvider.notifier).set(shiftCode),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.teal : theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected
+                ? Colors.teal
+                : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : theme.colorScheme.onSurface,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDateRange(
+    BuildContext context,
+    WidgetRef ref,
+    DateRange current,
+  ) async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+      initialDateRange: DateTimeRange(start: current.from, end: current.to),
+    );
+    if (picked != null) {
+      ref.read(reportDateRangeProvider.notifier).set(
+            DateRange(picked.start, picked.end),
+          );
+    }
+  }
+}
+
+class _ShiftPill extends StatelessWidget {
+  const _ShiftPill({
+    required this.shift,
+    required this.good,
+    required this.total,
+    required this.color,
+  });
+
+  final String shift;
+  final double good;
+  final double total;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final gStr = good == good.toInt() ? good.toInt().toString() : good.toStringAsFixed(0);
+    final tStr = total == total.toInt() ? total.toInt().toString() : total.toStringAsFixed(0);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            shift,
+            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            total > 0 ? '$gStr OK / $tStr In' : '$gStr OK',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1225,8 +1461,10 @@ class _DowntimeReport extends ConsumerWidget {
               (r) => [
                 _fmtDate(r.date),
                 r.machineName,
-                r.startTime,
-                r.endTime ?? 'Ongoing',
+                formatTimeWithoutSeconds(r.startTime),
+                r.endTime != null && r.endTime!.isNotEmpty
+                    ? formatTimeWithoutSeconds(r.endTime)
+                    : 'Ongoing',
                 _mins(r.durationMinutes),
                 r.reason.length > 20
                     ? '${r.reason.substring(0, 20)}…'
@@ -1430,131 +1668,949 @@ class _DispatchReport extends ConsumerWidget {
   }
 }
 
-// ─── 8. Faco Pending ─────────────────────────────────────────────────────────
+// ─── 8. Vendor Movement (Sent & Received Detailed Logs) ──────────────────────
 
-class _FacoPendingReport extends ConsumerWidget {
-  const _FacoPendingReport();
+class _VendorMovementReport extends ConsumerStatefulWidget {
+  const _VendorMovementReport();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(facoPendingReportProvider);
+  ConsumerState<_VendorMovementReport> createState() =>
+      _VendorMovementReportState();
+}
+
+class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(vendorMovementProvider);
+    final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
+
     return _loadingOrError(async, () {
       final data = async.value!;
-      final totalPending = data.fold(0.0, (s, r) => s + r.pending);
-      return _ReportPage(
-        title: 'Vendor Pending Material',
-        color: Colors.amber,
-        summaryCards: [
-          _SummaryCard('Total Pending', _n(totalPending)),
-          _SummaryCard('Parts', '${data.length}'),
-        ],
-        tableHeader: const [
-          'Part',
-          'Vendor',
-          'Dispatched',
-          'Received',
-          'Pending',
-          'Since',
-        ],
-        rows: data
-            .map(
-              (r) => [
-                r.partName.length > 12
-                    ? '${r.partName.substring(0, 12)}…'
-                    : r.partName,
-                r.vendorName.length > 10
-                    ? '${r.vendorName.substring(0, 10)}…'
-                    : r.vendorName,
-                _n(r.dispatched),
-                _n(r.received),
-                _n(r.pending),
-                _fmtDate(r.oldestDate),
-              ],
-            )
-            .toList(),
-        emptyMessage: 'No pending material at vendor',
+      final filteredDispatches = data.dispatches.where((d) {
+        if (_search.isEmpty) return true;
+        final q = _search.toLowerCase();
+        return d.partName.toLowerCase().contains(q) ||
+            d.vendorName.toLowerCase().contains(q) ||
+            d.challanNumber.toLowerCase().contains(q);
+      }).toList();
+
+      final filteredReceipts = data.receipts.where((r) {
+        if (_search.isEmpty) return true;
+        final q = _search.toLowerCase();
+        return r.partName.toLowerCase().contains(q) ||
+            r.vendorName.toLowerCase().contains(q) ||
+            r.supplierChallan.toLowerCase().contains(q);
+      }).toList();
+
+      return Scaffold(
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Vendor Movement',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              Text(
+                '${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yy').format(range.to)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+          bottom: TabBar(
+            controller: _tabCtrl,
+            tabs: [
+              Tab(
+                icon: const Icon(Icons.outbox_rounded, size: 18),
+                text: 'Material Sent (${filteredDispatches.length})',
+              ),
+              Tab(
+                icon: const Icon(Icons.move_to_inbox_rounded, size: 18),
+                text: 'Material Received (${filteredReceipts.length})',
+              ),
+            ],
+          ),
+        ),
+        body: Column(
+          children: [
+            // Top Summary Row
+            ColoredBox(
+              color: Colors.amber.shade800.withValues(alpha: 0.08),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Total Sent',
+                        value: _n(data.totalDispatched),
+                        color: Colors.amber.shade900,
+                        icon: Icons.upload_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Total Received',
+                        value: _n(data.totalReceived),
+                        color: Colors.teal.shade800,
+                        icon: Icons.download_rounded,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _SummaryBox(
+                        label: 'Pending Balance',
+                        value: _n(data.netPending),
+                        color: Colors.red.shade700,
+                        icon: Icons.hourglass_top_rounded,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Search Bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: TextField(
+                  onChanged: (val) => setState(() => _search = val.trim()),
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'Search by part, vendor, challan...',
+                    hintStyle: TextStyle(fontSize: 12),
+                    prefixIcon: Icon(Icons.search, size: 18),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ),
+
+            Expanded(
+              child: TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  // Tab 1: Sent (Dispatches)
+                  filteredDispatches.isEmpty
+                      ? const EmptyState(
+                          message: 'No material dispatched to vendor in this range',
+                          icon: Icons.outbox_rounded,
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          itemCount: filteredDispatches.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, i) {
+                            final item = filteredDispatches[i];
+                            return EntryInfoSurface(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(7),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade800
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          Icons.local_shipping_outlined,
+                                          size: 18,
+                                          color: Colors.amber.shade900,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.partName,
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Vendor: ${item.vendorName}',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: theme
+                                                    .colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade800
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '${_n(item.qty)} PCS',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      _TagBadge(
+                                        icon: Icons.calendar_today_outlined,
+                                        label: item.date,
+                                      ),
+                                      if (item.challanNumber.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.receipt_long_outlined,
+                                          label: 'Challan: ${item.challanNumber}',
+                                        ),
+                                      if (item.batchNumber.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.tag,
+                                          label: 'Batch: ${item.batchNumber}',
+                                        ),
+                                    ],
+                                  ),
+                                  if (item.remarks.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Note: ${item.remarks}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        fontStyle: FontStyle.italic,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+
+                  // Tab 2: Received
+                  filteredReceipts.isEmpty
+                      ? const EmptyState(
+                          message: 'No material received from vendor in this range',
+                          icon: Icons.move_to_inbox_rounded,
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          itemCount: filteredReceipts.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, i) {
+                            final item = filteredReceipts[i];
+                            return EntryInfoSurface(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(7),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(
+                                          Icons.check_circle_outline,
+                                          size: 18,
+                                          color: Colors.teal,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.partName,
+                                              style: theme.textTheme.titleSmall
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Vendor: ${item.vendorName}',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                color: theme
+                                                    .colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '${_n(item.qtyReceived)} PCS',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      _TagBadge(
+                                        icon: Icons.calendar_today_outlined,
+                                        label: item.date,
+                                      ),
+                                      if (item.supplierChallan.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.receipt_outlined,
+                                          label: 'Vendor Ch: ${item.supplierChallan}',
+                                        ),
+                                      if (item.dispatchChallan.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.link_rounded,
+                                          label: 'Against Disp: ${item.dispatchChallan}',
+                                        ),
+                                    ],
+                                  ),
+                                  if (item.remarks.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Note: ${item.remarks}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        fontStyle: FontStyle.italic,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ],
+              ),
+            ),
+          ],
+        ),
       );
     });
   }
 }
 
+class _SummaryBox extends StatelessWidget {
+  const _SummaryBox({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 12, color: color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TagBadge extends StatelessWidget {
+  const _TagBadge({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── 9. Live Stock ────────────────────────────────────────────────────────────
 
-class LiveStockReport extends ConsumerWidget {
+class LiveStockReport extends ConsumerStatefulWidget {
   const LiveStockReport({super.key, this.partId});
 
   final String? partId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LiveStockReport> createState() => _LiveStockReportState();
+}
+
+class _LiveStockReportState extends ConsumerState<LiveStockReport> {
+  String _search = '';
+  String _sortOption = 'Name'; // 'Name', 'Total High-Low', 'BP High-Low', 'AP High-Low', 'Vendor High-Low'
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(liveStockReportProvider);
+    final theme = Theme.of(context);
+
     return _loadingOrError(async, () {
       final data = async.value!;
-      final filteredData = partId == null
+      var filtered = widget.partId == null
           ? data
-          : data.where((row) => row.partId == partId).toList();
-      final totalAll = filteredData.fold(0.0, (s, r) => s + r.totalStock);
-      return _ReportPage(
-        title: partId == null ? 'Live Stock' : 'Part Live Stock',
-        color: Colors.green,
-        summaryCards: [
-          _SummaryCard('Total Stock', _n(totalAll)),
-          _SummaryCard('Parts', '${filteredData.length}'),
-        ],
-        tableHeader: const [
-          'Part',
-          'Raw',
-          'Prod Rej',
-          'BP',
-          'BP Hold',
-          'BP Rej',
-          'Vendor',
-          'Pend AP',
-          'Appr AP',
-          'AP Rej',
-          'RTV Hold',
-          'RTV Vendor',
-          'Total',
-        ],
-        rows: filteredData
-            .map(
-              (r) => [
-                r.partCode.isNotEmpty
-                    ? r.partCode
-                    : r.partName.substring(0, r.partName.length.clamp(0, 10)),
-                _n(r.rawMaterial),
-                _n(r.productionRejected),
-                _n(r.bpStock),
-                _n(r.bpHold),
-                _n(r.bpRejected),
-                _n(r.atFaco),
-                _n(r.pendingAp),
-                _n(r.approvedAp),
-                _n(r.apRejected),
-                _n(r.rtvStock),
-                _n(r.rtvAtVendor),
-                _n(r.totalStock),
-              ],
-            )
-            .toList(),
-        emptyMessage: 'No stock data available',
-        onExport: filteredData.isEmpty
-            ? null
-            : () => ExportSheet.show(
+          : data.where((row) => row.partId == widget.partId).toList();
+
+      if (_search.isNotEmpty) {
+        final q = _search.toLowerCase();
+        filtered = filtered
+            .where((r) =>
+                r.partName.toLowerCase().contains(q) ||
+                r.partCode.toLowerCase().contains(q),)
+            .toList();
+      }
+
+      // Sort
+      if (_sortOption == 'Total High-Low') {
+        filtered.sort((a, b) => b.totalStock.compareTo(a.totalStock));
+      } else if (_sortOption == 'BP High-Low') {
+        filtered.sort((a, b) => b.totalBpGroup.compareTo(a.totalBpGroup));
+      } else if (_sortOption == 'AP High-Low') {
+        filtered.sort((a, b) => b.totalApGroup.compareTo(a.totalApGroup));
+      } else if (_sortOption == 'Vendor High-Low') {
+        filtered.sort((a, b) => b.totalVendorGroup.compareTo(a.totalVendorGroup));
+      } else {
+        filtered.sort((a, b) => a.partName.compareTo(b.partName));
+      }
+
+      // Overall Totals
+      final totalStockAll = filtered.fold(0.0, (s, r) => s + r.totalStock);
+      final totalBpAll = filtered.fold(0.0, (s, r) => s + r.totalBpGroup);
+      final totalApAll = filtered.fold(0.0, (s, r) => s + r.totalApGroup);
+      final totalVendorAll = filtered.fold(0.0, (s, r) => s + r.totalVendorGroup);
+
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            widget.partId == null ? 'Live Stock Pipeline' : 'Part Live Stock',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+          ),
+          actions: [
+            if (filtered.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.download_rounded),
+                tooltip: 'Export Stock',
+                onPressed: () => ExportSheet.show(
                   context: context,
                   onExcel: () => ExportService.exportStockReport(
                     context: context,
-                    rows: filteredData,
+                    rows: filtered,
                     format: ExportFormat.excel,
                   ),
                   onPdf: () => ExportService.exportStockReport(
                     context: context,
-                    rows: filteredData,
+                    rows: filtered,
                     format: ExportFormat.pdf,
                   ),
                 ),
+              ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // 3 MASTER SUMMARY BOXES
+            ColoredBox(
+              color: Colors.green.withValues(alpha: 0.05),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        // BOX 1: TOTAL BP PIPELINE
+                        Expanded(
+                          child: _GroupSummaryBox(
+                            title: '1. BP Total',
+                            totalValue: _n(totalBpAll),
+                            color: Colors.blue.shade700,
+                            icon: Icons.precision_manufacturing_outlined,
+                            subtitle: 'Raw+Clear+Hold+Rej',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // BOX 2: TOTAL AP PIPELINE
+                        Expanded(
+                          child: _GroupSummaryBox(
+                            title: '2. AP Total',
+                            totalValue: _n(totalApAll),
+                            color: Colors.teal.shade700,
+                            icon: Icons.verified_outlined,
+                            subtitle: 'Pend+Appr+Rej+Rtv',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // BOX 3: TOTAL AT VENDOR
+                        Expanded(
+                          child: _GroupSummaryBox(
+                            title: '3. At Vendor',
+                            totalValue: _n(totalVendorAll),
+                            color: Colors.amber.shade900,
+                            icon: Icons.swap_horiz_rounded,
+                            subtitle: 'Subcontract+Rework',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 14, color: Colors.green),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Grand Total Live Factory Stock:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${_n(totalStockAll)} PCS',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Controls: Search & Sort Dropdown
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: TextField(
+                        onChanged: (v) => setState(() => _search = v.trim()),
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(
+                          hintText: 'Search part by name / code...',
+                          hintStyle: TextStyle(fontSize: 12),
+                          prefixIcon: Icon(Icons.search, size: 18),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButtonHideUnderline(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: DropdownButton<String>(
+                        value: _sortOption,
+                        isDense: true,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Name', child: Text('Sort: Name')),
+                          DropdownMenuItem(value: 'Total High-Low', child: Text('Total High↓')),
+                          DropdownMenuItem(value: 'BP High-Low', child: Text('BP High↓')),
+                          DropdownMenuItem(value: 'AP High-Low', child: Text('AP High↓')),
+                          DropdownMenuItem(value: 'Vendor High-Low', child: Text('Vendor High↓')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _sortOption = v);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Parts List
+            Expanded(
+              child: filtered.isEmpty
+                  ? const EmptyState(
+                      message: 'No stock data found',
+                      icon: Icons.inventory_2_outlined,
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 30),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) {
+                        final r = filtered[i];
+                        return EntryInfoSurface(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Part Header
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          r.partName,
+                                          style: theme.textTheme.titleSmall?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (r.partCode.isNotEmpty)
+                                          Text(
+                                            'Code: ${r.partCode}',
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${_n(r.totalStock)} PCS',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 13,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 14),
+
+                              // Group 1: BP Category
+                              _StockGroupRow(
+                                title: 'BP Phase (Total: ${_n(r.totalBpGroup)})',
+                                color: Colors.blue.shade700,
+                                items: [
+                                  ('Raw', _n(r.rawMaterial)),
+                                  ('BP Clear', _n(r.bpStock)),
+                                  ('BP Hold', _n(r.bpHold)),
+                                  ('BP Rej', _n(r.totalCombinedBpRejection)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Group 2: AP Category
+                              _StockGroupRow(
+                                title: 'AP Phase (Total: ${_n(r.totalApGroup)})',
+                                color: Colors.teal.shade700,
+                                items: [
+                                  ('Pend AP', _n(r.pendingAp)),
+                                  ('Appr AP', _n(r.approvedAp)),
+                                  ('AP Rej', _n(r.apRejected)),
+                                  ('RTV Hold', _n(r.rtvStock)),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Group 3: Vendor Category
+                              _StockGroupRow(
+                                title: 'With Vendor (Total: ${_n(r.totalVendorGroup)})',
+                                color: Colors.amber.shade900,
+                                items: [
+                                  ('At Subcontract', _n(r.atFaco)),
+                                  ('At Rework', _n(r.rtvAtVendor)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       );
     });
+  }
+}
+
+class _GroupSummaryBox extends StatelessWidget {
+  const _GroupSummaryBox({
+    required this.title,
+    required this.totalValue,
+    required this.color,
+    required this.icon,
+    required this.subtitle,
+  });
+
+  final String title;
+  final String totalValue;
+  final Color color;
+  final IconData icon;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 12, color: color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$totalValue PCS',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StockGroupRow extends StatelessWidget {
+  const _StockGroupRow({
+    required this.title,
+    required this.color,
+    required this.items,
+  });
+
+  final String title;
+  final Color color;
+  final List<(String, String)> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: items.map((it) {
+              return Text(
+                '${it.$1}: ${it.$2}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
   }
 }
 

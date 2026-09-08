@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/services/alert_producer_service.dart';
@@ -19,6 +20,10 @@ class PurchaseOrderRepository {
 
   final DatabaseService _db;
   final SyncService _sync;
+
+  String? _lastPoFingerprint;
+  DateTime? _lastPoTime;
+  PurchaseOrderResult? _lastPoResult;
 
   Future<PurchaseOrderResult> save({
     required String partId,
@@ -43,12 +48,24 @@ class PurchaseOrderRepository {
       );
     }
 
+    final fingerprint =
+        '$factoryId|$partId|$supplierId|$orderedQty|${poNumber?.trim()}';
+    if (_lastPoFingerprint == fingerprint &&
+        _lastPoTime != null &&
+        DateTime.now().difference(_lastPoTime!) < const Duration(seconds: 4)) {
+      return _lastPoResult ?? const PurchaseOrderResult(success: true);
+    }
+
     final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();
     final dateStr =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final effectivePoNumber = (poNumber != null && poNumber.trim().isNotEmpty)
+        ? poNumber.trim()
+        : await generateNextPoNumber(date: now);
 
     final record = {
       'id': id,
@@ -58,7 +75,7 @@ class PurchaseOrderRepository {
       'part_id': partId,
       'supplier_id': supplierId,
       'ordered_qty': orderedQty,
-      'po_number': poNumber,
+      'po_number': effectivePoNumber,
       'status': 'pending',
       'remarks': remarks,
       'created_by': createdBy,
@@ -84,7 +101,11 @@ class PurchaseOrderRepository {
     }
 
     await _sync.schedulePendingSync();
-    return PurchaseOrderResult(success: true, recordId: id);
+    final result = PurchaseOrderResult(success: true, recordId: id);
+    _lastPoFingerprint = fingerprint;
+    _lastPoTime = DateTime.now();
+    _lastPoResult = result;
+    return result;
   }
 
   Future<PurchaseOrderResult> updateStatus(String id, String status) async {
@@ -231,6 +252,19 @@ class PurchaseOrderRepository {
 
   Future<List<Map<String, dynamic>>> getAll({int limit = 50}) =>
       _db.getAllPurchaseOrders(limit: limit);
+
+  Future<String> generateNextPoNumber({DateTime? date}) async {
+    final d = date ?? DateTime.now();
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    final prefix = 'PO-$day$month-';
+
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) {
+      return AppConstants.poNumberPattern(d, 1);
+    }
+    return _db.getNextPoNumber(factoryId, d, prefix);
+  }
 }
 
 // ─── Material Receive Repository ──────────────────────────────────────────────
@@ -242,6 +276,10 @@ class MaterialReceiveRepository {
   final SyncService _sync;
   final StockLedgerService _ledger;
   final AlertProducerService _alerts;
+
+  String? _lastReceiveFingerprint;
+  DateTime? _lastReceiveTime;
+  MaterialReceiveResult? _lastReceiveResult;
 
   Future<MaterialReceiveResult> save({
     required String partId,
@@ -266,6 +304,14 @@ class MaterialReceiveRepository {
         success: false,
         error: 'Received quantity must be greater than zero.',
       );
+    }
+
+    final fingerprint =
+        '$factoryId|$partId|$supplierId|$qty|${poNumber?.trim()}|$poRefId';
+    if (_lastReceiveFingerprint == fingerprint &&
+        _lastReceiveTime != null &&
+        DateTime.now().difference(_lastReceiveTime!) < const Duration(seconds: 4)) {
+      return _lastReceiveResult ?? const MaterialReceiveResult(success: true);
     }
 
     final id = _uuid.v4();
@@ -345,11 +391,15 @@ class MaterialReceiveRepository {
 
     await _sync.schedulePendingSync();
     unawaited(_alerts.checkLowStock());
-    return MaterialReceiveResult(
+    final finalResult = MaterialReceiveResult(
       success: true,
       recordId: id,
       shortfall: shortfall,
     );
+    _lastReceiveFingerprint = fingerprint;
+    _lastReceiveTime = DateTime.now();
+    _lastReceiveResult = finalResult;
+    return finalResult;
   }
 
   Future<MaterialReceiveResult> update({
