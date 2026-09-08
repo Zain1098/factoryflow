@@ -143,6 +143,7 @@ class DatabaseService {
           {int limit = 50,}) async =>
       [];
   Future<void> updatePurchaseOrderStatus(String id, String status) async {}
+  Future<Map<String, double>> getPendingPurchaseOrdersRemaining() async => {};
 
   Future<String> getNextPoNumber(
     String factoryId,

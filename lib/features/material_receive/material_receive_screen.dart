@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/barcode_scanner_view.dart';
@@ -880,122 +881,504 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
     );
   }
 
+  Future<void> _pickReceiveHistoryDate(
+    BuildContext context,
+    DateTime? currentDate,
+  ) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: currentDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select Material Receive Date',
+    );
+    if (picked != null) {
+      ref
+          .read(materialReceiveHistoryDateFilterProvider.notifier)
+          .setDate(picked);
+      ref.invalidate(materialReceiveListProvider);
+    }
+  }
+
+  Map<String, int> _calculatePartReceivedTotals(List<Map<String, dynamic>> records) {
+    final map = <String, int>{};
+    for (final r in records) {
+      final code = (r['part_code'] as String? ?? '—').trim();
+      final qty = (r['qty'] as num?)?.toInt() ?? 0;
+      map[code] = (map[code] ?? 0) + qty;
+    }
+    return map;
+  }
+
   Widget _buildReceivesList() {
     final list = ref.watch(materialReceiveListProvider);
+    final selectedDate = ref.watch(materialReceiveHistoryDateFilterProvider);
+    final remainingAsync = ref.watch(pendingOrderRemainingProvider);
     final theme = Theme.of(context);
-    return list.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
-      data: (records) {
-        if (records.isEmpty) {
-          return const EmptyState(
-            message: 'No material receives yet.',
-            icon: Icons.inventory_2_outlined,
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          itemCount: records.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, i) {
-            final r = records[i];
-            final isSynced = r['sync_status'] == 'synced';
-            final shortfall = (r['shortfall'] as num?)?.toDouble() ?? 0;
-            final orderedQty = (r['ordered_qty'] as num?)?.toDouble();
-            final hasPo = r['po_ref_id'] != null || (r['po_id'] != null && (r['po_id'] as String).isNotEmpty);
 
-            return Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
+    return Column(
+      children: [
+        // Date Filter Header Bar
+        InkWell(
+          onTap: () => _pickReceiveHistoryDate(context, selectedDate),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: selectedDate != null
+                  ? Colors.brown.withValues(alpha: 0.08)
+                  : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              border: Border(
+                bottom: BorderSide(
+                  color: selectedDate != null
+                      ? Colors.brown.withValues(alpha: 0.3)
+                      : theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+                ),
               ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => _showReceiveActionsSheet(context, r),
-                onLongPress: () => _showReceiveActionsSheet(context, r),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_month_outlined,
+                  size: 16,
+                  color: selectedDate != null ? Colors.brown : theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircleAvatar(
-                        radius: 20,
-                        backgroundColor: Colors.brown.withValues(alpha: 0.12),
-                        child: const Icon(Icons.inventory_2, color: Colors.brown, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${r['supplier_name'] ?? 'Unknown'} · ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)}'.trim(),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            if (hasPo)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  r['po_id'] != null ? 'PO/Challan: ${r['po_id']}' : 'Linked to PO',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.brown.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                          ],
+                      Text(
+                        selectedDate != null
+                            ? DateFormat('EEEE, dd MMM yyyy').format(selectedDate)
+                            : 'All Received Dates',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: selectedDate != null ? Colors.brown : null,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '${(r['qty'] as num?)?.toStringAsFixed(0) ?? '0'} PCS',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                          const SizedBox(height: 2),
-                          if (shortfall > 0)
-                            Text(
-                              '−${shortfall.toStringAsFixed(0)} short',
-                              style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold),
-                            )
-                          else if (orderedQty != null)
-                            const Text('full qty', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 2),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isSynced ? Icons.cloud_done_rounded : Icons.cloud_upload_outlined,
-                                size: 13,
-                                color: isSynced ? Colors.green : Colors.orange,
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.more_horiz_rounded, size: 16, color: Colors.grey),
-                            ],
-                          ),
-                        ],
+                      Text(
+                        selectedDate != null
+                            ? 'Filtered by selected receive date'
+                            : 'Tap to filter by specific date',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            );
-          },
-        );
-      },
+                IconButton(
+                  icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                  tooltip: 'Change Date',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _pickReceiveHistoryDate(context, selectedDate),
+                ),
+                if (selectedDate != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Clear Date Filter (Show All)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      ref
+                          .read(materialReceiveHistoryDateFilterProvider.notifier)
+                          .setDate(null);
+                      ref.invalidate(materialReceiveListProvider);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+
+        // History Content with Floating Summary Box
+        Expanded(
+          child: list.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => EmptyState(message: 'Error: $e', icon: Icons.error_outline),
+            data: (records) {
+              final remainingMap = remainingAsync.value ?? <String, double>{};
+              final dayReceivedMap = _calculatePartReceivedTotals(records);
+
+              if (records.isEmpty) {
+                return Stack(
+                  children: [
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 48,
+                            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            selectedDate != null
+                                ? 'No receipts on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                                : 'No material receives yet.',
+                            style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                          if (selectedDate != null) ...[
+                            const SizedBox(height: 10),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                ref
+                                    .read(materialReceiveHistoryDateFilterProvider.notifier)
+                                    .setDate(null);
+                                ref.invalidate(materialReceiveListProvider);
+                              },
+                              icon: const Icon(Icons.clear, size: 16),
+                              label: const Text('Show All Records'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (remainingMap.isNotEmpty)
+                      Positioned(
+                        bottom: 16,
+                        right: 16,
+                        child: _buildRemainingSummaryBox(
+                          context,
+                          remainingMap,
+                          dayReceivedMap,
+                          selectedDate,
+                          theme,
+                        ),
+                      ),
+                  ],
+                );
+              }
+
+              return Stack(
+                children: [
+                  ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 160),
+                    itemCount: records.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final r = records[i];
+                      final isSynced = r['sync_status'] == 'synced';
+                      final shortfall = (r['shortfall'] as num?)?.toDouble() ?? 0;
+                      final orderedQty = (r['ordered_qty'] as num?)?.toDouble();
+                      final hasPo = r['po_ref_id'] != null ||
+                          (r['po_id'] != null && (r['po_id'] as String).isNotEmpty);
+
+                      return Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(
+                            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => _showReceiveActionsSheet(context, r),
+                          onLongPress: () => _showReceiveActionsSheet(context, r),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: Colors.brown.withValues(alpha: 0.12),
+                                  child: const Icon(
+                                    Icons.inventory_2,
+                                    color: Colors.brown,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${r['part_code'] ?? ''} – ${r['part_name'] ?? ''}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '${r['supplier_name'] ?? 'Unknown'} · ${formatDateTimeLabel(r['date'] as String?, r['time'] as String?)}'.trim(),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      if (hasPo)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text(
+                                            r['po_id'] != null
+                                                ? 'PO/Challan: ${r['po_id']}'
+                                                : 'Linked to PO',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.brown.shade700,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${(r['qty'] as num?)?.toStringAsFixed(0) ?? '0'} PCS',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    if (shortfall > 0)
+                                      Text(
+                                        '−${shortfall.toStringAsFixed(0)} short',
+                                        style: const TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      )
+                                    else if (orderedQty != null)
+                                      const Text(
+                                        'full qty',
+                                        style: TextStyle(
+                                          color: Colors.green,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isSynced
+                                              ? Icons.cloud_done_rounded
+                                              : Icons.cloud_upload_outlined,
+                                          size: 13,
+                                          color: isSynced ? Colors.green : Colors.orange,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.more_horiz_rounded,
+                                          size: 16,
+                                          color: Colors.grey,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    right: 16,
+                    child: _buildRemainingSummaryBox(
+                      context,
+                      remainingMap,
+                      dayReceivedMap,
+                      selectedDate,
+                      theme,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
+
+  Widget _buildRemainingSummaryBox(
+    BuildContext context,
+    Map<String, double> remainingParts,
+    Map<String, int> dayReceivedTotals,
+    DateTime? selectedDate,
+    ThemeData theme,
+  ) {
+    final grandRemaining =
+        remainingParts.values.fold<double>(0.0, (sum, val) => sum + val);
+    final grandDayReceived =
+        dayReceivedTotals.values.fold<int>(0, (sum, val) => sum + val);
+
+    final title = selectedDate != null
+        ? 'REMAINING (${DateFormat('dd MMM').format(selectedDate)})'
+        : 'REMAINING ORDERS';
+
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(12),
+      color: const Color(0xFF3E2723), // Deep warm brown container
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 245, minWidth: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.orangeAccent.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Top Header: Title & Total Remaining
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.pending_actions_rounded,
+                      size: 13,
+                      color: Colors.orangeAccent,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${grandRemaining == grandRemaining.toInt() ? grandRemaining.toInt() : grandRemaining.toStringAsFixed(1)} PCS',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Divider(color: Colors.white24, height: 1),
+            const SizedBox(height: 6),
+
+            // Part-wise breakdown of remaining quantities
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 110),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: remainingParts.isEmpty
+                      ? [
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline,
+                                  size: 13,
+                                  color: Colors.greenAccent,
+                                ),
+                                SizedBox(width: 6),
+                                Text(
+                                  'All Orders Fulfilled',
+                                  style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ]
+                      : remainingParts.entries.map((e) {
+                          final valStr = e.value == e.value.toInt()
+                              ? '${e.value.toInt()}'
+                              : e.value.toStringAsFixed(1);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    '${e.key} :',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '$valStr PCS',
+                                  style: const TextStyle(
+                                    color: Colors.orangeAccent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                ),
+              ),
+            ),
+
+            // If a date is selected and receives occurred, show day received sub-bar
+            if (selectedDate != null && grandDayReceived > 0) ...[
+              const SizedBox(height: 5),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Day Received:',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    '$grandDayReceived PCS',
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
 
   // ─── Order Actions Bottom Sheet & Dialogs ─────────────────────────────────
 

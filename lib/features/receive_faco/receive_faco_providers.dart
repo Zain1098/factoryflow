@@ -24,6 +24,31 @@ class ReceiveFacoRepository {
     String? remarks,
     required String createdBy,
     DateTime? recordedAt,
+  }) {
+    return saveMulti(
+      items: [
+        ReceiveFacoLineItem(
+          partId: partId,
+          partCode: '',
+          partName: '',
+          qty: qtyReceived,
+          batchNumber: batchNumber,
+          dispatchRefId: dispatchRefId,
+        ),
+      ],
+      supplierChallan: supplierChallan,
+      remarks: remarks,
+      createdBy: createdBy,
+      recordedAt: recordedAt,
+    );
+  }
+
+  Future<ReceiveFacoResult> saveMulti({
+    required List<ReceiveFacoLineItem> items,
+    String? supplierChallan,
+    String? remarks,
+    required String createdBy,
+    DateTime? recordedAt,
   }) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) {
@@ -32,126 +57,154 @@ class ReceiveFacoRepository {
         error: 'No active factory workspace is selected.',
       );
     }
-    if (qtyReceived <= 0) {
+    if (items.isEmpty) {
       return const ReceiveFacoResult(
         success: false,
-        error: 'Received quantity must be greater than zero.',
+        error: 'Add at least one batch to receive.',
       );
     }
 
-    // Shortage check: compare with dispatched qty (PRD 3.7 — allowed, flagged)
-    double? dispatchedQty;
-    bool shortageFlag = false;
-
-    if (dispatchRefId != null && dispatchRefId.startsWith('OPEN-AT-FACO-')) {
-      final availableVendorStock =
-          await _ledger.getAvailableStock(partId, StockStage.atFaco);
-      if (qtyReceived > availableVendorStock) {
+    for (final item in items) {
+      if (item.qty <= 0) {
         return ReceiveFacoResult(
           success: false,
           error:
-              'Received quantity (${qtyReceived.toInt()}) exceeds the available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+              'Received quantity for ${item.partCode.isNotEmpty ? item.partCode : item.batchNumber} must be greater than zero.',
         );
       }
-      dispatchedQty = availableVendorStock;
-      shortageFlag = qtyReceived < availableVendorStock;
-    } else if (dispatchRefId != null) {
-      final rows = _db.db.select(
-        'SELECT qty, batch_number FROM dispatch_to_facos '
-        'WHERE factory_id = ? AND id = ? AND part_id = ?',
-        [factoryId, dispatchRefId, partId],
-      );
-      if (rows.isEmpty) {
-        return const ReceiveFacoResult(
-          success: false,
-          error: 'The selected vendor dispatch is no longer available.',
-        );
-      }
-      dispatchedQty = (rows.first['qty'] as num).toDouble();
-      final receivedRows = _db.db.select(
-        'SELECT COALESCE(SUM(qty_received), 0) AS received '
-        'FROM receive_from_facos '
-        'WHERE factory_id = ? AND dispatch_ref_id = ?',
-        [factoryId, dispatchRefId],
-      );
-      final alreadyReceived =
-          (receivedRows.first['received'] as num).toDouble();
-      final remaining = dispatchedQty - alreadyReceived;
-      if (remaining <= 0) {
-        return const ReceiveFacoResult(
-          success: false,
-          error: 'This vendor dispatch has already been received in full.',
-        );
-      }
-      if (qtyReceived > remaining) {
-        return ReceiveFacoResult(
-          success: false,
-          error:
-              'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
-        );
-      }
-      shortageFlag = qtyReceived < remaining;
-    } else {
-      final availableVendorStock =
-          await _ledger.getAvailableStock(partId, StockStage.atFaco);
-      if (qtyReceived > availableVendorStock) {
-        return ReceiveFacoResult(
-          success: false,
-          error:
-              'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
-        );
-      }
-      dispatchedQty = availableVendorStock;
-      shortageFlag = qtyReceived < availableVendorStock;
     }
 
-    final id = _uuid.v4();
     final now = recordedAt ?? DateTime.now();
     final dateStr =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
-    final effectiveBatch =
-        batchNumber.trim().isNotEmpty ? batchNumber.trim() : 'OPEN';
+    final recordsToInsert = <Map<String, dynamic>>[];
+    final ledgerActions = <({String partId, double qty, String refId})>[];
+    bool anyShortage = false;
+    double? lastDispatchedQty;
 
-    final record = {
-      'id': id,
-      'factory_id': factoryId,
-      'batch_number': effectiveBatch,
-      'date': dateStr,
-      'part_id': partId,
-      'qty_received': qtyReceived,
-      'dispatch_ref_id': dispatchRefId ?? 'OPEN-AT-FACO-$partId',
-      'supplier_challan': supplierChallan,
-      'shortage_flag': shortageFlag ? 1 : 0,
-      'remarks': remarks,
-      'created_by': createdBy,
-      'sync_status': 'pending',
-    };
+    for (final item in items) {
+      final partId = item.partId;
+      final qtyReceived = item.qty;
+      final dispatchRefId = item.dispatchRefId;
+      double? dispatchedQty;
+      bool shortageFlag = false;
 
-    // Stock: At vendor OUT → Pending AP IN (PRD 7.1)
-    try {
-      await _db.runInTransaction(() async {
-        final ledgerResult = await _ledger.receiveFromFaco(
-          partId: partId,
-          qty: qtyReceived,
-          refId: id,
-          triggerSync: false,
-        );
-        if (!ledgerResult.success) {
-          throw StockPostingFailure(
-            ledgerResult.error ?? 'Unable to update vendor receipt stock.',
+      if (dispatchRefId != null && dispatchRefId.startsWith('OPEN-AT-FACO-')) {
+        final availableVendorStock =
+            await _ledger.getAvailableStock(partId, StockStage.atFaco);
+        if (qtyReceived > availableVendorStock) {
+          return ReceiveFacoResult(
+            success: false,
+            error:
+                'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
           );
         }
-
-        await _db.insertRecord('receive_from_facos', record);
-        final syncPayload = Map<String, dynamic>.from(record)
-          ..['shortage_flag'] = shortageFlag;
-        await _sync.queueInsert(
-          tableName: 'receive_from_facos',
-          recordId: id,
-          payload: syncPayload,
-          triggerSync: false,
+        dispatchedQty = availableVendorStock;
+        shortageFlag = qtyReceived < availableVendorStock;
+      } else if (dispatchRefId != null) {
+        final rows = _db.db.select(
+          'SELECT qty, batch_number FROM dispatch_to_facos '
+          'WHERE factory_id = ? AND id = ? AND part_id = ?',
+          [factoryId, dispatchRefId, partId],
         );
+        if (rows.isEmpty) {
+          return const ReceiveFacoResult(
+            success: false,
+            error: 'The selected vendor dispatch is no longer available.',
+          );
+        }
+        dispatchedQty = (rows.first['qty'] as num).toDouble();
+        final receivedRows = _db.db.select(
+          'SELECT COALESCE(SUM(qty_received), 0) AS received '
+          'FROM receive_from_facos '
+          'WHERE factory_id = ? AND dispatch_ref_id = ?',
+          [factoryId, dispatchRefId],
+        );
+        final alreadyReceived =
+            (receivedRows.first['received'] as num).toDouble();
+        final remaining = dispatchedQty - alreadyReceived;
+        if (remaining <= 0) {
+          return const ReceiveFacoResult(
+            success: false,
+            error: 'This vendor dispatch has already been received in full.',
+          );
+        }
+        if (qtyReceived > remaining) {
+          return ReceiveFacoResult(
+            success: false,
+            error:
+                'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
+          );
+        }
+        shortageFlag = qtyReceived < remaining;
+      } else {
+        final availableVendorStock =
+            await _ledger.getAvailableStock(partId, StockStage.atFaco);
+        if (qtyReceived > availableVendorStock) {
+          return ReceiveFacoResult(
+            success: false,
+            error:
+                'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+          );
+        }
+        dispatchedQty = availableVendorStock;
+        shortageFlag = qtyReceived < availableVendorStock;
+      }
+
+      if (shortageFlag) anyShortage = true;
+      lastDispatchedQty = dispatchedQty;
+
+      final id = _uuid.v4();
+      final effectiveBatch =
+          item.batchNumber.trim().isNotEmpty ? item.batchNumber.trim() : 'OPEN';
+
+      final record = {
+        'id': id,
+        'factory_id': factoryId,
+        'batch_number': effectiveBatch,
+        'date': dateStr,
+        'part_id': partId,
+        'qty_received': qtyReceived,
+        'dispatch_ref_id': dispatchRefId ?? 'OPEN-AT-FACO-$partId',
+        'supplier_challan': supplierChallan?.trim().isEmpty == true ? null : supplierChallan?.trim(),
+        'shortage_flag': shortageFlag ? 1 : 0,
+        'remarks': remarks?.trim().isEmpty == true ? null : remarks?.trim(),
+        'created_by': createdBy,
+        'sync_status': 'pending',
+      };
+
+      recordsToInsert.add(record);
+      ledgerActions.add((partId: partId, qty: qtyReceived, refId: id));
+    }
+
+    try {
+      await _db.runInTransaction(() async {
+        for (var i = 0; i < recordsToInsert.length; i++) {
+          final record = recordsToInsert[i];
+          final action = ledgerActions[i];
+
+          final ledgerResult = await _ledger.receiveFromFaco(
+            partId: action.partId,
+            qty: action.qty,
+            refId: action.refId,
+            triggerSync: false,
+          );
+          if (!ledgerResult.success) {
+            throw StockPostingFailure(
+              ledgerResult.error ?? 'Unable to update vendor receipt stock.',
+            );
+          }
+
+          await _db.insertRecord('receive_from_facos', record);
+          final syncPayload = Map<String, dynamic>.from(record);
+          await _sync.queueInsert(
+            tableName: 'receive_from_facos',
+            recordId: action.refId,
+            payload: syncPayload,
+            triggerSync: false,
+          );
+        }
       });
     } on StockPostingFailure catch (error) {
       return ReceiveFacoResult(success: false, error: error.message);
@@ -166,9 +219,9 @@ class ReceiveFacoRepository {
     await _sync.schedulePendingSync();
     return ReceiveFacoResult(
       success: true,
-      recordId: id,
-      shortageFlag: shortageFlag,
-      dispatchedQty: dispatchedQty,
+      recordId: recordsToInsert.firstOrNull?['id'] as String?,
+      shortageFlag: anyShortage,
+      dispatchedQty: lastDispatchedQty,
     );
   }
 
@@ -595,3 +648,22 @@ class ReceiveFacoResult {
   final bool shortageFlag;
   final double? dispatchedQty;
 }
+
+class ReceiveFacoLineItem {
+  const ReceiveFacoLineItem({
+    required this.partId,
+    required this.partCode,
+    required this.partName,
+    required this.qty,
+    required this.batchNumber,
+    this.dispatchRefId,
+  });
+
+  final String partId;
+  final String partCode;
+  final String partName;
+  final double qty;
+  final String batchNumber;
+  final String? dispatchRefId;
+}
+

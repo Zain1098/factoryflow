@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -15,18 +16,43 @@ class ReceiveFacoScreen extends ConsumerStatefulWidget {
   ConsumerState<ReceiveFacoScreen> createState() => _ReceiveFacoScreenState();
 }
 
+class _ReceiveFacoLine {
+  _ReceiveFacoLine({
+    required this.partId,
+    required this.partCode,
+    required this.partName,
+    required this.batchNumber,
+    required this.dispatchRefId,
+    required this.remainingQty,
+    required this.dispatchedQty,
+    required VoidCallback onQtyChanged,
+  }) {
+    qtyCtrl.addListener(onQtyChanged);
+  }
+
+  final String partId;
+  final String partCode;
+  final String partName;
+  final String batchNumber;
+  final String? dispatchRefId;
+  final double remainingQty;
+  final double dispatchedQty;
+  final TextEditingController qtyCtrl = TextEditingController();
+
+  double get qty => double.tryParse(qtyCtrl.text.trim()) ?? 0;
+
+  void dispose() => qtyCtrl.dispose();
+}
+
 class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final _formKey = GlobalKey<FormState>();
 
-  final _batchCtrl = TextEditingController();
   String? _partId;
-  String? _dispatchRefId;
-  final _qtyCtrl = TextEditingController();
   final _challanCtrl = TextEditingController();
   final _remarksCtrl = TextEditingController();
   List<Map<String, dynamic>> _pendingDispatches = [];
+  final List<_ReceiveFacoLine> _items = [];
   bool _isSaving = false;
   String? _error;
   String? _success;
@@ -45,18 +71,58 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    _batchCtrl.dispose();
-    _qtyCtrl.dispose();
     _challanCtrl.dispose();
     _remarksCtrl.dispose();
+    for (final item in _items) {
+      item.dispose();
+    }
     super.dispose();
+  }
+
+  void _onQtyChanged() {
+    if (mounted) setState(() {});
+  }
+
+  double get _totalReceiveQty =>
+      _items.fold<double>(0.0, (sum, item) => sum + item.qty);
+
+  double get _totalRemainingQty =>
+      _items.fold<double>(0.0, (sum, item) => sum + item.remainingQty);
+
+  void _addBatch(Map<String, dynamic> dispatch) {
+    final batchNum = dispatch['batch_number'] as String? ?? '';
+    final dispatchId = dispatch['id'] as String;
+    if (_items.any((i) => i.dispatchRefId == dispatchId)) return;
+
+    final remaining = (dispatch['remaining_qty'] as num?)?.toDouble() ?? 0.0;
+    final totalDisp = (dispatch['qty'] as num?)?.toDouble() ?? remaining;
+
+    setState(() {
+      _items.add(
+        _ReceiveFacoLine(
+          partId: _partId!,
+          partCode: dispatch['part_code'] as String? ?? '',
+          partName: dispatch['part_name'] as String? ?? '',
+          batchNumber: batchNum,
+          dispatchRefId: dispatchId,
+          remainingQty: remaining,
+          dispatchedQty: totalDisp,
+          onQtyChanged: _onQtyChanged,
+        ),
+      );
+    });
+  }
+
+  void _removeBatch(int index) {
+    setState(() {
+      _items[index].dispose();
+      _items.removeAt(index);
+    });
   }
 
   Future<void> _onPartChanged(String? partId) async {
     setState(() {
       _partId = partId;
-      _dispatchRefId = null;
-      _batchCtrl.clear();
       _pendingDispatches = [];
     });
     if (partId != null) {
@@ -67,19 +133,28 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     }
   }
 
-  void _onDispatchChanged(String? dispatchId) {
-    if (dispatchId == null) return;
-    final dispatch = _pendingDispatches.firstWhere(
-      (item) => item['id'] == dispatchId,
-    );
-    setState(() {
-      _dispatchRefId = dispatchId;
-      _batchCtrl.text = dispatch['batch_number'] as String? ?? '';
-    });
-  }
-
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_items.isEmpty) {
+      setState(() => _error = 'Select at least one dispatch batch to receive.');
+      return;
+    }
+    for (final item in _items) {
+      if (item.qty <= 0) {
+        setState(
+          () => _error =
+              'Enter received quantity for ${item.partCode} (${item.batchNumber}).',
+        );
+        return;
+      }
+      if (item.qty > item.remainingQty) {
+        setState(
+          () => _error =
+              '${item.partCode} (${item.batchNumber}): quantity exceeds remaining ${item.remainingQty.toInt()} PCS.',
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isSaving = true;
       _error = null;
@@ -90,11 +165,19 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
     try {
       final user = ref.read(currentUserProvider).value;
       final repo = ref.read(receiveFacoRepositoryProvider);
-      final result = await repo.save(
-        batchNumber: _batchCtrl.text.trim(),
-        partId: _partId!,
-        qtyReceived: double.parse(_qtyCtrl.text),
-        dispatchRefId: _dispatchRefId,
+      final result = await repo.saveMulti(
+        items: _items
+            .map(
+              (i) => ReceiveFacoLineItem(
+                partId: i.partId,
+                partCode: i.partCode,
+                partName: i.partName,
+                qty: i.qty,
+                batchNumber: i.batchNumber,
+                dispatchRefId: i.dispatchRefId,
+              ),
+            )
+            .toList(),
         supplierChallan:
             _challanCtrl.text.trim().isEmpty ? null : _challanCtrl.text.trim(),
         remarks:
@@ -105,7 +188,8 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
 
       if (result.success) {
         setState(() {
-          _success = 'Receive from vendor saved!';
+          _success =
+              'Receive from vendor saved (${_totalReceiveQty.toInt()} PCS)!';
           _lastShortage = result.shortageFlag;
         });
         ref.invalidate(receiveFacoListProvider);
@@ -121,14 +205,14 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   }
 
   void _reset() {
-    _formKey.currentState?.reset();
-    _batchCtrl.clear();
-    _qtyCtrl.clear();
+    for (final item in _items) {
+      item.dispose();
+    }
+    _items.clear();
     _challanCtrl.clear();
     _remarksCtrl.clear();
     setState(() {
       _partId = null;
-      _dispatchRefId = null;
       _pendingDispatches = [];
       _recordedAt = DateTime.now();
     });
@@ -222,185 +306,514 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
 
   Widget _buildForm() {
     final parts = ref.watch(partsProvider);
+    final theme = Theme.of(context);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RecordDateTimePicker(
-              value: _recordedAt,
-              onChanged: (dt) => setState(() => _recordedAt = dt),
-              showTime: false,
-            ),
-            const SizedBox(height: 16),
+    // Calculate real-time part-wise totals
+    final partTotals = <String, double>{};
+    for (final item in _items) {
+      if (item.qty > 0) {
+        final label =
+            item.partCode.isNotEmpty ? item.partCode : item.batchNumber;
+        partTotals[label] = (partTotals[label] ?? 0.0) + item.qty;
+      }
+    }
 
-            const SectionHeader('Select Vendor Dispatch'),
+    final availableBatches = _pendingDispatches.where((dispatch) {
+      final dispatchId = dispatch['id'] as String;
+      return !_items.any((item) => item.dispatchRefId == dispatchId);
+    }).toList();
 
-            parts.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load parts: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Part',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.category_outlined),
-                value: _partId,
-                items: list
-                    .map(
-                      (p) => DropdownMenuItem(
-                        value: p['id'] as String,
-                        child: Text('${p['code']} – ${p['name']}'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _onPartChanged,
-                validator: (v) => v == null ? 'Part is required' : null,
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            partTotals.isNotEmpty ? 150 : 24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              RecordDateTimePicker(
+                value: _recordedAt,
+                onChanged: (dt) => setState(() => _recordedAt = dt),
+                showTime: false,
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-            // A receipt must always be linked to the original Faco dispatch.
-            if (_partId != null && _pendingDispatches.isEmpty) ...[
+              const SectionHeader('Select Part & Batches'),
               const Text(
-                'No pending vendor dispatch is available for this part.',
-                style: TextStyle(color: Colors.orange),
+                'Pick a part to view its dispatched batches. Tap a batch to add it for receipt.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 12),
-            ],
-            if (_pendingDispatches.isNotEmpty) ...[
-              AppDropdown<String>(
-                label: 'Vendor Dispatch',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.link),
-                value: _dispatchRefId,
-                items: _pendingDispatches
-                    .map(
-                      (d) => DropdownMenuItem(
-                        value: d['id'] as String,
-                        child: Text(
-                          '${d['batch_number']} | ${d['part_code']} - ${d['part_name']} | '
-                          '${(d['remaining_qty'] as num).toInt()} PCS left | ${d['date']}',
-                          overflow: TextOverflow.ellipsis,
+
+              parts.when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                data: (list) => AppDropdown<String>(
+                  label: 'Part',
+                  isRequired: true,
+                  prefixIcon: const Icon(Icons.category_outlined),
+                  value: _partId,
+                  items: list
+                      .map(
+                        (p) => DropdownMenuItem(
+                          value: p['id'] as String,
+                          child: Text('${p['code']} – ${p['name']}'),
                         ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _onDispatchChanged,
-                validator: (value) => value == null
-                    ? 'Select the vendor dispatch being received'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            if (_batchCtrl.text.isNotEmpty) ...[
-              Text(
-                'Original batch: ${_batchCtrl.text}',
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.w600,
+                      )
+                      .toList(),
+                  onChanged: _onPartChanged,
                 ),
               ),
               const SizedBox(height: 12),
-            ],
 
-            const SectionHeader('Received Quantity'),
-
-            if (_dispatchRefId != null && _pendingDispatches.isNotEmpty) ...[
-              Builder(
-                builder: (context) {
-                  final selected = _pendingDispatches.firstWhere(
-                    (d) => d['id'] == _dispatchRefId,
-                    orElse: () => <String, dynamic>{},
-                  );
-                  final rem = (selected['remaining_qty'] as num?)?.toDouble();
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: LiveStockChip(
-                      stock: rem,
-                      stageName: 'Pending Vendor Return',
+              if (_partId != null) ...[
+                if (_pendingDispatches.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade300),
                     ),
-                  );
-                },
-              ),
-            ],
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'No pending vendor dispatch is available for this part.',
+                            style: TextStyle(color: Colors.orange, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (availableBatches.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.green,
+                          size: 18,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'All pending dispatches for this part are added below.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else ...[
+                  const Text(
+                    'Available Dispatches (Tap to Add):',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: availableBatches.map((dispatch) {
+                      final bNum = dispatch['batch_number'] as String? ?? '';
+                      final remaining =
+                          (dispatch['remaining_qty'] as num).toInt();
+                      return ActionChip(
+                        avatar: const Icon(
+                          Icons.add_circle,
+                          size: 16,
+                          color: Colors.teal,
+                        ),
+                        label: Text('$bNum ($remaining PCS left)'),
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                        backgroundColor: Colors.teal.withValues(alpha: 0.06),
+                        side: BorderSide(
+                          color: Colors.teal.withValues(alpha: 0.3),
+                        ),
+                        onPressed: () => _addBatch(dispatch),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                const SizedBox(height: 16),
+              ],
 
-            NumberFormField(
-              label: 'Qty Received (PCS)',
-              controller: _qtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.move_to_inbox_outlined),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n <= 0) return 'Quantity must be > 0';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-
-            AppFormField(
-              label: 'Supplier Challan (optional)',
-              controller: _challanCtrl,
-              prefixIcon: const Icon(Icons.receipt_outlined),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.qr_code_scanner_rounded),
-                tooltip: 'Scan Vendor Challan Barcode',
-                onPressed: () async {
-                  final code = await BarcodeScannerView.scan(
-                    context,
-                    title: 'Scan Vendor Challan Code',
-                  );
-                  if (code != null && code.isNotEmpty) {
-                    _challanCtrl.text = code;
-                  }
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            AppFormField(
-              label: 'Remarks (optional)',
-              controller: _remarksCtrl,
-              maxLines: 2,
-              prefixIcon: const Icon(Icons.notes),
-            ),
-
-            if (_lastShortage) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border:
-                      Border.all(color: Colors.orange.withValues(alpha: 0.4)),
-                ),
-                child: const Row(
+              // ─── Selected Batches Section ─────────────────────────────────────
+              if (_items.isNotEmpty) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(Icons.warning_amber_outlined, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Shortage detected — received qty is less than dispatched qty.',
-                        style: TextStyle(color: Colors.orange),
+                    Text(
+                      'Receive Batches (${_items.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        for (final item in _items) {
+                          item.qtyCtrl.text =
+                              item.remainingQty.toInt().toString();
+                        }
+                        _onQtyChanged();
+                      },
+                      icon: const Icon(Icons.flash_on, size: 16, color: Colors.teal),
+                      label: const Text(
+                        'Fill All Max',
+                        style: TextStyle(fontSize: 12, color: Colors.teal),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                ...List.generate(_items.length, (index) {
+                  final item = _items[index];
+                  final hasOverQty = item.qty > item.remainingQty;
+                  return Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: hasOverQty
+                            ? Colors.red
+                            : Colors.grey.withValues(alpha: 0.25),
+                        width: hasOverQty ? 1.5 : 1,
+                      ),
+                    ),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.teal.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  item.batchNumber.isNotEmpty
+                                      ? item.batchNumber
+                                      : 'OPEN BATCH',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: Colors.teal,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${item.partCode} · ${item.partName}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              InkWell(
+                                onTap: () => _removeBatch(index),
+                                borderRadius: BorderRadius.circular(16),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Pending dispatch: ${item.remainingQty.toInt()} PCS',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: hasOverQty
+                                      ? Colors.red
+                                      : Colors.grey.shade700,
+                                  fontWeight: hasOverQty
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  item.qtyCtrl.text =
+                                      item.remainingQty.toInt().toString();
+                                  _onQtyChanged();
+                                },
+                                child: Text(
+                                  'Max: ${item.remainingQty.toInt()}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.teal,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: item.qtyCtrl,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            decoration: InputDecoration(
+                              labelText: 'Received Qty (PCS)',
+                              hintText: 'Enter quantity',
+                              isDense: true,
+                              prefixIcon: const Icon(Icons.move_to_inbox_outlined, size: 18),
+                              errorText: hasOverQty
+                                  ? 'Exceeds dispatch remaining (${item.remainingQty.toInt()} PCS)'
+                                  : null,
+                              suffixIcon: item.qtyCtrl.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 16),
+                                      onPressed: () {
+                                        item.qtyCtrl.clear();
+                                        _onQtyChanged();
+                                      },
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+
+                // ─── Real-Time Live Total Calculator Card ───────────────────────
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.teal.shade800,
+                        const Color(0xFF0F382C),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.teal.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.calculate_outlined,
+                                color: Colors.white70,
+                                size: 18,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'LIVE RECEIPT TOTAL',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.8,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_items.length} ${_items.length == 1 ? "Batch" : "Batches"}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Total To Receive',
+                                style:
+                                    TextStyle(color: Colors.white60, fontSize: 12),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${_totalReceiveQty.toInt()} PCS',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Pending: ${_totalRemainingQty.toInt()} PCS',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Shortage: ${(_totalRemainingQty - _totalReceiveQty).toInt()} PCS',
+                                style: TextStyle(
+                                  color: (_totalRemainingQty - _totalReceiveQty) > 0
+                                      ? Colors.orangeAccent.shade100
+                                      : Colors.greenAccent.shade100,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              AppFormField(
+                label: 'Supplier Challan (optional)',
+                controller: _challanCtrl,
+                prefixIcon: const Icon(Icons.receipt_outlined),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  tooltip: 'Scan Vendor Challan Barcode',
+                  onPressed: () async {
+                    final code = await BarcodeScannerView.scan(
+                      context,
+                      title: 'Scan Vendor Challan Code',
+                    );
+                    if (code != null && code.isNotEmpty) {
+                      _challanCtrl.text = code;
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              AppFormField(
+                label: 'Remarks (optional)',
+                controller: _remarksCtrl,
+                maxLines: 2,
+                prefixIcon: const Icon(Icons.notes),
+              ),
+
+              if (_lastShortage) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning_amber_outlined, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Shortage detected — received qty is less than dispatched qty.',
+                          style: TextStyle(color: Colors.orange),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 16),
+              if (_error != null) ErrorBanner(_error!),
+              if (_success != null) SuccessBanner(_success!),
+              const SizedBox(height: 16),
+              SaveButton(
+                onPressed: _save,
+                isLoading: _isSaving,
+                label: _totalReceiveQty > 0
+                    ? 'Save Receipt (${_totalReceiveQty.toInt()} PCS)'
+                    : 'Save Receipt',
               ),
             ],
-
-            const SizedBox(height: 16),
-            if (_error != null) ErrorBanner(_error!),
-            if (_success != null) SuccessBanner(_success!),
-            const SizedBox(height: 16),
-            SaveButton(onPressed: _save, isLoading: _isSaving),
-          ],
+          ),
         ),
-      ),
+        if (partTotals.isNotEmpty)
+          _buildDailyTotalSummaryBox(
+            partTotals,
+            null,
+            theme,
+            title: 'LIVE RECEIPT TOTAL',
+          ),
+      ],
     );
   }
 
@@ -469,12 +882,13 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
               // Calculate part-wise totals
               final partTotals = <String, double>{};
               for (final r in records) {
-                final pName = (r['part_name'] as String? ??
-                        r['part_code'] as String? ??
-                        'Unknown')
-                    .trim();
+                final code = (r['part_code'] as String?)?.trim();
+                final name = (r['part_name'] as String?)?.trim();
+                final label = (code != null && code.isNotEmpty)
+                    ? code
+                    : (name != null && name.isNotEmpty ? name : 'Unknown');
                 final qty = (r['qty_received'] as num?)?.toDouble() ?? 0.0;
-                partTotals[pName] = (partTotals[pName] ?? 0.0) + qty;
+                partTotals[label] = (partTotals[label] ?? 0.0) + qty;
               }
 
               return Stack(
@@ -482,9 +896,9 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                   ListView.separated(
                     padding: EdgeInsets.fromLTRB(
                       12,
+                      8,
                       12,
-                      12,
-                      selectedDate != null && partTotals.isNotEmpty ? 130 : 24,
+                      partTotals.isNotEmpty ? 150 : 24,
                     ),
                     itemCount: records.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -500,6 +914,9 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                       partTotals,
                       selectedDate,
                       theme,
+                      title: selectedDate != null
+                          ? 'DAY RECEIVED (${DateFormat('dd MMM').format(selectedDate)})'
+                          : 'TOTAL RECEIVED',
                     ),
                 ],
               );
@@ -830,24 +1247,26 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   Widget _buildDailyTotalSummaryBox(
     Map<String, double> partTotals,
     DateTime? selectedDate,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    String title = 'TOTAL RECEIVED',
+  }) {
     final grandTotal = partTotals.values.fold(0.0, (sum, q) => sum + q);
 
     return Positioned(
-      right: 12,
-      bottom: 12,
+      right: 16,
+      bottom: 16,
       child: Material(
         elevation: 6,
         borderRadius: BorderRadius.circular(12),
-        color: theme.colorScheme.surfaceContainerHigh,
+        color: const Color(0xFF0F382C),
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 240),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          constraints: const BoxConstraints(maxWidth: 240, minWidth: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: theme.colorScheme.primary.withValues(alpha: 0.3),
+              color: Colors.tealAccent.withValues(alpha: 0.4),
+              width: 1.5,
             ),
           ),
           child: Column(
@@ -855,94 +1274,77 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(
-                    Icons.summarize_outlined,
-                    size: 14,
-                    color: theme.colorScheme.primary,
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory_2_outlined,
+                        size: 13,
+                        color: Colors.tealAccent,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.tealAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 8),
                   Text(
-                    selectedDate != null
-                        ? 'Total (${DateFormat('dd MMM').format(selectedDate)})'
-                        : 'Total Received',
-                    style: TextStyle(
-                      fontSize: 11,
+                    '${grandTotal == grandTotal.toInt() ? grandTotal.toInt() : grandTotal} PCS',
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+                      fontSize: 11,
                     ),
                   ),
                 ],
               ),
-              const Divider(height: 8, thickness: 0.5),
-              ...partTotals.entries.take(4).map(
-                    (e) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 1.5),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              e.key,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+              const SizedBox(height: 6),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 110),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: partTotals.entries.map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${e.key} :',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${e.value == e.value.toInt() ? e.value.toInt() : e.value} PCS',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                            const SizedBox(width: 8),
+                            Text(
+                              '${e.value == e.value.toInt() ? e.value.toInt() : e.value} PCS',
+                              style: const TextStyle(
+                                color: Colors.tealAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ).toList(),
                   ),
-              if (partTotals.length > 4)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '+${partTotals.length - 4} more parts',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Total Received:',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '${grandTotal == grandTotal.toInt() ? grandTotal.toInt() : grandTotal} PCS',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],

@@ -250,6 +250,9 @@ class PurchaseOrderRepository {
   Future<List<Map<String, dynamic>>> getOpenForPart(String partId) =>
       _db.getOpenPurchaseOrders(partId);
 
+  Future<Map<String, double>> getPendingRemaining() =>
+      _db.getPendingPurchaseOrdersRemaining();
+
   Future<List<Map<String, dynamic>>> getAll({int limit = 50}) =>
       _db.getAllPurchaseOrders(limit: limit);
 
@@ -633,18 +636,37 @@ class MaterialReceiveRepository {
     return MaterialReceiveResult(success: true, recordId: id);
   }
 
-  Future<List<Map<String, dynamic>>> getRecent({int limit = 30}) async {
+  Future<List<Map<String, dynamic>>> getRecent({int limit = 50, String? date}) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
-    final rows = _db.db.select(
-      'SELECT mr.*, p.name as part_name, p.code as part_code, s.name as supplier_name '
-      'FROM material_receives mr '
-      'LEFT JOIN parts p ON p.id = mr.part_id AND p.factory_id = mr.factory_id '
-      'LEFT JOIN suppliers s ON s.id = mr.supplier_id AND s.factory_id = mr.factory_id '
-      'WHERE mr.factory_id = ? '
-      'ORDER BY mr.created_at DESC LIMIT ?',
-      [factoryId, limit],
-    );
+
+    final dateFilter = (date != null && date.trim().isNotEmpty)
+        ? date.trim()
+        : null;
+
+    final String query;
+    final List<dynamic> params;
+
+    if (dateFilter != null) {
+      query = 'SELECT mr.*, p.name as part_name, p.code as part_code, s.name as supplier_name '
+          'FROM material_receives mr '
+          'LEFT JOIN parts p ON p.id = mr.part_id AND p.factory_id = mr.factory_id '
+          'LEFT JOIN suppliers s ON s.id = mr.supplier_id AND s.factory_id = mr.factory_id '
+          'WHERE mr.factory_id = ? '
+          'AND (TRIM(mr.date) = ? OR mr.date LIKE ? OR date(mr.date) = ?) '
+          'ORDER BY mr.created_at DESC LIMIT ?';
+      params = [factoryId, dateFilter, '$dateFilter%', dateFilter, limit];
+    } else {
+      query = 'SELECT mr.*, p.name as part_name, p.code as part_code, s.name as supplier_name '
+          'FROM material_receives mr '
+          'LEFT JOIN parts p ON p.id = mr.part_id AND p.factory_id = mr.factory_id '
+          'LEFT JOIN suppliers s ON s.id = mr.supplier_id AND s.factory_id = mr.factory_id '
+          'WHERE mr.factory_id = ? '
+          'ORDER BY mr.created_at DESC LIMIT ?';
+      params = [factoryId, limit];
+    }
+
+    final rows = _db.db.select(query, params);
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 }
@@ -664,6 +686,11 @@ final purchaseOrderListProvider =
   return ref.watch(purchaseOrderRepositoryProvider).getAll();
 });
 
+final pendingOrderRemainingProvider =
+    FutureProvider<Map<String, double>>((ref) async {
+  return ref.watch(purchaseOrderRepositoryProvider).getPendingRemaining();
+});
+
 final materialReceiveRepositoryProvider =
     Provider<MaterialReceiveRepository>((ref) {
   return MaterialReceiveRepository(
@@ -674,10 +701,27 @@ final materialReceiveRepositoryProvider =
   );
 });
 
+class MaterialReceiveHistoryDateFilterNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void setDate(DateTime? date) => state = date;
+}
+
+final materialReceiveHistoryDateFilterProvider =
+    NotifierProvider<MaterialReceiveHistoryDateFilterNotifier, DateTime?>(
+  MaterialReceiveHistoryDateFilterNotifier.new,
+);
+
 final materialReceiveListProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.watch(materialReceiveRepositoryProvider).getRecent();
+  final date = ref.watch(materialReceiveHistoryDateFilterProvider);
+  final dateStr = date != null
+      ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+      : null;
+  return ref.watch(materialReceiveRepositoryProvider).getRecent(date: dateStr);
 });
+
 
 // ─── Result classes ───────────────────────────────────────────────────────────
 

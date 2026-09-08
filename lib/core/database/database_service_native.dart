@@ -1630,6 +1630,45 @@ class DatabaseService {
     );
   }
 
+  Future<Map<String, double>> getPendingPurchaseOrdersRemaining() async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return {};
+    final rows = db.select(
+      '''
+      SELECT 
+        p.code as part_code,
+        p.name as part_name,
+        COALESCE(SUM(
+          MAX(0.0, po.ordered_qty - COALESCE(rcv.received_qty, 0.0))
+        ), 0.0) as remaining_qty
+      FROM purchase_orders po
+      LEFT JOIN (
+        SELECT po_ref_id, SUM(qty) as received_qty
+        FROM material_receives
+        WHERE factory_id = ? AND po_ref_id IS NOT NULL
+        GROUP BY po_ref_id
+      ) rcv ON rcv.po_ref_id = po.id
+      LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id
+      WHERE po.factory_id = ? 
+        AND po.status NOT IN ('cancelled', 'received')
+      GROUP BY p.code, p.name
+      HAVING remaining_qty > 0
+      ORDER BY p.code ASC
+      ''',
+      [factoryId, factoryId],
+    );
+
+    final result = <String, double>{};
+    for (final row in rows) {
+      final code = (row['part_code'] as String?)?.trim() ?? 'Unknown';
+      final rem = (row['remaining_qty'] as num?)?.toDouble() ?? 0.0;
+      if (rem > 0) {
+        result[code] = (result[code] ?? 0.0) + rem;
+      }
+    }
+    return result;
+  }
+
   Future<String> getNextPoNumber(
     String factoryId,
     DateTime date,

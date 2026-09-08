@@ -327,12 +327,29 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     final vehicles = ref.watch(vehiclesProvider);
     final drivers = ref.watch(driversProvider);
     final batchesAsync = ref.watch(bpReinspectedBatchesProvider);
+    final theme = Theme.of(context);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final partTotals = <String, int>{};
+    for (final item in _items) {
+      if (item.qty > 0) {
+        final label =
+            item.partCode.isNotEmpty ? item.partCode : item.batchNumber;
+        partTotals[label] = (partTotals[label] ?? 0) + item.qty.toInt();
+      }
+    }
+
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            partTotals.isNotEmpty ? 150 : 24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           RecordDateTimePicker(
             value: _recordedAt,
             onChanged: (dt) => setState(() => _recordedAt = dt),
@@ -871,7 +888,20 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
           ),
         ],
       ),
-    );
+    ),
+    if (partTotals.isNotEmpty)
+      Positioned(
+        bottom: 16,
+        right: 16,
+        child: _buildDailyTotalSummaryBox(
+          context,
+          partTotals,
+          theme,
+          title: 'LIVE DISPATCH TOTAL',
+        ),
+      ),
+  ],
+);
   }
 
   Future<void> _pickHistoryDate(
@@ -1034,9 +1064,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                 );
               }
 
-              final partTotals = selectedDate != null
-                  ? _calculatePartDispatchTotals(records)
-                  : <String, int>{};
+              final partTotals = _calculatePartDispatchTotals(records);
 
               return Stack(
                 children: [
@@ -1045,7 +1073,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       12,
                       8,
                       12,
-                      selectedDate != null && partTotals.isNotEmpty ? 130 : 24,
+                      partTotals.isNotEmpty ? 150 : 24,
                     ),
                     itemCount: records.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -1057,7 +1085,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       );
                     },
                   ),
-                  if (selectedDate != null && partTotals.isNotEmpty)
+                  if (partTotals.isNotEmpty)
                     Positioned(
                       bottom: 16,
                       right: 16,
@@ -1065,6 +1093,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                         context,
                         partTotals,
                         theme,
+                        title: selectedDate != null
+                            ? 'DAY DISPATCH (${DateFormat('dd MMM').format(selectedDate)})'
+                            : 'TOTAL DISPATCHED',
                       ),
                     ),
                 ],
@@ -1334,8 +1365,9 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   Widget _buildDailyTotalSummaryBox(
     BuildContext context,
     Map<String, int> partTotals,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    String title = 'TOTAL DISPATCHED',
+  }) {
     final grandTotal = partTotals.values.fold<int>(0, (sum, val) => sum + val);
 
     return Material(
@@ -1356,17 +1388,17 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.local_shipping,
                       size: 13,
                       color: Colors.white70,
                     ),
-                    SizedBox(width: 5),
+                    const SizedBox(width: 5),
                     Text(
-                      'TOTAL DISPATCHED',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
