@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/services/export_service.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -170,6 +171,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
         ref.invalidate(finalDispatchListProvider);
         ref.invalidate(approvedDispatchBatchesProvider);
         ref.invalidate(apOkStockProvider);
+        refreshAllStockAndEntryProviders(ref);
         _reset();
         _loadDefaultCustomer();
       } else {
@@ -274,267 +276,367 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
     );
   }
 
+  void _openBatchPickerSheet(List<Map<String, dynamic>> items) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _FinalDispatchBatchPickerSheet(
+        items: items,
+        selectedItems: _items,
+        onSelect: (item) {
+          _addPart(item);
+          Navigator.pop(ctx);
+        },
+      ),
+    );
+  }
+
   Widget _buildForm() {
     final theme = Theme.of(context);
     final apOkAsync = ref.watch(approvedDispatchBatchesProvider);
     final customers = ref.watch(customersProvider);
     final vehicles = ref.watch(vehiclesProvider);
     final drivers = ref.watch(driversProvider);
+    final totalQty = _items.fold<double>(0, (s, i) => s + i.qty);
 
-    return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          RecordDateTimePicker(
-            value: _recordedAt,
-            onChanged: (dt) => setState(() => _recordedAt = dt),
-            showTime: false,
-          ),
-          const SizedBox(height: 16),
-
-          // AP OK Stock — select parts
-          Row(
-            children: [
-              Text(
-                'AP OK STOCK — SELECT PARTS',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          apOkAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load AP OK stock: $e'),
-            data: (items) {
-              final available =
-                  items.where((i) => (i['balance'] as num) > 0).toList();
-              if (available.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'No AP OK stock available.\nComplete AP Inspection first.',
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              }
-              return Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: available.map((item) {
-                  final alreadyAdded = _items.any(
-                    (dispatchItem) =>
-                        dispatchItem.partId == item['id'] &&
-                        dispatchItem.batchNumber == item['batch_number'],
-                  );
-                  final balance = (item['balance'] as num).toInt();
-                  return FilterChip(
-                    label: Text(
-                      '${item['code']} • ${item['batch_number']} '
-                      '($balance PCS)',
-                    ),
-                    selected: alreadyAdded,
-                    onSelected: alreadyAdded ? null : (_) => _addPart(item),
-                    avatar: alreadyAdded
-                        ? const Icon(Icons.check, size: 14)
-                        : const Icon(Icons.add, size: 14),
-                    selectedColor: theme.colorScheme.primaryContainer,
-                  );
-                }).toList(),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-
-          // Dispatch items
-          if (_items.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  'Tap a part chip above to add it to this dispatch',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                ),
-              ),
-            )
-          else ...[
-            for (int i = 0; i < _items.length; i++)
-              _DispatchItemCard(
-                item: _items[i],
-                onRemove: () => _removeItem(i),
-                onChanged: () => setState(() {}),
-              ),
-            // Total summary
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color:
-                    theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.2),),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Total Dispatch',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,),
-                  ),
-                  Text(
-                    '${_items.fold(0.0, (s, i) => s + i.qty).toInt()} PCS (${_items.length} parts)',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: theme.colorScheme.primary,),
-                  ),
+    return Column(
+      children: [
+        Expanded(
+          child: EntryFormScroll(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null) ...[
+                  ErrorBanner(_error!),
+                  const SizedBox(height: 12),
                 ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 20),
-
-          // Customer
-          customers.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load customers: $e'),
-            data: (list) => AppDropdown<String>(
-              label: 'Customer',
-              isRequired: true,
-              prefixIcon: const Icon(Icons.person_pin_outlined),
-              value: _customerId,
-              items: list
-                  .map(
-                    (c) => DropdownMenuItem(
-                      value: c['id'] as String,
-                      child: Text(c['name'] as String),
+                if (_success != null) ...[
+                  SuccessBanner(_success!),
+                  if (_savedChallan != null) ...[
+                    const SizedBox(height: 8),
+                    Card(
+                      color: theme.colorScheme.secondaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.receipt_long_outlined),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Challan: $_savedChallan',
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _customerId = v),
-            ),
-          ),
-          const SizedBox(height: 12),
+                  ],
+                  const SizedBox(height: 12),
+                ],
 
-          // Vehicle
-          vehicles.when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (list) => Row(
-              children: [
-                Expanded(
-                  child: AppDropdown<String>(
-                    label: 'Vehicle (optional)',
-                    prefixIcon: const Icon(Icons.local_shipping_outlined),
-                    value: _vehicleId,
-                    items: list
-                        .map(
-                          (v) => DropdownMenuItem(
-                            value: v['id'] as String,
-                            child: Text(v['number_plate'] as String),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setState(() => _vehicleId = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                    onPressed: _addNewVehicle, icon: const Icon(Icons.add),),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Driver
-          drivers.when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (list) => Row(
-              children: [
-                Expanded(
-                  child: AppDropdown<String>(
-                    label: 'Driver (optional)',
-                    prefixIcon: const Icon(Icons.person_outlined),
-                    value: _driverId,
-                    items: list
-                        .map(
-                          (d) => DropdownMenuItem(
-                            value: d['id'] as String,
-                            child: Text(d['name'] as String),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setState(() => _driverId = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                    onPressed: _addNewDriver, icon: const Icon(Icons.add),),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          AppFormField(
-            label: 'Challan Number (optional)',
-            controller: _challanCtrl,
-            prefixIcon: const Icon(Icons.receipt_outlined),
-          ),
-          const SizedBox(height: 12),
-
-          AppFormField(
-            label: 'Remarks (optional)',
-            controller: _remarksCtrl,
-            maxLines: 2,
-            prefixIcon: const Icon(Icons.notes),
-          ),
-
-          const SizedBox(height: 20),
-          if (_error != null) ErrorBanner(_error!),
-          if (_success != null) ...[
-            SuccessBanner(_success!),
-            if (_savedChallan != null) ...[
-              const SizedBox(height: 8),
-              Card(
-                color: Theme.of(context).colorScheme.secondaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
+                // Card 1: Dispatch Header & Customer
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.receipt_long_outlined),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Challan: $_savedChallan',
-                        style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.bold,),
+                      const _CardSectionHeader(
+                        icon: Icons.local_shipping_outlined,
+                        title: 'Customer & Dispatch Details',
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RecordDateTimePicker(
+                              value: _recordedAt,
+                              onChanged: (dt) => setState(() => _recordedAt = dt),
+                              showTime: false,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: AppFormField(
+                              label: 'Challan Number',
+                              controller: _challanCtrl,
+                              hint: 'Auto-generated if empty',
+                              prefixIcon: const Icon(Icons.receipt_outlined),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      customers.when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => ErrorBanner('Could not load customers: $e'),
+                        data: (list) => AppDropdown<String>(
+                          label: 'Customer',
+                          isRequired: true,
+                          prefixIcon: const Icon(Icons.person_pin_outlined),
+                          value: _customerId,
+                          items: list
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c['id'] as String,
+                                  child: Text(c['name'] as String),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _customerId = v),
+                        ),
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                // Card 2: Logistics & Transport
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _CardSectionHeader(
+                        icon: Icons.commute_outlined,
+                        title: 'Transport & Logistics',
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: vehicles.when(
+                              loading: () => const SizedBox.shrink(),
+                              error: (_, __) => const SizedBox.shrink(),
+                              data: (list) => AppDropdown<String>(
+                                label: 'Vehicle (optional)',
+                                prefixIcon: const Icon(Icons.local_shipping_outlined),
+                                value: _vehicleId,
+                                items: list
+                                    .map(
+                                      (v) => DropdownMenuItem(
+                                        value: v['id'] as String,
+                                        child: Text(v['number_plate'] as String),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (v) => setState(() => _vehicleId = v),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.outlined(
+                            onPressed: _addNewVehicle,
+                            icon: const Icon(Icons.add),
+                            tooltip: 'Add Vehicle',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: drivers.when(
+                              loading: () => const SizedBox.shrink(),
+                              error: (_, __) => const SizedBox.shrink(),
+                              data: (list) => AppDropdown<String>(
+                                label: 'Driver (optional)',
+                                prefixIcon: const Icon(Icons.person_outlined),
+                                value: _driverId,
+                                items: list
+                                    .map(
+                                      (d) => DropdownMenuItem(
+                                        value: d['id'] as String,
+                                        child: Text(d['name'] as String),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (v) => setState(() => _driverId = v),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.outlined(
+                            onPressed: _addNewDriver,
+                            icon: const Icon(Icons.add),
+                            tooltip: 'Add Driver',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      AppFormField(
+                        label: 'Remarks / Delivery Notes (optional)',
+                        controller: _remarksCtrl,
+                        maxLines: 2,
+                        prefixIcon: const Icon(Icons.notes),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Card 3: Finished Goods Items
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: _CardSectionHeader(
+                              icon: Icons.inventory_2_outlined,
+                              title: 'Finished Goods to Dispatch',
+                            ),
+                          ),
+                          if (_items.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${_items.length} Selected',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      apOkAsync.when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => ErrorBanner('Could not load AP OK stock: $e'),
+                        data: (items) {
+                          final available = items
+                              .where((i) => ((i['balance'] as num?)?.toDouble() ?? 0) > 0)
+                              .toList();
+                          if (available.isEmpty) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: theme.colorScheme.outlineVariant),
+                              ),
+                              child: const Column(
+                                children: [
+                                  Icon(Icons.inventory_outlined, size: 36, color: Colors.grey),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'No AP OK stock available for dispatch.\nPerform AP Inspection first to approve parts.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final unselectedCount = available.where((i) => !_items.any(
+                            (item) => item.partId == i['id'] && item.batchNumber == i['batch_number'],
+                          ),).length;
+
+                          return FilledButton.tonalIcon(
+                            onPressed: unselectedCount > 0 ? () => _openBatchPickerSheet(available) : null,
+                            icon: const Icon(Icons.add_shopping_cart, size: 18),
+                            label: Text(
+                              _items.isEmpty
+                                  ? 'Select AP OK Batches (${available.length} available)'
+                                  : 'Add Another Batch ($unselectedCount remaining)',
+                            ),
+                          );
+                        },
+                      ),
+                      if (_items.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        for (int i = 0; i < _items.length; i++)
+                          _DispatchItemCard(
+                            item: _items[i],
+                            onRemove: () => _removeItem(i),
+                            onChanged: () => setState(() {}),
+                          ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Total Dispatch Qty',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              Text(
+                                '${totalQty.toInt()} PCS (${_items.length} parts)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+        StickyBottomActionBar(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${totalQty.toInt()} PCS',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                    Text(
+                      '${_items.length} items ready',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              SaveButton(
+                onPressed: _save,
+                isLoading: _isSaving,
+                label: 'Confirm Dispatch',
               ),
             ],
-          ],
-          const SizedBox(height: 12),
-          SaveButton(onPressed: _save, isLoading: _isSaving),
-          const SizedBox(height: 40),
-        ],
-      ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -754,57 +856,355 @@ class _DispatchItemCardState extends State<_DispatchItemCard> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.partCode,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${item.partCode} – ${item.partName}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Batch #${item.batchNumber}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    item.partName,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  Text(
-                    'Batch ${item.batchNumber}',
+                  child: Text(
+                    'Avail: ${item.availableQty.toInt()} PCS',
                     style: TextStyle(
                       fontSize: 11,
-                      fontFamily: 'monospace',
-                      color: theme.colorScheme.primary,
+                      color: theme.colorScheme.onSecondaryContainer,
                     ),
                   ),
-                  Text(
-                    'Available: ${item.availableQty.toInt()} PCS',
-                    style: TextStyle(
-                        fontSize: 11, color: theme.colorScheme.primary,),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () {
+                    item.qtyCtrl.text = item.availableQty.toInt().toString();
+                    widget.onChanged();
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.done_all, size: 12, color: Colors.green),
+                        SizedBox(width: 3),
+                        Text(
+                          'All',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                  onPressed: widget.onRemove,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            NumberFormField(
+              label: 'Dispatch Quantity (PCS)',
+              controller: item.qtyCtrl,
+              allowDecimal: false,
+              prefixIcon: const Icon(Icons.local_shipping_outlined, size: 18),
+            ),
+            if (item.exceedsAvailable)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '⚠ Exceeds available AP OK balance (${item.availableQty.toInt()} PCS)',
+                  style: const TextStyle(color: Colors.red, fontSize: 12),
+                ),
               ),
-            ),
-            SizedBox(
-              width: 110,
-              child: NumberFormField(
-                label: 'Qty',
-                controller: item.qtyCtrl,
-                allowDecimal: false,
-                prefixIcon: const Icon(Icons.send_outlined, size: 16),
-              ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              icon: const Icon(Icons.close, size: 18, color: Colors.red),
-              onPressed: widget.onRemove,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
           ],
         ),
       ),
     );
   }
 }
+
+class _CardSectionHeader extends StatelessWidget {
+  const _CardSectionHeader({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FinalDispatchBatchPickerSheet extends StatefulWidget {
+  const _FinalDispatchBatchPickerSheet({
+    required this.items,
+    required this.selectedItems,
+    required this.onSelect,
+  });
+
+  final List<Map<String, dynamic>> items;
+  final List<_DispatchItem> selectedItems;
+  final ValueChanged<Map<String, dynamic>> onSelect;
+
+  @override
+  State<_FinalDispatchBatchPickerSheet> createState() =>
+      _FinalDispatchBatchPickerSheetState();
+}
+
+class _FinalDispatchBatchPickerSheetState
+    extends State<_FinalDispatchBatchPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final filtered = widget.items.where((item) {
+      if (_query.isEmpty) return true;
+      final code = (item['code'] ?? '').toString().toLowerCase();
+      final name = (item['name'] ?? '').toString().toLowerCase();
+      final batch = (item['batch_number'] ?? '').toString().toLowerCase();
+      return code.contains(_query) ||
+          name.contains(_query) ||
+          batch.contains(_query);
+    }).toList();
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.inventory_2_outlined, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Select Finished Goods to Dispatch',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${widget.items.length} Available',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search part name, code, or batch…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _query = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                isDense: true,
+              ),
+              onChanged: (val) =>
+                  setState(() => _query = val.trim().toLowerCase()),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _query.isEmpty
+                          ? 'No batches available for dispatch.'
+                          : 'No batches matching "$_query"',
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final item = filtered[i];
+                      final id = item['id'] as String;
+                      final batch = item['batch_number'] as String;
+                      final balance = (item['balance'] as num).toDouble();
+                      final isSelected = widget.selectedItems.any(
+                        (d) => d.partId == id && d.batchNumber == batch,
+                      );
+
+                      return Material(
+                        color: isSelected
+                            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                            : theme.colorScheme.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          onTap: isSelected ? null : () => widget.onSelect(item),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: isSelected
+                                      ? theme.colorScheme.outlineVariant
+                                      : theme.colorScheme.primaryContainer,
+                                  child: Icon(
+                                    isSelected ? Icons.check : Icons.local_shipping_outlined,
+                                    size: 18,
+                                    color: isSelected
+                                        ? theme.colorScheme.onSurfaceVariant
+                                        : theme.colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${item['code']} – ${item['name']}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: isSelected
+                                              ? theme.colorScheme.onSurfaceVariant
+                                              : null,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'Batch #$batch',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? Colors.grey.withValues(alpha: 0.15)
+                                            : Colors.indigo.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${balance.toInt()} PCS',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: isSelected ? Colors.grey : Colors.indigo,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Added',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

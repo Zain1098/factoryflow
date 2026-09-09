@@ -205,132 +205,233 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
     );
   }
 
+  void _openBatchPickerSheet(List<Map<String, dynamic>> items) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ApBatchPickerSheet(
+        items: items,
+        selectedEntries: _entries,
+        onSelect: (item) {
+          _addPart(item);
+          Navigator.pop(ctx);
+        },
+      ),
+    );
+  }
+
   Widget _buildForm() {
     final rejectReasons = ref.watch(apRejectReasonsListProvider);
     final theme = Theme.of(context);
     final apStockAsync = ref.watch(pendingApStockProvider);
 
-    return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          RecordDateTimePicker(
-            value: _recordedAt,
-            onChanged: (dt) => setState(() => _recordedAt = dt),
-            showTime: false,
-          ),
-          const SizedBox(height: 16),
+    final totalChecked = _entries.fold<double>(0, (sum, e) => sum + e.checked);
+    final totalApproved = _entries.fold<double>(0, (sum, e) => sum + e.approved);
+    final totalRtv = _entries.fold<double>(0, (sum, e) => sum + e.rtvQty);
+    final totalRejected = _entries.fold<double>(0, (sum, e) => sum + e.rejected);
 
-          // Reject reason
-          AppDropdown<String>(
-            label: 'Reject Reason (if any)',
-            prefixIcon: const Icon(Icons.report_problem_outlined),
-            value: _rejectReason,
-            items: (rejectReasons.value ?? kApRejectReasonsFallback)
-                .toSet()
-                .toList()
-                .map((r) => DropdownMenuItem(value: r, child: Text(r)))
-                .toList(),
-            onChanged: (v) => setState(() => _rejectReason = v),
-          ),
-          const SizedBox(height: 20),
-
-          // After Plating stock — select parts to inspect
-          Row(
-            children: [
-              Text(
-                'PENDING AP STOCK',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.bold,
+    return Column(
+      children: [
+        Expanded(
+          child: EntryFormScroll(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                RecordDateTimePicker(
+                  value: _recordedAt,
+                  onChanged: (dt) => setState(() => _recordedAt = dt),
+                  showTime: false,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message:
-                    'Parts received from vendor, waiting for AP inspection',
-                child: Icon(Icons.info_outline,
-                    size: 14, color: theme.colorScheme.onSurfaceVariant,),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          apStockAsync.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load AP stock: $e'),
-            data: (items) {
-              if (items.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 12),
+
+                // Card 1: Batch Selection & Source
+                EntryInfoSurface(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.inventory_2_outlined, size: 18, color: theme.colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'PLATED BATCH SELECTION',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const Spacer(),
+                          apStockAsync.maybeWhen(
+                            data: (items) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${items.length} BATCHES READY',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                            orElse: () => const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      apStockAsync.when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => ErrorBanner('Could not load AP stock: $e'),
+                        data: (items) {
+                          if (items.isEmpty) {
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: theme.colorScheme.outlineVariant),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.inbox_outlined, color: Colors.grey, size: 20),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'No pending plated material in stock.\nReceive material from vendor first.',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          final unselectedCount = items.where((i) => !_entries.any(
+                            (e) => e.partId == i['id'] && e.batchNumber == i['batch_number'],
+                          ),).length;
+
+                          return FilledButton.tonalIcon(
+                            onPressed: unselectedCount > 0 ? () => _openBatchPickerSheet(items) : null,
+                            icon: const Icon(Icons.add_task_rounded, size: 18),
+                            label: Text(
+                              _entries.isEmpty
+                                  ? 'Select Plated Batch to Inspect ($unselectedCount available)'
+                                  : 'Add Another Plated Batch ($unselectedCount remaining)',
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    'No pending AP stock.\nReceive material from vendor first.',
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              }
-              return Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: items.map((item) {
-                  final alreadyAdded = _entries.any(
-                    (entry) =>
-                        entry.partId == item['id'] &&
-                        entry.batchNumber == item['batch_number'],
-                  );
-                  final balance = (item['balance'] as num).toInt();
-                  return FilterChip(
-                    label: Text(
-                      '${item['code']} • ${item['batch_number']} '
-                      '($balance PCS)',
+                ),
+                const SizedBox(height: 12),
+
+                // Card 2: Batch Entries
+                if (_entries.isNotEmpty) ...[
+                  for (int i = 0; i < _entries.length; i++)
+                    _PartEntryCard(
+                      entry: _entries[i],
+                      onRemove: () => _removeEntry(i),
+                      onChanged: () => setState(() {}),
                     ),
-                    selected: alreadyAdded,
-                    onSelected: alreadyAdded ? null : (_) => _addPart(item),
-                    avatar: alreadyAdded
-                        ? const Icon(Icons.check, size: 14)
-                        : const Icon(Icons.add, size: 14),
-                    selectedColor: theme.colorScheme.primaryContainer,
-                  );
-                }).toList(),
-              );
-            },
+                  const SizedBox(height: 12),
+
+                  // Card 3: Defect & Notes
+                  EntryInfoSurface(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.rule_folder_outlined, size: 18, color: theme.colorScheme.primary),
+                            const SizedBox(width: 8),
+                            Text(
+                              'QC NOTES & REASONS',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        AppDropdown<String>(
+                          label: 'Reject Reason (if rejected / RTV)',
+                          prefixIcon: const Icon(Icons.report_problem_outlined),
+                          value: _rejectReason,
+                          items: (rejectReasons.value ?? kApRejectReasonsFallback)
+                              .toSet()
+                              .toList()
+                              .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                              .toList(),
+                          onChanged: (v) => setState(() => _rejectReason = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  ErrorBanner(_error!),
+                ],
+                if (_success != null) ...[
+                  const SizedBox(height: 10),
+                  SuccessBanner(_success!),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+        ),
 
-          if (_entries.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Center(
-                child: Text(
-                  'Tap a part chip above to add it for inspection',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+        // Sticky Bottom Action Bar
+        if (_entries.isNotEmpty)
+          StickyBottomActionBar(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Total Checked: ${totalChecked.toInt()} PCS',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      Text(
+                        '✓ ${totalApproved.toInt()} OK  ·  ↺ ${totalRtv.toInt()} RTV  ·  ✗ ${totalRejected.toInt()} Rej',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                FilledButton.icon(
+                  onPressed: _isSaving ? null : _save,
+                  icon: _isSaving
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text(_isSaving ? 'Saving...' : 'Save Inspection'),
+                ),
+              ],
             ),
-
-          for (int i = 0; i < _entries.length; i++)
-            _PartEntryCard(
-              entry: _entries[i],
-              onRemove: () => _removeEntry(i),
-              onChanged: () => setState(() {}),
-            ),
-
-          const SizedBox(height: 20),
-          if (_error != null) ErrorBanner(_error!),
-          if (_success != null) SuccessBanner(_success!),
-          const SizedBox(height: 12),
-          SaveButton(onPressed: _save, isLoading: _isSaving),
-          const SizedBox(height: 40),
-        ],
-      ),
+          ),
+      ],
     );
   }
 
@@ -491,6 +592,31 @@ class _PartEntryCardState extends State<_PartEntryCard> {
                     style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSecondaryContainer,),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () {
+                    e.checkedCtrl.text = e.availableQty.toInt().toString();
+                    e.rejectedCtrl.text = '0';
+                    e.rtvQtyCtrl.text = '0';
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.done_all, size: 12, color: Colors.green),
+                        SizedBox(width: 3),
+                        Text('All OK', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -788,5 +914,233 @@ class _ApRejectedTab extends ConsumerWidget {
       refreshAllStockAndEntryProviders(ref);
       ref.invalidate(apRejectedStockProvider);
     }
+  }
+}
+
+class _ApBatchPickerSheet extends StatefulWidget {
+  const _ApBatchPickerSheet({
+    required this.items,
+    required this.selectedEntries,
+    required this.onSelect,
+  });
+
+  final List<Map<String, dynamic>> items;
+  final List<_ApPartEntry> selectedEntries;
+  final ValueChanged<Map<String, dynamic>> onSelect;
+
+  @override
+  State<_ApBatchPickerSheet> createState() => _ApBatchPickerSheetState();
+}
+
+class _ApBatchPickerSheetState extends State<_ApBatchPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final filtered = widget.items.where((item) {
+      if (_query.isEmpty) return true;
+      final partCode = (item['code'] ?? item['part_code'] ?? '').toString().toLowerCase();
+      final partName = (item['name'] ?? item['part_name'] ?? '').toString().toLowerCase();
+      final batch = (item['batch_number'] ?? '').toString().toLowerCase();
+      return partCode.contains(_query) ||
+          partName.contains(_query) ||
+          batch.contains(_query);
+    }).toList();
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: theme.dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.inventory_2_outlined, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Select Batch for Inspection',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${widget.items.length} Available',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: InputDecoration(
+                hintText: 'Search part or batch number…',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _query = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                isDense: true,
+              ),
+              onChanged: (val) => setState(() => _query = val.trim().toLowerCase()),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _query.isEmpty
+                          ? 'No batches pending inspection.'
+                          : 'No batches matching "$_query"',
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) {
+                      final item = filtered[i];
+                      final partId = (item['id'] ?? item['part_id'] ?? '').toString();
+                      final batch = (item['batch_number'] ?? '').toString();
+                      final availQty = (item['available_qty'] as num?)?.toDouble() ?? 0.0;
+                      final isSelected = widget.selectedEntries.any(
+                        (e) => e.partId == partId && e.batchNumber == batch,
+                      );
+
+                      return Material(
+                        color: isSelected
+                            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                            : theme.colorScheme.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          onTap: isSelected ? null : () => widget.onSelect(item),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: isSelected
+                                      ? theme.colorScheme.outlineVariant
+                                      : theme.colorScheme.primaryContainer,
+                                  child: Icon(
+                                    isSelected ? Icons.check : Icons.precision_manufacturing_outlined,
+                                    size: 18,
+                                    color: isSelected
+                                        ? theme.colorScheme.onSurfaceVariant
+                                        : theme.colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${item['part_code'] ?? ''} – ${item['part_name'] ?? ''}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: isSelected
+                                              ? theme.colorScheme.onSurfaceVariant
+                                              : null,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        'Batch #$batch',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? Colors.grey.withValues(alpha: 0.15)
+                                            : Colors.teal.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${availQty.toInt()} PCS',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: isSelected ? Colors.grey : Colors.teal.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          'Added',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }

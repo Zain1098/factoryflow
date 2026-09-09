@@ -126,11 +126,10 @@ class SyncService {
   /// Pulls the active company's shared records onto a newly signed-in mobile.
   /// Pending local records are never overwritten; normal upload remains the
   /// source of truth for offline work made on this device.
-  Future<int> hydrateActiveWorkspace() async {
+  Future<int> hydrateActiveWorkspace({String? explicitFactoryId}) async {
     if (_accessAllowed?.call() != true) return 0;
     if (!await isOnline() || !await isSupabaseReady()) return 0;
-    if (await _db.countPendingSync() > 0) return 0;
-    final factoryId = _db.activeWorkspaceId.trim();
+    final factoryId = (explicitFactoryId ?? _db.activeWorkspaceId).trim();
     if (factoryId.isEmpty) return 0;
     const tables = [
       'parts', 'machines', 'suppliers', 'vendors', 'customers', 'operators',

@@ -103,6 +103,33 @@ class _AppShellState extends ConsumerState<AppShell>
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   actions: const [SizedBox.shrink()],
+                )
+              else if (pendingSync > 0)
+                MaterialBanner(
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withValues(alpha: 0.35),
+                  leading: const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  content: Text(
+                    'Backing up $pendingSync record(s) to cloud…',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        ref.read(syncServiceProvider).syncPending();
+                      },
+                      child: const Text('Sync Now'),
+                    ),
+                  ],
                 ),
               Expanded(child: widget.child),
             ],

@@ -29,6 +29,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
   final _rtvQtyCtrl = TextEditingController();
   final _expectedDateCtrl = TextEditingController();
   final _remarksCtrl = TextEditingController();
+  double? _availableQty;
   bool _isSaving = false;
   String? _error;
   String? _success;
@@ -128,6 +129,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
     setState(() {
       _partId = null;
       _candidateKey = null;
+      _availableQty = null;
       _vendorId = null;
       _reason = null;
       _recordedAt = DateTime.now();
@@ -165,156 +167,313 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
     final rtvReasons = ref.watch(rtvReasonsListProvider);
     final vendors = ref.watch(vendorsProvider);
     final candidates = ref.watch(rtvCandidatesProvider);
+    final theme = Theme.of(context);
+    final qty = double.tryParse(_rtvQtyCtrl.text) ?? 0;
 
-    return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-            ),
-            child: const Row(
+    return Column(
+      children: [
+        Expanded(
+          child: EntryFormScroll(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.info_outline, color: Colors.orange, size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Max 3 RTV cycles per batch. After 3, status is escalated to Admin.',
-                    style: TextStyle(color: Colors.orange, fontSize: 12),
+                if (_error != null) ...[
+                  ErrorBanner(_error!),
+                  const SizedBox(height: 12),
+                ],
+                if (_success != null) ...[
+                  SuccessBanner(_success!),
+                  const SizedBox(height: 12),
+                ],
+
+                // ── Card 1: RTV Logistics & Vendor ──
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: _CardSectionHeader(
+                              icon: Icons.undo_rounded,
+                              title: 'Return to Vendor Details',
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Max 3 Cycles',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepOrange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RecordDateTimePicker(
+                              value: _recordedAt,
+                              onChanged: (dt) => setState(() => _recordedAt = dt),
+                              showTime: false,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: AppFormField(
+                              label: 'Expected Return Date',
+                              controller: _expectedDateCtrl,
+                              readOnly: true,
+                              hint: 'Optional return date',
+                              prefixIcon: const Icon(Icons.event_outlined),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.calendar_month),
+                                onPressed: _pickDate,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      vendors.when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => ErrorBanner('Could not load vendors: $e'),
+                        data: (list) => AppDropdown<String>(
+                          label: 'Plating Vendor',
+                          isRequired: true,
+                          prefixIcon: const Icon(Icons.business_outlined),
+                          value: _vendorId,
+                          items: list
+                              .map(
+                                (v) => DropdownMenuItem(
+                                  value: v['id'] as String,
+                                  child: Text(v['name'] as String),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _vendorId = v),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                // ── Card 2: Rejected Material & Qty ──
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _CardSectionHeader(
+                        icon: Icons.inventory_2_outlined,
+                        title: 'AP Rejected Material Selection',
+                      ),
+                      const SizedBox(height: 14),
+                      candidates.when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => ErrorBanner('Could not load RTV candidates: $e'),
+                        data: (list) {
+                          if (list.isEmpty) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: theme.colorScheme.outlineVariant),
+                              ),
+                              child: const Column(
+                                children: [
+                                  Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'No AP rejected stock currently available for RTV.\nRejections from AP Inspection appear here.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          return AppDropdown<String>(
+                            label: 'AP Rejected Batch',
+                            isRequired: true,
+                            prefixIcon: const Icon(Icons.inventory_outlined),
+                            value: _candidateKey,
+                            items: list.map((candidate) {
+                              final key = '${candidate['batch_number']}|${candidate['part_id']}';
+                              final available = (candidate['available_qty'] as num?)?.toInt() ?? 0;
+                              return DropdownMenuItem(
+                                value: key,
+                                child: Text(
+                                  '${candidate['part_code']} • Batch #${candidate['batch_number']} ($available PCS)',
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              final selected = list.firstWhere(
+                                (candidate) =>
+                                    '${candidate['batch_number']}|${candidate['part_id']}' == value,
+                              );
+                              setState(() {
+                                _candidateKey = value;
+                                _batchCtrl.text = selected['batch_number'] as String;
+                                _partId = selected['part_id'] as String;
+                                _availableQty = (selected['available_qty'] as num?)?.toDouble() ?? 0;
+                                _rtvQtyCtrl.text = _availableQty!.toInt().toString();
+                              });
+                            },
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: NumberFormField(
+                              label: 'RTV Qty (PCS)',
+                              controller: _rtvQtyCtrl,
+                              allowDecimal: false,
+                              prefixIcon: const Icon(Icons.undo),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                          if (_availableQty != null && _availableQty! > 0) ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () {
+                                _rtvQtyCtrl.text = _availableQty!.toInt().toString();
+                                setState(() {});
+                              },
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.deepOrange.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.done_all, size: 14, color: Colors.deepOrange),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'All (${_availableQty!.toInt()})',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.deepOrange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ── Card 3: Reason & Defect Evidence ──
+                EntryInfoSurface(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _CardSectionHeader(
+                        icon: Icons.report_problem_outlined,
+                        title: 'Defect Analysis & Notes',
+                      ),
+                      const SizedBox(height: 14),
+                      AppDropdown<String>(
+                        label: 'RTV Reason',
+                        isRequired: true,
+                        prefixIcon: const Icon(Icons.report_problem_outlined),
+                        value: _reason,
+                        items: (rtvReasons.value ?? kRtvReasonsFallback)
+                            .toSet()
+                            .toList()
+                            .map(
+                              (r) => DropdownMenuItem(
+                                value: r,
+                                child: Text(r),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _reason = v),
+                      ),
+                      const SizedBox(height: 12),
+                      AppFormField(
+                        label: 'Remarks (optional)',
+                        controller: _remarksCtrl,
+                        maxLines: 2,
+                        prefixIcon: const Icon(Icons.notes),
+                      ),
+                      const SizedBox(height: 14),
+                      DefectPhotoPicker(
+                        label: 'RTV Defect / Reject Evidence Photo',
+                        hint: 'Attach photo of plating/vendor defect for return claim',
+                        onPhotoChanged: (path) {},
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          RecordDateTimePicker(
-            value: _recordedAt,
-            onChanged: (dt) => setState(() => _recordedAt = dt),
-            showTime: false,
-          ),
-          const SizedBox(height: 16),
-          const SectionHeader('Batch & Part'),
-          candidates.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load RTV candidates: $e'),
-            data: (list) => AppDropdown<String>(
-              label: 'AP Reject Batch',
-              isRequired: true,
-              prefixIcon: const Icon(Icons.inventory_outlined),
-              value: _candidateKey,
-              items: list.map((candidate) {
-                final key =
-                    '${candidate['batch_number']}|${candidate['part_id']}';
-                final available =
-                    (candidate['available_qty'] as num?)?.toInt() ?? 0;
-                return DropdownMenuItem(
-                  value: key,
-                  child: Text(
-                    '${candidate['part_code']} - ${candidate['batch_number']} '
-                    '($available PCS)',
-                  ),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                final selected = list.firstWhere(
-                  (candidate) =>
-                      '${candidate['batch_number']}|${candidate['part_id']}' ==
-                      value,
-                );
-                setState(() {
-                  _candidateKey = value;
-                  _batchCtrl.text = selected['batch_number'] as String;
-                  _partId = selected['part_id'] as String;
-                  _rtvQtyCtrl.text =
-                      ((selected['available_qty'] as num?)?.toInt() ?? 0)
-                          .toString();
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 12),
-          NumberFormField(
-            label: 'RTV Qty (PCS)',
-            controller: _rtvQtyCtrl,
-            allowDecimal: false,
-            prefixIcon: const Icon(Icons.undo),
-          ),
-          const SizedBox(height: 12),
-          vendors.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => ErrorBanner('Could not load vendors: $e'),
-            data: (list) => AppDropdown<String>(
-              label: 'Vendor',
-              isRequired: true,
-              prefixIcon: const Icon(Icons.business_outlined),
-              value: _vendorId,
-              items: list
-                  .map(
-                    (v) => DropdownMenuItem(
-                      value: v['id'] as String,
-                      child: Text(v['name'] as String),
+        ),
+        StickyBottomActionBar(
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${qty.toInt()} PCS',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepOrange,
+                      ),
                     ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _vendorId = v),
-            ),
+                    Text(
+                      _batchCtrl.text.isNotEmpty
+                          ? 'Batch #${_batchCtrl.text}'
+                          : 'Select reject batch',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              SaveButton(
+                onPressed: _save,
+                isLoading: _isSaving,
+                label: 'Initiate RTV',
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          AppDropdown<String>(
-            label: 'RTV Reason',
-            isRequired: true,
-            prefixIcon: const Icon(Icons.report_problem_outlined),
-            value: _reason,
-            items: (rtvReasons.value ?? kRtvReasonsFallback)
-                .toSet()
-                .toList()
-                .map(
-                  (r) => DropdownMenuItem(
-                    value: r,
-                    child: Text(r),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _reason = v),
-          ),
-          const SizedBox(height: 12),
-          AppFormField(
-            label: 'Expected Return Date (optional)',
-            controller: _expectedDateCtrl,
-            readOnly: true,
-            prefixIcon: const Icon(Icons.event_outlined),
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.calendar_month),
-              onPressed: _pickDate,
-            ),
-          ),
-          const SizedBox(height: 12),
-          AppFormField(
-            label: 'Remarks (optional)',
-            controller: _remarksCtrl,
-            maxLines: 2,
-            prefixIcon: const Icon(Icons.notes),
-          ),
-          const SizedBox(height: 14),
-          DefectPhotoPicker(
-            label: 'RTV Defect / Reject Evidence Photo',
-            hint: 'Attach photo of plating/vendor defect for return claim',
-            onPhotoChanged: (path) {},
-          ),
-          const SizedBox(height: 16),
-          if (_error != null) ErrorBanner(_error!),
-          if (_success != null) SuccessBanner(_success!),
-          const SizedBox(height: 16),
-          SaveButton(onPressed: _save, isLoading: _isSaving),
-          const SizedBox(height: 40),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -973,3 +1132,28 @@ class _InfoChip extends StatelessWidget {
     );
   }
 }
+
+class _CardSectionHeader extends StatelessWidget {
+  const _CardSectionHeader({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+

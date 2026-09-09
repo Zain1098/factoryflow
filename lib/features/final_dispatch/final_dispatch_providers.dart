@@ -226,6 +226,13 @@ class FinalDispatchRepository {
     );
   }
 
+  String generateNextChallanNumber({DateTime? date}) {
+    final now = date ?? DateTime.now();
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return _generateChallan(dateStr);
+  }
+
   String _generateChallan(String dateStr) {
     final factoryId = _db.activeWorkspaceId.trim();
     final existing = _db.db.select(

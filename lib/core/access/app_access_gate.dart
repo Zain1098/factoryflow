@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/auth_providers.dart';
+import '../database/database_service.dart';
 import '../network/sync_service.dart';
 import '../providers/master_data_providers.dart';
+import '../providers/stock_invalidation_helper.dart';
 import 'app_access_state.dart';
 
 class AppAccessGate extends ConsumerStatefulWidget {
@@ -173,7 +175,17 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
       final sync = ref.read(syncServiceProvider);
       sync.startPeriodicSync();
       if (needsBootstrap) {
-        unawaited(sync.hydrateActiveWorkspace());
+        final workspaceId = ref.read(currentUserProvider).value?.factoryId ??
+            ref.read(databaseServiceProvider).activeWorkspaceId;
+        unawaited(
+          sync
+              .hydrateActiveWorkspace(explicitFactoryId: workspaceId)
+              .then((imported) {
+            if (imported > 0) {
+              refreshAllStockAndEntryProviders(ref);
+            }
+          }).catchError((_) {}),
+        );
         unawaited(
           ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase(),
         );

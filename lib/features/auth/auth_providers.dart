@@ -13,6 +13,8 @@ import '../../core/database/database_service.dart';
 import '../../core/models/app_user.dart';
 import '../../core/constants/user_roles.dart';
 import '../../core/network/sync_service.dart';
+import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 
 // ─── Supabase connected flag (overridden in main.dart) ────────────────────────
 
@@ -774,6 +776,18 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
           await ref
               .read(databaseServiceProvider)
               .setActiveWorkspaceId(user.factoryId);
+          try {
+            await ref.read(syncServiceProvider).hydrateActiveWorkspace(
+                  explicitFactoryId: user.factoryId,
+                );
+            await ref
+                .read(masterDataRepositoryProvider)
+                .syncMasterDataFromSupabase();
+          } catch (e) {
+            debugPrint('Hydration on login warning: $e');
+          }
+          ref.read(syncServiceProvider).startPeriodicSync();
+          refreshAllStockAndEntryProviders(ref);
           _onLoginSuccess();
         }
         return user;
@@ -794,6 +808,18 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
           await ref
               .read(databaseServiceProvider)
               .setActiveWorkspaceId(user.factoryId);
+          try {
+            await ref.read(syncServiceProvider).hydrateActiveWorkspace(
+                  explicitFactoryId: user.factoryId,
+                );
+            await ref
+                .read(masterDataRepositoryProvider)
+                .syncMasterDataFromSupabase();
+          } catch (e) {
+            debugPrint('Hydration on Google login warning: $e');
+          }
+          ref.read(syncServiceProvider).startPeriodicSync();
+          refreshAllStockAndEntryProviders(ref);
           _onLoginSuccess();
           return user;
         }
@@ -856,6 +882,19 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
               joinCode: joinCode,
               db: ref.read(databaseServiceProvider),
             );
+        await ref
+            .read(databaseServiceProvider)
+            .setActiveWorkspaceId(user.factoryId);
+        try {
+          await ref.read(syncServiceProvider).hydrateActiveWorkspace(
+                explicitFactoryId: user.factoryId,
+              );
+          await ref
+              .read(masterDataRepositoryProvider)
+              .syncMasterDataFromSupabase();
+        } catch (_) {}
+        ref.read(syncServiceProvider).startPeriodicSync();
+        refreshAllStockAndEntryProviders(ref);
         _onLoginSuccess();
         return user;
       });
@@ -928,6 +967,16 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
       await ref
           .read(databaseServiceProvider)
           .setActiveWorkspaceId(user.factoryId);
+      unawaited(
+        ref
+            .read(syncServiceProvider)
+            .hydrateActiveWorkspace(explicitFactoryId: user.factoryId)
+            .then((count) {
+          if (count > 0) {
+            refreshAllStockAndEntryProviders(ref);
+          }
+        }).catchError((_) {}),
+      );
       _onSessionRestored();
     }
   }

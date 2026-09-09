@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/master_data_providers.dart';
+import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/widgets/defect_photo_picker.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
@@ -118,6 +119,7 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
 
       if (result.success) {
         setState(() => _success = 'Downtime entry recorded successfully!');
+        refreshAllStockAndEntryProviders(ref);
         ref.invalidate(machineDowntimeListProvider);
         _reset();
       } else {
@@ -128,6 +130,20 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  String _getDurationPreview() {
+    if (_endTime == null) return 'Ongoing Halt';
+    final startMin = _startTime.hour * 60 + _startTime.minute;
+    final endMin = _endTime!.hour * 60 + _endTime!.minute;
+    final diff = endMin - startMin;
+    if (diff < 0) return 'Invalid duration';
+    final h = diff ~/ 60;
+    final m = diff % 60;
+    if (h > 0) {
+      return m > 0 ? '$h hr $m min' : '$h hr';
+    }
+    return '$m min';
   }
 
   void _reset() {
@@ -169,291 +185,350 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
   Widget _buildForm(ThemeData theme) {
     final machines = ref.watch(machinesProvider);
     final operators = ref.watch(operatorsProvider);
+    final allDowntimes = ref.watch(machineDowntimeListProvider).value ?? [];
+    final activeHalts = allDowntimes
+        .where((r) => r['end_time'] == null || r['end_time'].toString().isEmpty)
+        .toList();
 
-    return EntryFormScroll(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RecordDateTimePicker(
-              value: _recordedAt,
-              onChanged: (dt) => setState(() => _recordedAt = dt),
-              showTime: false,
-            ),
-            const SizedBox(height: 12),
-
-            // Card 1: Machine & Operator
-            EntryInfoSurface(
-              padding: const EdgeInsets.all(14),
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          Expanded(
+            child: EntryFormScroll(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.precision_manufacturing_outlined,
-                        size: 18,
-                        color: theme.colorScheme.primary,
+                  if (activeHalts.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Machine & Assigned Operator',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  machines.when(
-                    loading: () => const LinearProgressIndicator(),
-                    error: (e, _) => ErrorBanner('Could not load machines: $e'),
-                    data: (list) => AppDropdown<String>(
-                      label: 'Machine',
-                      isRequired: true,
-                      prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
-                      value: _machineId,
-                      items: list
-                          .map((m) => DropdownMenuItem(
-                                value: m['id'] as String,
-                                child: Text(m['name'] as String),
-                              ),)
-                          .toList(),
-                      onChanged: (v) => setState(() => _machineId = v),
-                      validator: (v) => v == null ? 'Machine is required' : null,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  operators.when(
-                    loading: () => const LinearProgressIndicator(),
-                    error: (e, _) => ErrorBanner('Could not load operators: $e'),
-                    data: (list) => AppDropdown<String>(
-                      label: 'Operator (optional)',
-                      prefixIcon: const Icon(Icons.person_outline),
-                      value: _operatorId,
-                      items: list
-                          .map((o) => DropdownMenuItem(
-                                value: o['id'] as String,
-                                child: Text(o['name'] as String),
-                              ),)
-                          .toList(),
-                      onChanged: (v) => setState(() => _operatorId = v),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Card 2: Downtime Period & Quick Durations
-            EntryInfoSurface(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.timelapse_outlined,
-                        size: 18,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Downtime Period',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _TimePickerTile(
-                          label: 'Start Time',
-                          time: _startTime,
-                          onTap: () => _pickTime(true),
-                          color: Colors.orange.shade700,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _TimePickerTile(
-                          label: 'End Time (Blank = Ongoing)',
-                          time: _endTime,
-                          onTap: () => _pickTime(false),
-                          color: Colors.teal.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Quick End-Time Adjusters
-                  Row(
-                    children: [
-                      Text(
-                        'Quick End:',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Wrap(
-                        spacing: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _QuickTimeChip(
-                            label: 'Now',
-                            onTap: () => setState(() => _endTime = TimeOfDay.now()),
+                          Row(
+                            children: [
+                              const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${activeHalts.length} Machine(s) Currently Halted',
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                              ),
+                            ],
                           ),
-                          _QuickTimeChip(
-                            label: '+15m',
-                            onTap: () => _addMinutesToEndTime(15),
-                          ),
-                          _QuickTimeChip(
-                            label: '+30m',
-                            onTap: () => _addMinutesToEndTime(30),
-                          ),
-                          _QuickTimeChip(
-                            label: '+1h',
-                            onTap: () => _addMinutesToEndTime(60),
-                          ),
-                          if (_endTime != null)
-                            InkWell(
-                              onTap: () => setState(() => _endTime = null),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                child: Text(
-                                  'Clear',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: theme.colorScheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                          const SizedBox(height: 8),
+                          ...activeHalts.map((h) => Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${h['machine_name'] ?? 'Machine'}: ${h['reason'] ?? 'Halted'} (Started ${formatTimeWithoutSeconds(h['start_time'] as String?)})',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.stop_circle_outlined, size: 16),
+                                      label: const Text('End Halt', style: TextStyle(fontSize: 12)),
+                                      onPressed: () => _showEditModal(h),
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                              ),),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (_error != null) ...[
+                    ErrorBanner(_error!),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_success != null) ...[
+                    SuccessBanner(_success!),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // ── Card 1: Machine & Operator ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _CardSectionHeader(
+                          icon: Icons.precision_manufacturing_outlined,
+                          title: 'Machine & Assigned Operator',
+                        ),
+                        const SizedBox(height: 14),
+                        RecordDateTimePicker(
+                          value: _recordedAt,
+                          onChanged: (dt) => setState(() => _recordedAt = dt),
+                          showTime: false,
+                        ),
+                        const SizedBox(height: 12),
+                        machines.when(
+                          loading: () => const LinearProgressIndicator(),
+                          error: (e, _) => ErrorBanner('Could not load machines: $e'),
+                          data: (list) => AppDropdown<String>(
+                            label: 'Machine',
+                            isRequired: true,
+                            prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
+                            value: _machineId,
+                            items: list
+                                .map((m) => DropdownMenuItem(
+                                      value: m['id'] as String,
+                                      child: Text(m['name'] as String),
+                                    ),)
+                                .toList(),
+                            onChanged: (v) => setState(() => _machineId = v),
+                            validator: (v) => v == null ? 'Machine is required' : null,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        operators.when(
+                          loading: () => const LinearProgressIndicator(),
+                          error: (e, _) => ErrorBanner('Could not load operators: $e'),
+                          data: (list) => AppDropdown<String>(
+                            label: 'Operator (optional)',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            value: _operatorId,
+                            items: list
+                                .map((o) => DropdownMenuItem(
+                                      value: o['id'] as String,
+                                      child: Text(o['name'] as String),
+                                    ),)
+                                .toList(),
+                            onChanged: (v) => setState(() => _operatorId = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Card 2: Downtime Period & Quick Durations ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _CardSectionHeader(
+                          icon: Icons.timelapse_outlined,
+                          title: 'Downtime Period & Duration',
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _TimePickerTile(
+                                label: 'Start Time',
+                                time: _startTime,
+                                onTap: () => _pickTime(true),
+                                color: Colors.orange.shade700,
                               ),
                             ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  if (_endTime != null) ...[
-                    const SizedBox(height: 8),
-                    _DurationDisplay(start: _startTime, end: _endTime!),
-                  ] else ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline, size: 15, color: Colors.orange),
-                          SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              'Halt is marked Ongoing. Active breakdown alerts will trigger.',
-                              style: TextStyle(fontSize: 11, color: Colors.orange),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _TimePickerTile(
+                                label: 'End Time (Blank = Ongoing)',
+                                time: _endTime,
+                                onTap: () => _pickTime(false),
+                                color: Colors.teal.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Text(
+                              'Quick End:',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                _QuickTimeChip(
+                                  label: 'Now',
+                                  onTap: () => setState(() => _endTime = TimeOfDay.now()),
+                                ),
+                                _QuickTimeChip(
+                                  label: '+15m',
+                                  onTap: () => _addMinutesToEndTime(15),
+                                ),
+                                _QuickTimeChip(
+                                  label: '+30m',
+                                  onTap: () => _addMinutesToEndTime(30),
+                                ),
+                                _QuickTimeChip(
+                                  label: '+1h',
+                                  onTap: () => _addMinutesToEndTime(60),
+                                ),
+                                if (_endTime != null)
+                                  InkWell(
+                                    onTap: () => setState(() => _endTime = null),
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                      child: Text(
+                                        'Clear',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: theme.colorScheme.error,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        if (_endTime != null) ...[
+                          const SizedBox(height: 10),
+                          _DurationDisplay(start: _startTime, end: _endTime!),
+                        ] else ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Halt is marked Ongoing. Active breakdown alerts will trigger until halt is ended.',
+                                    style: TextStyle(fontSize: 11, color: Colors.orange),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Card 3: Reason & Photo Evidence ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _CardSectionHeader(
+                          icon: Icons.build_circle_outlined,
+                          title: 'Reason & Evidence',
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Quick Presets',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: _quickReasons.map((r) {
+                            final isSelected = _reasonCtrl.text.trim() == r;
+                            return ChoiceChip(
+                              label: Text(r, style: const TextStyle(fontSize: 12)),
+                              selected: isSelected,
+                              onSelected: (val) {
+                                setState(() {
+                                  _reasonCtrl.text = val ? r : '';
+                                });
+                              },
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        AppFormField(
+                          label: 'Reason Description',
+                          controller: _reasonCtrl,
+                          prefixIcon: const Icon(Icons.warning_amber_rounded),
+                          validator: (v) =>
+                              v == null || v.trim().isEmpty ? 'Reason is required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        AppFormField(
+                          label: 'Remarks (optional)',
+                          controller: _remarksCtrl,
+                          maxLines: 2,
+                          prefixIcon: const Icon(Icons.notes),
+                        ),
+                        const SizedBox(height: 14),
+                        DefectPhotoPicker(
+                          label: 'Breakdown / Defect Photo',
+                          hint: 'Attach photo of broken component or issue',
+                          initialPhotoUrl: _photoUrl,
+                          onPhotoChanged: (path) => setState(() => _photoUrl = path),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-
-            // Card 3: Reason & Photo Evidence
-            EntryInfoSurface(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
+          ),
+          StickyBottomActionBar(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.build_circle_outlined,
-                        size: 18,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
                       Text(
-                        'Reason & Evidence',
-                        style: theme.textTheme.titleSmall?.copyWith(
+                        _getDurationPreview(),
+                        style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
+                          color: _endTime == null ? Colors.red : theme.colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        '${_formatTime(_startTime)} ➔ ${_endTime != null ? _formatTime(_endTime!) : 'Ongoing'}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Quick Presets',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: _quickReasons.map((r) {
-                      final isSelected = _reasonCtrl.text.trim() == r;
-                      return ChoiceChip(
-                        label: Text(r, style: const TextStyle(fontSize: 12)),
-                        selected: isSelected,
-                        onSelected: (val) {
-                          setState(() {
-                            _reasonCtrl.text = val ? r : '';
-                          });
-                        },
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                  AppFormField(
-                    label: 'Reason Description',
-                    controller: _reasonCtrl,
-                    prefixIcon: const Icon(Icons.warning_amber_rounded),
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Reason is required' : null,
-                  ),
-                  const SizedBox(height: 10),
-                  AppFormField(
-                    label: 'Remarks (optional)',
-                    controller: _remarksCtrl,
-                    maxLines: 2,
-                    prefixIcon: const Icon(Icons.notes),
-                  ),
-                  const SizedBox(height: 12),
-                  DefectPhotoPicker(
-                    label: 'Breakdown / Defect Photo',
-                    hint: 'Attach photo of broken component or issue',
-                    initialPhotoUrl: _photoUrl,
-                    onPhotoChanged: (path) => setState(() => _photoUrl = path),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                SaveButton(
+                  onPressed: _save,
+                  isLoading: _isSaving,
+                  label: 'Log Downtime',
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-
-            if (_error != null) ErrorBanner(_error!),
-            if (_success != null) SuccessBanner(_success!),
-            const SizedBox(height: 12),
-            SaveButton(onPressed: _save, isLoading: _isSaving),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1053,3 +1128,28 @@ class _DurationDisplay extends StatelessWidget {
     );
   }
 }
+
+class _CardSectionHeader extends StatelessWidget {
+  const _CardSectionHeader({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+

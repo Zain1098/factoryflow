@@ -189,278 +189,429 @@ class _BpInspectionScreenState extends ConsumerState<BpInspectionScreen>
     final rejectQty = double.tryParse(_rejectQtyCtrl.text) ?? 0;
     final okQty = (holdQty - rejectQty).clamp(0, double.infinity);
 
-    return EntryFormScroll(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RecordDateTimePicker(
-              value: _recordedAt,
-              onChanged: (dt) => setState(() => _recordedAt = dt),
-              showTime: false,
-            ),
-            const SizedBox(height: 16),
-            const SectionHeader('Production Batch & Part'),
-            batches.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (error, _) =>
-                  ErrorBanner('Could not load production batches: $error'),
-              data: (list) => Row(
+    return Form(
+      key: _formKey,
+      child: Column(
+        children: [
+          Expanded(
+            child: EntryFormScroll(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: AppDropdown<String>(
-                      label: 'Production Batch',
-                      isRequired: true,
-                      prefixIcon: const Icon(Icons.qr_code_2),
-                      value: _batchCtrl.text.isEmpty ? null : _batchCtrl.text,
-                      items: list
-                          .map((batch) => DropdownMenuItem(
-                                value: batch['batch_number'] as String,
-                                child: Text(
-                                  '${batch['batch_number']} • ${batch['part_code']} - '
-                                  '${batch['part_name']} • ${batch['machine_name']}',
-                                  overflow: TextOverflow.ellipsis,
+                  if (_error != null) ...[
+                    ErrorBanner(_error!),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_success != null) ...[
+                    SuccessBanner(_success!),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // ── Card 1: Production Batch & Machine ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _CardSectionHeader(
+                          icon: Icons.precision_manufacturing_outlined,
+                          title: 'Production Batch & Machine',
+                        ),
+                        const SizedBox(height: 14),
+                        RecordDateTimePicker(
+                          value: _recordedAt,
+                          onChanged: (dt) => setState(() => _recordedAt = dt),
+                          showTime: false,
+                        ),
+                        const SizedBox(height: 12),
+                        batches.when(
+                          loading: () => const LinearProgressIndicator(),
+                          error: (error, _) =>
+                              ErrorBanner('Could not load production batches: $error'),
+                          data: (list) => Row(
+                            children: [
+                              Expanded(
+                                child: AppDropdown<String>(
+                                  label: 'Production Batch',
+                                  isRequired: true,
+                                  prefixIcon: const Icon(Icons.qr_code_2),
+                                  value: _batchCtrl.text.isEmpty ? null : _batchCtrl.text,
+                                  items: list
+                                      .map((batch) => DropdownMenuItem(
+                                            value: batch['batch_number'] as String,
+                                            child: Text(
+                                              '${batch['batch_number']} • ${batch['part_code']} - '
+                                              '${batch['part_name']} • ${batch['machine_name']}',
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),)
+                                      .toList(),
+                                  onChanged: (value) {
+                                    if (value == null) return;
+                                    final batch = list.firstWhere(
+                                      (item) => item['batch_number'] == value,
+                                    );
+                                    setState(() {
+                                      _batchCtrl.text = value;
+                                      _partId = batch['part_id'] as String?;
+                                      _machineId = batch['machine_id'] as String?;
+                                    });
+                                  },
+                                  validator: (value) => value == null
+                                      ? 'Select the original Production batch'
+                                      : null,
                                 ),
-                              ),)
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        final batch = list.firstWhere(
-                          (item) => item['batch_number'] == value,
-                        );
-                        setState(() {
-                          _batchCtrl.text = value;
-                          _partId = batch['part_id'] as String?;
-                          _machineId = batch['machine_id'] as String?;
-                        });
-                      },
-                      validator: (value) => value == null
-                          ? 'Select the original Production batch'
-                          : null,
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                tooltip: 'Scan Batch QR',
+                                icon: const Icon(Icons.qr_code_scanner_rounded),
+                                onPressed: () async {
+                                  final scanned = await BarcodeScannerView.scan(
+                                    context,
+                                    title: 'Scan Batch Code',
+                                  );
+                                  if (scanned != null && scanned.isNotEmpty) {
+                                    final match = list.firstWhere(
+                                      (b) =>
+                                          (b['batch_number'] as String).toLowerCase() ==
+                                          scanned.toLowerCase(),
+                                      orElse: () => <String, dynamic>{},
+                                    );
+                                    if (match.isNotEmpty) {
+                                      setState(() {
+                                        _batchCtrl.text = match['batch_number'] as String;
+                                        _partId = match['part_id'] as String?;
+                                        _machineId = match['machine_id'] as String?;
+                                      });
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: parts.when(
+                                loading: () => const LinearProgressIndicator(),
+                                error: (e, _) => ErrorBanner('Could not load parts: $e'),
+                                data: (list) => AppDropdown<String>(
+                                  label: 'Part',
+                                  isRequired: true,
+                                  prefixIcon: const Icon(Icons.category_outlined),
+                                  value: _partId,
+                                  items: list
+                                      .map(
+                                        (p) => DropdownMenuItem(
+                                          value: p['id'] as String,
+                                          child: Text('${p['code']} – ${p['name']}'),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (v) => setState(() => _partId = v),
+                                  validator: (v) => v == null ? 'Part is required' : null,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: machines.when(
+                                loading: () => const LinearProgressIndicator(),
+                                error: (e, _) => ErrorBanner('Could not load machines: $e'),
+                                data: (list) => AppDropdown<String>(
+                                  label: 'Machine',
+                                  isRequired: true,
+                                  prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
+                                  value: _machineId,
+                                  items: list
+                                      .map(
+                                        (m) => DropdownMenuItem(
+                                          value: m['id'] as String,
+                                          child: Text(m['name'] as String),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (v) => setState(() => _machineId = v),
+                                  validator: (v) => v == null ? 'Machine is required' : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filledTonal(
-                    tooltip: 'Scan Batch QR',
-                    icon: const Icon(Icons.qr_code_scanner_rounded),
-                    onPressed: () async {
-                      final scanned = await BarcodeScannerView.scan(
-                        context,
-                        title: 'Scan Batch Code',
-                      );
-                      if (scanned != null && scanned.isNotEmpty) {
-                        final match = list.firstWhere(
-                          (b) =>
-                              (b['batch_number'] as String).toLowerCase() ==
-                              scanned.toLowerCase(),
-                          orElse: () => <String, dynamic>{},
-                        );
-                        if (match.isNotEmpty) {
-                          setState(() {
-                            _batchCtrl.text = match['batch_number'] as String;
-                            _partId = match['part_id'] as String?;
-                            _machineId = match['machine_id'] as String?;
-                          });
-                        }
-                      }
-                    },
+                  const SizedBox(height: 12),
+
+                  // ── Card 2: Inspection & Clearance Quantities ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const _CardSectionHeader(
+                              icon: Icons.checklist_rtl_rounded,
+                              title: 'Inspection & Split Quantities',
+                            ),
+                            if (holdQty > 0)
+                              InkWell(
+                                onTap: () {
+                                  _rejectQtyCtrl.text = '0';
+                                  setState(() {});
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.done_all, size: 14, color: Colors.green),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        '100% OK',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Enter total pieces checked. OK pieces remain in Own BP Stock for Vendor Dispatch. Rejects move to BP Rejected.',
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 14),
+                        NumberFormField(
+                          label: 'Total Inspected / Hold Qty (PCS)',
+                          controller: _holdQtyCtrl,
+                          allowDecimal: false,
+                          prefixIcon: const Icon(Icons.fact_check_outlined),
+                          onChanged: (_) => setState(() {}),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Required';
+                            final n = double.tryParse(v);
+                            if (n == null || n <= 0) return 'Inspected qty must be > 0';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        NumberFormField(
+                          label: 'Reject Qty (PCS)',
+                          controller: _rejectQtyCtrl,
+                          allowDecimal: false,
+                          prefixIcon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                          onChanged: (_) => setState(() {}),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) return 'Required';
+                            final n = double.tryParse(v);
+                            if (n == null || n < 0) return 'Enter valid quantity';
+                            final hold = double.tryParse(_holdQtyCtrl.text) ?? 0;
+                            if (n > hold) return 'Reject cannot exceed inspected qty';
+                            return null;
+                          },
+                        ),
+                        if (holdQty > 0) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: theme.colorScheme.outlineVariant),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                                          const SizedBox(width: 4),
+                                          Text('OK (Dispatch Ready)', style: theme.textTheme.labelMedium),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${okQty.toInt()} PCS',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(width: 1, height: 40, color: theme.colorScheme.outlineVariant),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.cancel, color: Colors.red, size: 16),
+                                          const SizedBox(width: 4),
+                                          Text('Rejected', style: theme.textTheme.labelMedium),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${rejectQty.toInt()} PCS',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // ── Card 3: Defect QC & Evidence ──
+                  EntryInfoSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _CardSectionHeader(
+                          icon: Icons.report_problem_outlined,
+                          title: 'Defect Analysis & Evidence',
+                        ),
+                        const SizedBox(height: 14),
+                        AppDropdown<String>(
+                          label: 'Reject Reason',
+                          isRequired: false,
+                          prefixIcon: const Icon(Icons.report_problem_outlined),
+                          value: _rejectReason,
+                          items: (rejectReasons.value ?? kBpRejectReasonsFallback)
+                              .map(
+                                (r) => DropdownMenuItem(
+                                  value: r,
+                                  child: Text(r),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => _rejectReason = v),
+                          validator: (v) {
+                            final reject = double.tryParse(_rejectQtyCtrl.text) ?? 0;
+                            if (reject > 0 && v == null) {
+                              return 'Reject reason required when reject > 0';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _remarksCtrl,
+                          maxLines: 2,
+                          decoration: const InputDecoration(
+                            labelText: 'Inspection Remarks / Notes',
+                            prefixIcon: Icon(Icons.notes_rounded),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(12)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        DefectPhotoPicker(
+                          label: 'BP Defect Evidence Photo',
+                          hint: 'Attach photo of surface finish, dimension, or crack issue',
+                          onPhotoChanged: (photoPath) {},
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            parts.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load parts: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Part',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.category_outlined),
-                value: _partId,
-                items: list
-                    .map(
-                      (p) => DropdownMenuItem(
-                        value: p['id'] as String,
-                        child: Text('${p['code']} – ${p['name']}'),
+          ),
+          StickyBottomActionBar(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${holdQty.toInt()} PCS Checked',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _partId = v),
-                validator: (v) => v == null ? 'Part is required' : null,
-              ),
-            ),
-            const SizedBox(height: 12),
-            machines.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => ErrorBanner('Could not load machines: $e'),
-              data: (list) => AppDropdown<String>(
-                label: 'Machine',
-                isRequired: true,
-                prefixIcon: const Icon(Icons.precision_manufacturing_outlined),
-                value: _machineId,
-                items: list
-                    .map(
-                      (m) => DropdownMenuItem(
-                        value: m['id'] as String,
-                        child: Text(m['name'] as String),
+                      Text(
+                        'OK: ${okQty.toInt()} PCS · Rej: ${rejectQty.toInt()} PCS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _machineId = v),
-                validator: (v) => v == null ? 'Machine is required' : null,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const SectionHeader('Inspection & Clearance Quantities'),
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Enter total pieces checked. OK pieces remain in Own BP Stock for Vendor Dispatch. Rejects move to BP Rejected.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ),
-            NumberFormField(
-              label: 'Total Inspected / Hold Qty (PCS)',
-              controller: _holdQtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.fact_check_outlined),
-              onChanged: (_) => setState(() {}),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n <= 0) return 'Inspected qty must be > 0';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            NumberFormField(
-              label: 'Reject Qty (PCS)',
-              controller: _rejectQtyCtrl,
-              allowDecimal: false,
-              prefixIcon: const Icon(Icons.cancel_outlined, color: Colors.red),
-              onChanged: (_) => setState(() {}),
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Required';
-                final n = double.tryParse(v);
-                if (n == null || n < 0) return 'Enter valid quantity';
-                final hold = double.tryParse(_holdQtyCtrl.text) ?? 0;
-                if (n > hold) return 'Reject cannot exceed inspected qty';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            if (holdQty > 0)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                              const SizedBox(width: 4),
-                              Text('OK (Dispatch Ready)', style: theme.textTheme.labelMedium),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${okQty.toInt()} PCS',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(width: 1, height: 40, color: theme.colorScheme.outlineVariant),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.cancel, color: Colors.red, size: 16),
-                              const SizedBox(width: 4),
-                              Text('Rejected', style: theme.textTheme.labelMedium),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${rejectQty.toInt()} PCS',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 12),
+                SaveButton(
+                  onPressed: _save,
+                  isLoading: _isSaving,
+                  label: 'Save BP Inspection',
                 ),
-              ),
-            const SizedBox(height: 12),
-            AppDropdown<String>(
-              label: 'Reject Reason',
-              isRequired: false,
-              prefixIcon: const Icon(Icons.report_problem_outlined),
-              value: _rejectReason,
-              items: (rejectReasons.value ?? kBpRejectReasonsFallback)
-                  .map(
-                    (r) => DropdownMenuItem(
-                      value: r,
-                      child: Text(r),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _rejectReason = v),
-              validator: (v) {
-                final reject = double.tryParse(_rejectQtyCtrl.text) ?? 0;
-                if (reject > 0 && v == null) {
-                  return 'Reject reason required when reject > 0';
-                }
-                return null;
-              },
+              ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _remarksCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Inspection Remarks / Notes',
-                prefixIcon: Icon(Icons.notes_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            DefectPhotoPicker(
-              label: 'BP Defect Evidence Photo',
-              hint: 'Attach photo of surface finish, dimension, or crack issue',
-              onPhotoChanged: (photoPath) {},
-            ),
-            const SizedBox(height: 16),
-            if (_error != null) ErrorBanner(_error!),
-            if (_success != null) SuccessBanner(_success!),
-            const SizedBox(height: 16),
-            SaveButton(onPressed: _save, isLoading: _isSaving),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _CardSectionHeader extends StatelessWidget {
+  const _CardSectionHeader({required this.icon, required this.title});
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ],
     );
   }
 }
