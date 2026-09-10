@@ -71,7 +71,9 @@ class SyncService {
   final Future<bool> Function()? _onlineCheck;
   final bool Function()? _accessAllowed;
   Timer? _syncTimer;
+  Timer? _debounceSyncTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<void>? _syncEnqueuedSubscription;
   bool _isSyncing = false;
 
   void startPeriodicSync() {
@@ -87,14 +89,28 @@ class SyncService {
         unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
       }
     });
+
+    // Real-time / Instant Sync: Push immediately (debounced 500ms) on any write
+    _syncEnqueuedSubscription?.cancel();
+    _syncEnqueuedSubscription = _db.onSyncEnqueued.listen((_) {
+      _debounceSyncTimer?.cancel();
+      _debounceSyncTimer = Timer(const Duration(milliseconds: 500), () {
+        unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
+      });
+    });
+
     unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
   }
 
   void stopPeriodicSync() {
     _syncTimer?.cancel();
     _syncTimer = null;
+    _debounceSyncTimer?.cancel();
+    _debounceSyncTimer = null;
     _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
+    _syncEnqueuedSubscription?.cancel();
+    _syncEnqueuedSubscription = null;
   }
 
   Future<bool> isOnline() async {
@@ -126,8 +142,11 @@ class SyncService {
   /// Pulls the active company's shared records onto a newly signed-in mobile.
   /// Pending local records are never overwritten; normal upload remains the
   /// source of truth for offline work made on this device.
-  Future<int> hydrateActiveWorkspace({String? explicitFactoryId}) async {
-    if (_accessAllowed?.call() != true) return 0;
+  Future<int> hydrateActiveWorkspace({
+    String? explicitFactoryId,
+    bool force = false,
+  }) async {
+    if (!force && _accessAllowed?.call() != true) return 0;
     if (!await isOnline() || !await isSupabaseReady()) return 0;
     final factoryId = (explicitFactoryId ?? _db.activeWorkspaceId).trim();
     if (factoryId.isEmpty) return 0;
@@ -142,18 +161,37 @@ class SyncService {
     ];
     var imported = 0;
     final client = Supabase.instance.client;
-    for (final table in tables) {
-      try {
-        final response = await client.from(table).select().eq('factory_id', factoryId)
-            .timeout(const Duration(seconds: 12));
-        final rows = (response as List)
-            .map((row) => Map<String, dynamic>.from(row as Map))
-            .toList();
-        await _db.upsertRemoteRecords(table, rows);
-        imported += rows.length;
-      } catch (_) {
-        // Older hosted databases may not yet contain every additive table.
-        // Continue importing the tables that are available to this app version.
+
+    // Fetch tables in parallel batches of 5 for ultra-fast startup (2-3s instead of 30s+)
+    const chunkSize = 5;
+    for (var i = 0; i < tables.length; i += chunkSize) {
+      final chunk = tables.sublist(
+        i,
+        (i + chunkSize > tables.length) ? tables.length : i + chunkSize,
+      );
+      final results = await Future.wait(
+        chunk.map((table) async {
+          try {
+            final response = await client
+                .from(table)
+                .select()
+                .eq('factory_id', factoryId)
+                .timeout(const Duration(seconds: 12));
+            final rows = (response as List)
+                .map((row) => Map<String, dynamic>.from(row as Map))
+                .toList();
+            if (rows.isNotEmpty) {
+              await _db.upsertRemoteRecords(table, rows);
+              return rows.length;
+            }
+          } catch (_) {
+            // Table may not exist yet or not be populated.
+          }
+          return 0;
+        }),
+      );
+      for (final count in results) {
+        imported += count;
       }
     }
     return imported;

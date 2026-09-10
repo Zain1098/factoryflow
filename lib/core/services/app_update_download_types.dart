@@ -4,12 +4,18 @@ abstract class AppUpdateDownloadTask {
 }
 
 class AppUpdateDownloadResult {
-  const AppUpdateDownloadResult._({this.error, this.cancelled = false});
-  const AppUpdateDownloadResult.success() : this._();
+  const AppUpdateDownloadResult._({
+    this.error,
+    this.cancelled = false,
+    this.savedPath,
+  });
+  const AppUpdateDownloadResult.success({String? savedPath})
+      : this._(savedPath: savedPath);
   const AppUpdateDownloadResult.failure(String error) : this._(error: error);
   const AppUpdateDownloadResult.cancelled() : this._(cancelled: true);
 
   final String? error;
   final bool cancelled;
+  final String? savedPath;
   bool get succeeded => error == null && !cancelled;
 }

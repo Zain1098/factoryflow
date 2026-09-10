@@ -9,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/access/app_access_state.dart';
 import '../../core/database/database_service.dart';
 import '../../core/models/app_user.dart';
 import '../../core/constants/user_roles.dart';
@@ -773,12 +774,16 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             .read(authRepositoryProvider)
             .signIn(email: email, password: password);
         if (user != null) {
+          ref.read(appAccessProvider.notifier).set(
+            const AppAccessState(status: AppAccessStatus.allowed),
+          );
           await ref
               .read(databaseServiceProvider)
               .setActiveWorkspaceId(user.factoryId);
           try {
             await ref.read(syncServiceProvider).hydrateActiveWorkspace(
                   explicitFactoryId: user.factoryId,
+                  force: true,
                 );
             await ref
                 .read(masterDataRepositoryProvider)
@@ -805,12 +810,16 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
       state = await AsyncValue.guard(() async {
         final user = await ref.read(authRepositoryProvider).signInWithGoogle();
         if (user != null) {
+          ref.read(appAccessProvider.notifier).set(
+            const AppAccessState(status: AppAccessStatus.allowed),
+          );
           await ref
               .read(databaseServiceProvider)
               .setActiveWorkspaceId(user.factoryId);
           try {
             await ref.read(syncServiceProvider).hydrateActiveWorkspace(
                   explicitFactoryId: user.factoryId,
+                  force: true,
                 );
             await ref
                 .read(masterDataRepositoryProvider)
@@ -936,10 +945,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   }
 
   Future<void> refresh() async {
-    // An auth event can arrive while a password sign-in is still persisting
-    // the matching local profile. Do not clear a good, matching in-memory
-    // session just because that background profile refresh briefly returns
-    // null; doing so makes GoRouter send the user back to /login.
+    if (_interactiveSignInInProgress) return;
     final expectedAuthUserId =
         ref.read(supabaseClientProvider)?.auth.currentUser?.id;
     final previousUser = state.value;
@@ -955,22 +961,23 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
 
     final refreshedUser = refreshed.value;
     if (refreshedUser == null &&
-        expectedAuthUserId != null &&
-        previousUser?.id == expectedAuthUserId) {
-      state = AsyncData(previousUser);
-      return;
+        (expectedAuthUserId != null || previousUser != null)) {
+      if (previousUser != null) {
+        state = AsyncData(previousUser);
+        return;
+      }
     }
 
-    state = refreshed;
-    final user = refreshedUser;
-    if (user != null) {
+    if (refreshedUser != null) {
+      state = refreshed;
+      final user = refreshedUser;
       await ref
           .read(databaseServiceProvider)
           .setActiveWorkspaceId(user.factoryId);
       unawaited(
         ref
             .read(syncServiceProvider)
-            .hydrateActiveWorkspace(explicitFactoryId: user.factoryId)
+            .hydrateActiveWorkspace(explicitFactoryId: user.factoryId, force: true)
             .then((count) {
           if (count > 0) {
             refreshAllStockAndEntryProviders(ref);

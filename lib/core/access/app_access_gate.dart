@@ -83,14 +83,18 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
     // local profile and SQLite data while the network is unavailable. Remote
     // access is checked again on reconnect; local writes remain queued until
     // Supabase is reachable.
+    final localSession = await ref.read(authRepositoryProvider).getLocalSession();
+    final isAlreadyLoggedIn = ref.read(currentUserProvider).value != null || localSession != null;
+    final effectiveBackground = background || isAlreadyLoggedIn || _hasVerifiedAccess;
+
     if (!await ref.read(syncServiceProvider).isOnline()) {
       await _allowCachedSession();
       return;
     }
 
     _checking = true;
-    if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
-    if (!background) {
+    if (!effectiveBackground) ref.read(syncServiceProvider).stopPeriodicSync();
+    if (!effectiveBackground) {
       ref.read(appAccessProvider.notifier).set(const AppAccessState.checking());
     }
     try {
@@ -105,8 +109,12 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
       // proof that the user is inactive. This keeps ERP routes and sync closed
       // until verification succeeds without signing a valid new session out.
       if (profile == null) {
-        if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
-        if (!background) {
+        if (isAlreadyLoggedIn) {
+          // If already logged in, do not kick out or block route on transient missing profile
+          return;
+        }
+        if (!effectiveBackground) ref.read(syncServiceProvider).stopPeriodicSync();
+        if (!effectiveBackground) {
           ref.read(appAccessProvider.notifier).set(const AppAccessState(
             status: AppAccessStatus.unavailable,
             title: 'Account setup is not complete',
@@ -122,8 +130,9 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
       if (client.auth.currentSession?.user.id != session.user.id) return;
       final profileVerification = verifyProfileActivity(profile['active']);
       if (profileVerification == AppProfileVerification.unresolved) {
-        if (!background) ref.read(syncServiceProvider).stopPeriodicSync();
-        if (!background) {
+        if (isAlreadyLoggedIn) return;
+        if (!effectiveBackground) ref.read(syncServiceProvider).stopPeriodicSync();
+        if (!effectiveBackground) {
           ref.read(appAccessProvider.notifier).set(const AppAccessState(
             status: AppAccessStatus.unavailable,
             title: 'App profile could not be verified',

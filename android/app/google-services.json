@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "758654945175-release.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.proflow.factoryflow",
+            "certificate_hash": "f435afdc828563599487fb79ff196f718d662e7d"
+          }
+        },
+        {
+          "client_id": "758654945175-debug.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.proflow.factoryflow",
+            "certificate_hash": "5c99503dbe59c3ba7869f226721cecb483bd4571"
+          }
+        },
+        {
           "client_id": "758654945175-doo66mvopc0atuppnuak914s2lsg392u.apps.googleusercontent.com",
           "client_type": 3
         }

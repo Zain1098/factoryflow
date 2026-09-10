@@ -304,6 +304,7 @@ class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
     final task = createAppUpdateDownloadTask(
       url: widget.release.downloadUrl,
       sha256: widget.release.sha256,
+      versionName: widget.release.versionName,
     );
     task0 = task;
     final result = await task.start(onProgress: (value) {
@@ -316,9 +317,13 @@ class _UpdateDownloadButtonState extends State<UpdateDownloadButton> {
     } else if (!result.succeeded) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.error!)));
     } else {
+      final savedText = result.savedPath != null
+          ? 'APK saved: ${result.savedPath}. Confirm install or access it from Downloads anytime.'
+          : 'APK saved in Downloads/FactoryFlow. Confirm Install in Android to finish updating.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('APK saved in Downloads/FactoryFlow. Confirm Install in Android to finish updating.'),
+        SnackBar(
+          content: Text(savedText),
+          duration: const Duration(seconds: 6),
         ),
       );
     }

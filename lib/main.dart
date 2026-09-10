@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
@@ -14,6 +19,25 @@ import 'features/settings/app_update_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Step 0: Upgrade maintenance — clean temporary caches when version code changes ──
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final pkg = await PackageInfo.fromPlatform();
+    final lastBuild = prefs.getString('last_installed_build_number');
+    if (lastBuild != null && lastBuild != pkg.buildNumber) {
+      final tempDir = await getTemporaryDirectory().catchError((_) => Directory(''));
+      if (tempDir.path.isNotEmpty && await tempDir.exists()) {
+        try {
+          final entries = tempDir.listSync(recursive: false);
+          for (final entry in entries) {
+            try { entry.deleteSync(recursive: true); } catch (_) {}
+          }
+        } catch (_) {}
+      }
+    }
+    await prefs.setString('last_installed_build_number', pkg.buildNumber);
+  } catch (_) {}
 
   // ── Step 1: Local SQLite (must succeed — app cannot run without it) ────
   try {

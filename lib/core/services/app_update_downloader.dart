@@ -7,4 +7,9 @@ export 'app_update_download_types.dart';
 AppUpdateDownloadTask createAppUpdateDownloadTask({
   required Uri url,
   required String? sha256,
-}) => createPlatformAppUpdateDownloadTask(url: url, sha256: sha256);
+  String? versionName,
+}) => createPlatformAppUpdateDownloadTask(
+      url: url,
+      sha256: sha256,
+      versionName: versionName,
+    );

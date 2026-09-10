@@ -183,8 +183,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         msg.contains('function')) {
       return 'Server setup incomplete — Supabase migrations not applied. Contact developer.';
     }
-    // Show actual error in debug, generic for release
+    if (msg.contains('apiexception: 10') ||
+        msg.contains('developer_error') ||
+        msg.contains('statuscode=10')) {
+      return 'Google Sign-In configuration error: Release SHA-1 fingerprint is not registered in Google Cloud / Firebase Console.';
+    }
+    if (msg.contains('apiexception: 12500') || msg.contains('sign_in_failed')) {
+      return 'Google Sign-In failed. Please check Google Play Services or try email login.';
+    }
+    if (msg.contains('no google id token') || msg.contains('idtoken')) {
+      return 'Google token verification failed. Please try again.';
+    }
+    // Show actual error in debug or if specific message exists
     if (kDebugMode) return msg;
+    if (msg.length > 5 && msg.length < 120 && !msg.startsWith('Exception:')) {
+      return msg;
+    }
     return _isSignUp
         ? 'Sign up failed. Please try again.'
         : 'Sign in failed. Please try again.';

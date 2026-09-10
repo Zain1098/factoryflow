@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +29,9 @@ class DatabaseService {
   }
 
   static final DatabaseService instance = DatabaseService._();
+
+  final _onSyncEnqueuedController = StreamController<void>.broadcast();
+  Stream<void> get onSyncEnqueued => _onSyncEnqueuedController.stream;
 
   Database? _db;
   bool _initialized = false;
@@ -1214,6 +1218,7 @@ class DatabaseService {
         DateTime.now().toIso8601String(),
       ],
     );
+    _onSyncEnqueuedController.add(null);
   }
 
   Future<List<Map<String, dynamic>>> getPendingSyncItems() async {

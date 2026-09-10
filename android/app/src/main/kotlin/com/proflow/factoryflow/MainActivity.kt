@@ -35,30 +35,36 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun saveApkToDownloads(source: File, displayName: String): String {
         check(source.isFile) { "Downloaded APK is no longer available." }
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            "Saving update APKs to Downloads requires Android 10 or newer."
-        }
 
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-            put(MediaStore.Downloads.MIME_TYPE, APK_MIME_TYPE)
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/FactoryFlow")
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val uri = contentResolver.insert(collection, values)
-            ?: error("Could not create the APK in Downloads.")
-        try {
-            contentResolver.openOutputStream(uri)?.use { output ->
-                source.inputStream().use { input -> input.copyTo(output) }
-            } ?: error("Could not write the APK to Downloads.")
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            contentResolver.update(uri, values, null, null)
-            return uri.toString()
-        } catch (error: Exception) {
-            contentResolver.delete(uri, null, null)
-            throw error
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                put(MediaStore.Downloads.MIME_TYPE, APK_MIME_TYPE)
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/FactoryFlow")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val uri = contentResolver.insert(collection, values)
+                ?: error("Could not create the APK in Downloads.")
+            try {
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    source.inputStream().use { input -> input.copyTo(output) }
+                } ?: error("Could not write the APK to Downloads.")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, values, null, null)
+                return "Download/FactoryFlow/$displayName"
+            } catch (error: Exception) {
+                contentResolver.delete(uri, null, null)
+                throw error
+            }
+        } else {
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val factoryFlowDir = File(downloadsDir, "FactoryFlow")
+            if (!factoryFlowDir.exists()) factoryFlowDir.mkdirs()
+            val targetFile = File(factoryFlowDir, displayName)
+            source.copyTo(targetFile, overwrite = true)
+            return targetFile.absolutePath
         }
     }
 

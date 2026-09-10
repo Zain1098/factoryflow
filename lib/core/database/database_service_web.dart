@@ -23,6 +23,7 @@ class DatabaseService {
   final List<Map<String, dynamic>> _syncQueue = [];
   int _nextSyncId = 1;
   bool _initialized = false;
+  Stream<void> get onSyncEnqueued => const Stream.empty();
   SharedPreferences? _prefs;
   static const _storageKey = 'factoryflow_web_database_v1';
 

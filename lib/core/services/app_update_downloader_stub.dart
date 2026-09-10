@@ -14,4 +14,5 @@ class _UnsupportedDownloadTask implements AppUpdateDownloadTask {
 AppUpdateDownloadTask createPlatformAppUpdateDownloadTask({
   required Uri url,
   required String? sha256,
+  String? versionName,
 }) => _UnsupportedDownloadTask();
