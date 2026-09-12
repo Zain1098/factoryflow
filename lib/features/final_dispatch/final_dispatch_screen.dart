@@ -687,7 +687,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            session['date'] as String? ?? '—',
+                            formatAppDate(session['date'] as String? ?? '—'),
                             style: const TextStyle(
                               color: Colors.indigo,
                               fontWeight: FontWeight.bold,
@@ -784,7 +784,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
                           ExportService.exportDeliveryChallanPdf(
                             context: context,
                             challanNumber: challanNum,
-                            date: session['date'] as String? ?? '',
+                            date: formatAppDate(session['date'] as String? ?? ''),
                             customerName: session['customer_name'] as String? ?? 'Customer',
                             vehicleNumber: session['vehicle_plate'] as String? ?? '—',
                             driverName: session['driver_name'] as String? ?? '—',

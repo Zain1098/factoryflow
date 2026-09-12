@@ -799,7 +799,7 @@ class _SearchResults extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                dateStr,
+                                formatAppDate(dateStr),
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -886,7 +886,9 @@ class _SearchResults extends StatelessWidget {
                             ),
                             Expanded(
                               child: Text(
-                                '${e.value ?? '—'}',
+                                (e.key.toLowerCase().contains('date') && e.value != null)
+                                    ? formatAppDate(e.value)
+                                    : '${e.value ?? '—'}',
                                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                               ),
                             ),

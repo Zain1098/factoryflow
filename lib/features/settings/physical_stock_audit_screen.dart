@@ -598,7 +598,7 @@ class _PhysicalStockAuditScreenState
                       ),
                     const SizedBox(height: 6),
                     Text(
-                      countedAt != null ? DateFormat('dd MMM yyyy, hh:mm a').format(countedAt.toLocal()) : '',
+                      countedAt != null ? '${formatAppDate(countedAt.toLocal())}, ${DateFormat('hh:mm a').format(countedAt.toLocal())}' : '',
                       style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ],

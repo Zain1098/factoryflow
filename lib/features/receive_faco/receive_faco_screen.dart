@@ -853,7 +853,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                       const SizedBox(height: 12),
                       Text(
                         selectedDate != null
-                            ? 'No vendor receipts on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                            ? 'No vendor receipts on ${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}.'
                             : 'No vendor receipts yet.',
                         style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -915,7 +915,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                       selectedDate,
                       theme,
                       title: selectedDate != null
-                          ? 'DAY RECEIVED (${DateFormat('dd MMM').format(selectedDate)})'
+                          ? 'DAY RECEIVED (${formatAppDate(selectedDate)})'
                           : 'TOTAL RECEIVED',
                     ),
                 ],
@@ -953,7 +953,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  DateFormat('EEEE, dd MMMM yyyy').format(selectedDate),
+                  '${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,

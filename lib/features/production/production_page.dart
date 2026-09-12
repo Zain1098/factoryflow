@@ -1526,7 +1526,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${w['part_code']} – ${w['part_name']} · Date: ${w['date']}',
+                      '${w['part_code']} – ${w['part_name']} · Date: ${formatAppDate(w['date'])}',
                       style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant,),
@@ -1772,7 +1772,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          DateFormat('EEEE, dd MMMM yyyy').format(selectedDate),
+                          '${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -1829,7 +1829,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
                       const SizedBox(height: 12),
                       Text(
                         selectedDate != null
-                            ? 'No production records on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                            ? 'No production records on ${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}.'
                             : 'No production records created yet.',
                         style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                       ),
@@ -2484,7 +2484,7 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               'Batch: ${record['batch_number']}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            Text('Machine: ${record['machine_name']} (${record['date']})'),
+            Text('Machine: ${record['machine_name']} (${formatAppDate(record['date'])})'),
             const SizedBox(height: 12),
             const Text(
               'Deleting this entry will automatically revert stock movements:',

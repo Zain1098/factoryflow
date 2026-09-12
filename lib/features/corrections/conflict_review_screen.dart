@@ -133,7 +133,7 @@ class _ConflictList extends ConsumerWidget {
                   style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               Text(
-                createdAt.length > 10 ? createdAt.substring(0, 10) : createdAt,
+                formatAppDate(createdAt),
                 style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],

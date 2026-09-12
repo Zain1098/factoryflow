@@ -468,7 +468,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
                 style: const TextStyle(
                     fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
-              subtitle: Text('${r['part_code'] ?? ''} · ${r['date']}'),
+              subtitle: Text('${r['part_code'] ?? ''} · ${formatAppDate(r['date'])}'),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,

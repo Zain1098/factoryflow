@@ -289,7 +289,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                     color: selectedDate != null ? Colors.amber : null,
                   ),
                   tooltip: selectedDate != null
-                      ? 'Change Date (${DateFormat('dd MMM').format(selectedDate)})'
+                      ? 'Change Date (${formatAppDate(selectedDate)})'
                       : 'Filter by Date',
                   onPressed: () => _pickHistoryDate(context, selectedDate),
                 ),
@@ -971,7 +971,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          DateFormat('EEEE, dd MMMM yyyy').format(selectedDate),
+                          '${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -1037,7 +1037,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                       const SizedBox(height: 12),
                       Text(
                         selectedDate != null
-                            ? 'No dispatch records on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                            ? 'No dispatch records on ${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}.'
                             : 'No vendor dispatches yet.',
                         style: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -1094,7 +1094,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                         partTotals,
                         theme,
                         title: selectedDate != null
-                            ? 'DAY DISPATCH (${DateFormat('dd MMM').format(selectedDate)})'
+                            ? 'DAY DISPATCH (${formatAppDate(selectedDate)})'
                             : 'TOTAL DISPATCHED',
                       ),
                     ),
@@ -1214,7 +1214,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                   ),
                 ),
                 Text(
-                  '$dateStr ${timeStr.isNotEmpty ? "· $timeStr" : ""}',
+                  '${formatAppDate(dateStr)} ${timeStr.isNotEmpty ? "· $timeStr" : ""}',
                   style: TextStyle(
                     fontSize: 11,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -1723,7 +1723,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             Text(
-              'Vendor: ${record['vendor_name']} · Date: ${record['date']}',
+              'Vendor: ${record['vendor_name']} · Date: ${formatAppDate(record['date'])}',
             ),
             const SizedBox(height: 12),
             const Text(

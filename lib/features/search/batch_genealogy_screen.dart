@@ -243,7 +243,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.precision_manufacturing_rounded,
                   iconColor: Colors.teal,
                   title: 'Production: ${productions[i]['machine_name'] ?? "Machine"}',
-                  subtitle: '${productions[i]['date']} · Shift ${productions[i]['shift_id'] ?? "A"} · Op: ${productions[i]['operator_name'] ?? "—"}',
+                  subtitle: '${formatAppDate(productions[i]['date'])} · Shift ${productions[i]['shift_id'] ?? "A"} · Op: ${productions[i]['operator_name'] ?? "—"}',
                   content: Row(
                     children: [
                       _badge('Input: ${(productions[i]['production_qty'] as num?)?.toInt() ?? 0} PCS', Colors.teal),
@@ -266,7 +266,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.fact_check_rounded,
                   iconColor: Colors.indigo,
                   title: 'BP Quality Inspection',
-                  subtitle: '${bp['date']} · Inspector: ${bp['inspector_name'] ?? "—"}',
+                  subtitle: '${formatAppDate(bp['date'])} · Inspector: ${bp['inspector_name'] ?? "—"}',
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -300,7 +300,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.local_shipping_outlined,
                   iconColor: Colors.amber.shade800,
                   title: 'Dispatched to Vendor: ${vd['vendor_name'] ?? "Vendor"}',
-                  subtitle: '${vd['date']} · Challan: ${vd['challan_number'] ?? "—"}',
+                  subtitle: '${formatAppDate(vd['date'])} · Challan: ${vd['challan_number'] ?? "—"}',
                   content: Row(
                     children: [
                       _badge('Qty: ${(vd['qty'] as num?)?.toInt() ?? 0} PCS', Colors.amber.shade800),
@@ -321,7 +321,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.move_to_inbox_rounded,
                   iconColor: Colors.blueGrey,
                   title: 'Received from Vendor',
-                  subtitle: '${vr['date']} · Supplier Challan: ${vr['supplier_challan'] ?? "—"}',
+                  subtitle: '${formatAppDate(vr['date'])} · Supplier Challan: ${vr['supplier_challan'] ?? "—"}',
                   content: Row(
                     children: [
                       _badge('Received: ${(vr['qty_received'] as num?)?.toInt() ?? 0} PCS', Colors.blueGrey),
@@ -342,7 +342,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.verified_outlined,
                   iconColor: Colors.teal,
                   title: 'AP Quality Inspection (After Plating)',
-                  subtitle: '${ap['date']} · Inspector: ${ap['inspector_name'] ?? "—"}',
+                  subtitle: '${formatAppDate(ap['date'])} · Inspector: ${ap['inspector_name'] ?? "—"}',
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -378,7 +378,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.assignment_return_outlined,
                   iconColor: Colors.deepOrange,
                   title: 'RTV: Returned to Vendor',
-                  subtitle: '${rtv['date']} · Vendor: ${rtv['vendor_name'] ?? "—"} · Cycle: ${rtv['cycle_number'] ?? 1}',
+                  subtitle: '${formatAppDate(rtv['date'])} · Vendor: ${rtv['vendor_name'] ?? "—"} · Cycle: ${rtv['cycle_number'] ?? 1}',
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -407,7 +407,7 @@ class BatchGenealogyScreen extends ConsumerWidget {
                   icon: Icons.check_circle_rounded,
                   iconColor: Colors.green,
                   title: 'Final Dispatched to Customer: ${finalDispatches[i]['customer_name'] ?? "Customer"}',
-                  subtitle: '${finalDispatches[i]['date']} · Challan: ${finalDispatches[i]['challan_number'] ?? "—"}',
+                  subtitle: '${formatAppDate(finalDispatches[i]['date'])} · Challan: ${finalDispatches[i]['challan_number'] ?? "—"}',
                   content: Row(
                     children: [
                       _badge('Dispatched: ${(finalDispatches[i]['dispatch_qty'] as num?)?.toInt() ?? 0} PCS', Colors.green),

@@ -639,7 +639,7 @@ class _MachineDowntimeScreenState extends ConsumerState<MachineDowntimeScreen>
                       children: [
                         _DetailTag(
                           icon: Icons.calendar_today_outlined,
-                          label: r['date']?.toString() ?? '',
+                          label: formatAppDate(r['date']),
                         ),
                         _DetailTag(
                           icon: Icons.access_time,

@@ -789,7 +789,7 @@ class _ActiveBpHoldTab extends ConsumerWidget {
                                 ),
                                 if (holdDate.isNotEmpty)
                                   Text(
-                                    holdDate.length >= 10 ? holdDate.substring(0, 10) : holdDate,
+                                    formatAppDate(holdDate),
                                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                                   ),
                               ],
@@ -1304,7 +1304,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
                                 ),
                                 if (rejectDate.isNotEmpty)
                                   Text(
-                                    rejectDate.length >= 10 ? rejectDate.substring(0, 10) : rejectDate,
+                                    formatAppDate(rejectDate),
                                     style: const TextStyle(fontSize: 11, color: Colors.grey),
                                   ),
                               ],
@@ -1638,7 +1638,7 @@ class _BpInspectionHistoryTabState
     final inspectorName = r['inspector_name'] as String? ?? 'QC Inspector';
     final rejectReason = r['reject_reason_name'] as String? ?? r['reject_reason_id'] as String?;
     final remarks = r['remarks'] as String?;
-    final date = r['date'] as String? ?? '';
+    final date = formatAppDate(r['date'] as String? ?? '');
 
     // Color and title based on event type
     Color eventColor;
@@ -1846,7 +1846,7 @@ class _BpInspectionHistoryTabState
     final inspectorName = r['inspector_name'] as String? ?? 'QC Inspector';
     final rejectReason = r['reject_reason_name'] as String? ?? r['reject_reason_id'] as String?;
     final remarks = r['remarks'] as String?;
-    final date = r['date'] as String? ?? '';
+    final date = formatAppDate(r['date'] as String? ?? '');
     final syncStatus = r['sync_status'] as String? ?? 'synced';
 
     showModalBottomSheet<void>(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import 'report_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
@@ -339,7 +338,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Navigator.push(context, MaterialPageRoute<void>(builder: (_) => screen));
   }
 
-  String _shortDate(DateTime d) => DateFormat('dd MMM yyyy').format(d);
+  String _shortDate(DateTime d) => formatAppDate(d);
 
   Future<void> _pickRange(
     BuildContext context,
@@ -691,7 +690,7 @@ class _ReportPage extends ConsumerWidget {
     );
   }
 
-  String _fmt(DateTime d) => DateFormat('dd MMM yy').format(d);
+  String _fmt(DateTime d) => formatAppDate(d);
 }
 
 // ─── Summary Row ──────────────────────────────────────────────────────────────
@@ -953,7 +952,7 @@ class _DailyProductionReport extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yyyy').format(range.to)}',
+                      '${formatAppDate(range.from)} – ${formatAppDate(range.to)}',
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.colorScheme.onSurfaceVariant,
@@ -1790,7 +1789,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               Text(
-                '${DateFormat('dd MMM').format(range.from)} – ${DateFormat('dd MMM yy').format(range.to)}',
+                '${formatAppDate(range.from)} – ${formatAppDate(range.to)}',
                 style: TextStyle(
                   fontSize: 11,
                   color: theme.colorScheme.onSurfaceVariant,
@@ -2723,14 +2722,7 @@ class _LedgerReport extends ConsumerWidget {
 
 // ─── Label Helpers ────────────────────────────────────────────────────────────
 
-String _fmtDate(String iso) {
-  try {
-    final d = DateTime.parse(iso);
-    return DateFormat('dd MMM').format(d);
-  } catch (_) {
-    return iso;
-  }
-}
+String _fmtDate(String iso) => formatAppDate(iso);
 
 String _stageLabel(String stage) {
   const map = {

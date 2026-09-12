@@ -865,7 +865,7 @@ final facoPendingReportProvider =
       dispatched: disp,
       received: recv,
       pending: (disp - recv).clamp(0, double.infinity),
-      oldestDate: r['oldest_date'] as String? ?? '—',
+      oldestDate: formatAppDate(r['oldest_date'] as String? ?? '—'),
     );
   }).toList();
 

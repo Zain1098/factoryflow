@@ -211,7 +211,7 @@ class NotificationsScreen extends ConsumerWidget {
                                       children: [
                                         Text(
                                           createdAt != null
-                                              ? DateFormat('dd MMM, hh:mm a').format(createdAt)
+                                              ? '${formatAppDate(createdAt)}, ${DateFormat('hh:mm a').format(createdAt)}'
                                               : 'Just now',
                                           style: theme.textTheme.labelSmall?.copyWith(
                                             color: theme.colorScheme.onSurfaceVariant

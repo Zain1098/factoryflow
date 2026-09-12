@@ -788,8 +788,8 @@ class RecordDateTimePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCustom = !_isSameMinute(value, DateTime.now());
     final label = showTime
-        ? DateFormat('dd MMM yyyy, hh:mm a').format(value)
-        : DateFormat('dd MMM yyyy').format(value);
+        ? '${formatAppDate(value)}, ${DateFormat('hh:mm a').format(value)}'
+        : formatAppDate(value);
 
     final theme = Theme.of(context);
     return EntryInfoSurface(
@@ -912,10 +912,37 @@ String formatTimeWithoutSeconds(String? timeStr) {
   return trimmed;
 }
 
+/// Formats any date (DateTime or ISO String e.g. "2026-09-01", "2026-09-01T12:00:00")
+/// into "yyyy-MMM-d" (e.g. "2026-Sep-1").
+String formatAppDate(dynamic date) {
+  if (date == null) return '';
+  if (date is DateTime) {
+    return DateFormat('yyyy-MMM-d').format(date);
+  }
+  final s = date.toString().trim();
+  if (s.isEmpty || s == '—' || s == '-') return s;
+  final parsed = DateTime.tryParse(s);
+  if (parsed != null) {
+    return DateFormat('yyyy-MMM-d').format(parsed);
+  }
+  final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(s);
+  if (match != null) {
+    final y = int.tryParse(match.group(1)!);
+    final m = int.tryParse(match.group(2)!);
+    final d = int.tryParse(match.group(3)!);
+    if (y != null && m != null && d != null) {
+      final remainder = s.substring(match.end).trim();
+      final formatted = DateFormat('yyyy-MMM-d').format(DateTime(y, m, d));
+      return remainder.isNotEmpty ? '$formatted $remainder' : formatted;
+    }
+  }
+  return s;
+}
+
 /// Formats date and optional time together cleanly without seconds
-/// (e.g. "2026-09-08 10:35" or "2026-09-08").
+/// (e.g. "2026-Sep-1 10:35" or "2026-Sep-1").
 String formatDateTimeLabel(String? dateStr, String? timeStr) {
-  final d = (dateStr ?? '').trim();
+  final d = formatAppDate(dateStr);
   final t = formatTimeWithoutSeconds(timeStr);
   if (d.isEmpty) return t;
   if (t.isEmpty) return d;

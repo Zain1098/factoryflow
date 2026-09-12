@@ -512,7 +512,7 @@ class _RtvScreenState extends ConsumerState<RtvScreen>
                     fontFamily: 'monospace', fontWeight: FontWeight.w600,),
               ),
               subtitle: Text(
-                  '${r['vendor_name'] ?? ''} · Cycle $cycle · ${r['date']}',),
+                  '${r['vendor_name'] ?? ''} · Cycle $cycle · ${formatAppDate(r['date'])}',),
               trailing: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -1023,7 +1023,7 @@ class _RtvStockTab extends ConsumerWidget {
                   final rtvQty = (item['rtv_qty'] as num?)?.toInt() ?? 0;
                   final currentBalance =
                       (item['current_balance'] as num?)?.toInt() ?? 0;
-                  final date = item['date'] as String? ?? '—';
+                  final date = formatAppDate(item['date'] as String? ?? '—');
                   final reason = item['reason'] as String? ?? '—';
                   final batch = item['batch_number'] as String? ?? '—';
 

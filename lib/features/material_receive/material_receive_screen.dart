@@ -949,7 +949,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                     children: [
                       Text(
                         selectedDate != null
-                            ? DateFormat('EEEE, dd MMM yyyy').format(selectedDate)
+                            ? '${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}'
                             : 'All Received Dates',
                         style: TextStyle(
                           fontSize: 12,
@@ -1017,7 +1017,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                           const SizedBox(height: 12),
                           Text(
                             selectedDate != null
-                                ? 'No receipts on ${DateFormat('EEEE, dd MMM yyyy').format(selectedDate)}.'
+                                ? 'No receipts on ${DateFormat('EEEE').format(selectedDate)}, ${formatAppDate(selectedDate)}.'
                                 : 'No material receives yet.',
                             style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                           ),
@@ -1220,7 +1220,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
         dayReceivedTotals.values.fold<int>(0, (sum, val) => sum + val);
 
     final title = selectedDate != null
-        ? 'REMAINING (${DateFormat('dd MMM').format(selectedDate)})'
+        ? 'REMAINING (${formatAppDate(selectedDate)})'
         : 'REMAINING ORDERS';
 
     return Material(
