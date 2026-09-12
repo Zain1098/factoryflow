@@ -417,12 +417,12 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     ),
                   )
                 else ...[
-                  const Text(
+                  Text(
                     'Available Dispatches (Tap to Add):',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -1403,24 +1403,28 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Edit Vendor Receipt',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Edit Vendor Receipt',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '$partCode – $partName ($batchNum)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            Text(
+                              '$partCode – $partName ($batchNum)',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),

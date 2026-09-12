@@ -438,6 +438,20 @@ class DatabaseService {
     _setPostingSyncStatus(productionId, 'conflict');
   }
 
+  Future<void> updateStockLedgerRunningBalance(
+    String id,
+    double runningBalance,
+  ) async {
+    for (final row in _tables['stock_ledger'] ?? const []) {
+      if (row['id'] == id) {
+        row['running_balance'] = runningBalance;
+        row['sync_status'] = 'synced';
+        break;
+      }
+    }
+    await _persist();
+  }
+
   void _setPostingSyncStatus(String productionId, String status) {
     for (final row in _tables['productions'] ?? const []) {
       if (row['id'] == productionId) row['sync_status'] = status;

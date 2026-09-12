@@ -454,12 +454,12 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                         ),
                       )
                     else ...[
-                      const Text(
+                      Text(
                         'Available Batches (Tap to Add):',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -1501,24 +1501,28 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Edit Vendor Dispatch',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Edit Vendor Dispatch',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${record['part_code']} · Batch: ${record['batch_number']}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            Text(
+                              '${record['part_code']} · Batch: ${record['batch_number']}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),

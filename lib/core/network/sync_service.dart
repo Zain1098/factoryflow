@@ -78,15 +78,18 @@ class SyncService {
 
   void startPeriodicSync() {
     if (_accessAllowed?.call() != true) return;
-    if (_syncTimer != null) return;
     _syncTimer = Timer.periodic(
       const Duration(seconds: 30),
-      (_) => unawaited(syncPending().then<void>((_) {}, onError: (_) {})),
+      (_) {
+        unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
+        unawaited(pullOperationalUpdates().then<void>((_) {}, onError: (_) {}));
+      },
     );
     _connectivitySubscription =
         Connectivity().onConnectivityChanged.listen((results) {
       if (!results.contains(ConnectivityResult.none)) {
         unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
+        unawaited(pullOperationalUpdates().then<void>((_) {}, onError: (_) {}));
       }
     });
 
@@ -100,6 +103,7 @@ class SyncService {
     });
 
     unawaited(syncPending().then<void>((_) {}, onError: (_) {}));
+    unawaited(pullOperationalUpdates().then<void>((_) {}, onError: (_) {}));
   }
 
   void stopPeriodicSync() {
@@ -194,6 +198,86 @@ class SyncService {
         imported += count;
       }
     }
+    return imported;
+  }
+
+  DateTime? _lastOperationalPullTime;
+
+  /// Incrementally pulls operational records created or modified by other factory devices.
+  /// Pending offline records on this device are strictly preserved.
+  Future<int> pullOperationalUpdates({int limitPerTable = 50}) async {
+    if (_accessAllowed?.call() != true) return 0;
+    if (!await isOnline() || !await isSupabaseReady()) return 0;
+    final factoryId = _db.activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return 0;
+
+    const operationalTables = [
+      'purchase_orders',
+      'material_receives',
+      'productions',
+      'bp_inspections',
+      'bp_rejected_actions',
+      'dispatch_to_facos',
+      'receive_from_facos',
+      'ap_inspections',
+      'ap_rejected_actions',
+      'rtvs',
+      'final_dispatches',
+      'stock_ledger',
+      'physical_counts',
+      'stock_adjustments',
+    ];
+
+    var imported = 0;
+    final client = Supabase.instance.client;
+
+    const chunkSize = 4;
+    for (var i = 0; i < operationalTables.length; i += chunkSize) {
+      final chunk = operationalTables.sublist(
+        i,
+        (i + chunkSize > operationalTables.length) ? operationalTables.length : i + chunkSize,
+      );
+      final results = await Future.wait(
+        chunk.map((table) async {
+          try {
+            var query = client
+                .from(table)
+                .select()
+                .eq('factory_id', factoryId);
+
+            if (_lastOperationalPullTime != null) {
+              final since = _lastOperationalPullTime!
+                  .subtract(const Duration(minutes: 2))
+                  .toUtc()
+                  .toIso8601String();
+              query = query.gte('created_at', since);
+            }
+
+            final response = await query
+                .order('created_at', ascending: false)
+                .limit(limitPerTable)
+                .timeout(const Duration(seconds: 8));
+
+            final rows = (response as List)
+                .map((row) => Map<String, dynamic>.from(row as Map))
+                .toList();
+
+            if (rows.isNotEmpty) {
+              await _db.upsertRemoteRecords(table, rows);
+              return rows.length;
+            }
+          } catch (_) {
+            // Transient network error or table not yet populated
+          }
+          return 0;
+        }),
+      );
+      for (final count in results) {
+        imported += count;
+      }
+    }
+
+    _lastOperationalPullTime = DateTime.now().toUtc();
     return imported;
   }
 
@@ -411,6 +495,9 @@ class SyncService {
               );
               conflicts++;
               continue;
+            } else if (result is Map && result['running_balance'] != null) {
+              final newBal = (result['running_balance'] as num).toDouble();
+              await _db.updateStockLedgerRunningBalance(recordId, newBal);
             }
           } else if (operation == 'production_post') {
             final result = await client.rpc(
@@ -502,6 +589,7 @@ class SyncService {
       }
     } finally {
       _isSyncing = false;
+      unawaited(pullOperationalUpdates().catchError((_) => 0));
     }
 
     return SyncResult(synced: synced, failed: failed, conflicts: conflicts);

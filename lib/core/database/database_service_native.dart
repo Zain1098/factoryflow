@@ -1318,6 +1318,17 @@ class DatabaseService {
     );
   }
 
+  Future<void> updateStockLedgerRunningBalance(
+    String id,
+    double runningBalance,
+  ) async {
+    db.execute(
+      "UPDATE stock_ledger SET running_balance = ?, sync_status = 'synced' "
+      "WHERE id = ?",
+      [runningBalance, id],
+    );
+  }
+
   // ── Correction Requests ───────────────────────────────────────────────────
 
   Future<void> updateCorrectionStatus({
