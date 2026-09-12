@@ -74,27 +74,150 @@ class DatabaseService {
 
   Future<T> runInTransaction<T>(Future<T> Function() action) => action();
 
-  Future<double> getCurrentBalance(String partId, String stage) async => 0;
-  Future<double> getTotalBalanceByStage(String stage) async => 0;
+  Future<double> getCurrentBalance(String partId, String stage) async {
+    final totals = await getBalancesByStage(stage);
+    final row = totals.firstWhere(
+      (r) => r['id'] == partId,
+      orElse: () => <String, dynamic>{},
+    );
+    return (row['balance'] as num?)?.toDouble() ?? 0.0;
+  }
 
-  Future<Map<String, double>> getAllStageTotals() async => {};
+  Future<double> getTotalBalanceByStage(String stage) async {
+    final totals = await getAllStageTotals();
+    return totals[stage] ?? 0.0;
+  }
+
+  Future<Map<String, double>> getAllStageTotals() async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return {};
+    final ledger = _tables['stock_ledger'] ?? [];
+    final latestByPartStage = <String, Map<String, dynamic>>{};
+    for (final row in ledger) {
+      if (row['factory_id'] != factoryId) continue;
+      final key = '${row['part_id']}_${row['stage']}';
+      final existing = latestByPartStage[key];
+      if (existing == null) {
+        latestByPartStage[key] = row;
+      } else {
+        final existingTime = existing['created_at']?.toString() ?? '';
+        final thisTime = row['created_at']?.toString() ?? '';
+        if (thisTime.compareTo(existingTime) >= 0) {
+          latestByPartStage[key] = row;
+        }
+      }
+    }
+    final map = <String, double>{};
+    for (final row in latestByPartStage.values) {
+      final stage = row['stage']?.toString();
+      final bal = (row['running_balance'] as num?)?.toDouble() ?? 0.0;
+      if (stage != null) {
+        map[stage] = (map[stage] ?? 0.0) + bal;
+      }
+    }
+    return map;
+  }
 
   Future<Map<String, double>> getTodayProductionSummary(
     String todayStr, {
     String? finalMachineId,
     bool countAllStageOutput = false,
-  }) async =>
-      {
+  }) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) {
+      return {
         'production': 0,
         'bp_reject': 0,
         'ap_reject': 0,
         'dispatched': 0,
       };
+    }
+    final prods = (_tables['productions'] ?? [])
+        .where((r) => r['factory_id'] == factoryId && r['date'] == todayStr);
+    double prodQty = 0;
+    double bpRej = 0;
+    for (final r in prods) {
+      final gQty = (r['good_qty'] as num?)?.toDouble() ?? 0.0;
+      final bRej = (r['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+      if (countAllStageOutput ||
+          finalMachineId == null ||
+          r['machine_id'] == finalMachineId) {
+        prodQty += gQty;
+      }
+      bpRej += bRej;
+    }
+    final apInsps = (_tables['ap_inspections'] ?? [])
+        .where((r) => r['factory_id'] == factoryId && r['date'] == todayStr);
+    double apRej = 0;
+    for (final r in apInsps) {
+      apRej += (r['ap_reject_qty'] as num?)?.toDouble() ?? 0.0;
+    }
+    final disps = (_tables['final_dispatches'] ?? [])
+        .where((r) => r['factory_id'] == factoryId && r['date'] == todayStr);
+    double dispQty = 0;
+    for (final r in disps) {
+      dispQty += (r['qty'] as num?)?.toDouble() ?? 0.0;
+    }
+    return {
+      'production': prodQty,
+      'bp_reject': bpRej,
+      'ap_reject': apRej,
+      'dispatched': dispQty,
+    };
+  }
 
-  Future<double> getTodayTarget(int dayOfWeek) async => 0;
+  Future<double> getTodayTarget(int dayOfWeek) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return 0;
+    final targets = (_tables['target_master'] ?? [])
+        .where((r) => r['factory_id'] == factoryId);
+    final dayTargets = targets.where((r) => r['day_of_week'] == dayOfWeek);
+    double total = 0;
+    for (final t in dayTargets) {
+      total += (t['target_qty'] as num?)?.toDouble() ?? 0;
+    }
+    if (total > 0) return total;
+    return targets.isNotEmpty ? 0 : 500;
+  }
 
-  Future<List<Map<String, dynamic>>> getBalancesByStage(String stage) async =>
-      [];
+  Future<List<Map<String, dynamic>>> getBalancesByStage(String stage) async {
+    final factoryId = activeWorkspaceId;
+    if (factoryId.isEmpty) return [];
+    final ledger = _tables['stock_ledger'] ?? [];
+    final parts = _tables['parts'] ?? [];
+    final latestByPart = <String, Map<String, dynamic>>{};
+    for (final row in ledger) {
+      if (row['factory_id'] != factoryId || row['stage'] != stage) continue;
+      final partId = row['part_id']?.toString() ?? '';
+      final existing = latestByPart[partId];
+      if (existing == null) {
+        latestByPart[partId] = row;
+      } else {
+        final existingTime = existing['created_at']?.toString() ?? '';
+        final thisTime = row['created_at']?.toString() ?? '';
+        if (thisTime.compareTo(existingTime) >= 0) {
+          latestByPart[partId] = row;
+        }
+      }
+    }
+    final result = <Map<String, dynamic>>[];
+    for (final entry in latestByPart.entries) {
+      final part = parts.cast<Map<String, dynamic>>().firstWhere(
+            (p) => p['id'] == entry.key,
+            orElse: () => <String, dynamic>{},
+          );
+      final bal = (entry.value['running_balance'] as num?)?.toDouble() ?? 0.0;
+      if (bal > 0) {
+        result.add({
+          'id': entry.key,
+          'code': part['code'] ?? '',
+          'name': part['name'] ?? '',
+          'balance': bal,
+        });
+      }
+    }
+    return result;
+  }
 
   Future<void> updateCorrectionStatus({
     required String id,
@@ -791,18 +914,98 @@ class FakeDb {
     String sql, [
     List<Object?> params = const [],
   ]) {
-    final tableMatch = RegExp(r'FROM\s+(\w+)', caseSensitive: false).firstMatch(sql);
+    final tableMatch =
+        RegExp(r'FROM\s+(\w+)', caseSensitive: false).firstMatch(sql);
     final table = tableMatch?.group(1);
     if (table == null) return const [];
     var rows = List<Map<String, dynamic>>.from(_tables[table] ?? const []);
-    if (sql.toLowerCase().contains('where') && params.isNotEmpty) {
-      if (sql.toLowerCase().contains('factory_id = ?')) {
-        rows = rows.where((row) => row['factory_id'] == params.last).toList();
+
+    // Filter factory_id = ?
+    final fidMatch =
+        RegExp(r'factory_id\s*=\s*\?', caseSensitive: false).firstMatch(sql);
+    if (fidMatch != null && params.isNotEmpty) {
+      final before = sql.substring(0, fidMatch.start);
+      final idx = '?'.allMatches(before).length;
+      if (idx < params.length && params[idx] != null) {
+        rows = rows.where((row) => row['factory_id'] == params[idx]).toList();
       }
     }
-    if (sql.toLowerCase().contains('count(*)')) {
-      return [<String, dynamic>{'cnt': rows.length}];
+
+    // Filter machine_id = ?
+    final midMatch =
+        RegExp(r'machine_id\s*=\s*\?', caseSensitive: false).firstMatch(sql);
+    if (midMatch != null && params.isNotEmpty) {
+      final before = sql.substring(0, midMatch.start);
+      final idx = '?'.allMatches(before).length;
+      if (idx < params.length && params[idx] != null) {
+        rows = rows.where((row) => row['machine_id'] == params[idx]).toList();
+      }
     }
+
+    // Filter date = ?
+    final dateMatch =
+        RegExp(r'\bdate\s*=\s*\?', caseSensitive: false).firstMatch(sql);
+    if (dateMatch != null && params.isNotEmpty) {
+      final before = sql.substring(0, dateMatch.start);
+      final idx = '?'.allMatches(before).length;
+      if (idx < params.length && params[idx] != null) {
+        rows = rows.where((row) => row['date'] == params[idx]).toList();
+      }
+    }
+
+    // Filter active = 1
+    if (sql.toLowerCase().contains('active = 1')) {
+      rows = rows.where((row) => row['active'] == 1 || row['active'] == true).toList();
+    }
+
+    // Filter end_time IS NULL
+    if (sql.toLowerCase().contains('end_time is null')) {
+      rows = rows.where((row) => row['end_time'] == null).toList();
+    }
+
+    // Filter status = 'pending'
+    if (sql.toLowerCase().contains("status = 'pending'")) {
+      rows = rows.where((row) => row['status'] == 'pending').toList();
+    }
+
+    final isCount = RegExp(r'\bCOUNT\s*\(', caseSensitive: false).hasMatch(sql);
+    final isSum = RegExp(r'\bSUM\s*\(', caseSensitive: false).hasMatch(sql);
+    final hasGroupBy =
+        RegExp(r'\bGROUP\s+BY\b', caseSensitive: false).hasMatch(sql);
+
+    // Aggregate queries without GROUP BY always return exactly 1 row in SQL
+    if (!hasGroupBy && (isCount || isSum)) {
+      final aliasMatch =
+          RegExp(r'\bAS\s+(\w+)', caseSensitive: false).firstMatch(sql);
+      final alias = aliasMatch?.group(1) ?? (isCount ? 'cnt' : 'qty');
+
+      if (isCount) {
+        return [
+          <String, dynamic>{alias: rows.length}
+        ];
+      } else if (isSum) {
+        final colMatch = RegExp(
+          r'SUM\s*\(\s*(?:CASE\b.*?THEN\s+(\w+)|(\w+))',
+          caseSensitive: false,
+        ).firstMatch(sql);
+        final colName = colMatch?.group(1) ?? colMatch?.group(2);
+        double sum = 0.0;
+        if (colName != null) {
+          for (final row in rows) {
+            final val = row[colName];
+            if (val is num) {
+              sum += val.toDouble();
+            } else if (val != null) {
+              sum += double.tryParse(val.toString()) ?? 0.0;
+            }
+          }
+        }
+        return [
+          <String, dynamic>{alias: sum}
+        ];
+      }
+    }
+
     return rows.map(Map<String, dynamic>.from).toList();
   }
 

@@ -226,6 +226,7 @@ class AuthRepository {
       throw Exception('This account is no longer active.');
     }
     if (user == null) return null;
+    user = await _unifyUserWorkspace(client, user);
     final signedInUser = user.copyWith(authProvider: 'email');
     await _saveLocalSession(signedInUser);
     return signedInUser;
@@ -293,10 +294,11 @@ class AuthRepository {
           await client.auth.signOut(scope: SignOutScope.local);
           throw Exception('This account is no longer active.');
         }
-        final signedInUser = appUser.copyWith(
+        var signedInUser = appUser.copyWith(
           authProvider: 'google',
           avatarUrl: googleUser.photoUrl ?? appUser.avatarUrl,
         );
+        signedInUser = await _unifyUserWorkspace(client, signedInUser);
         await _saveLocalSession(signedInUser);
         return signedInUser;
       }
@@ -370,10 +372,11 @@ class AuthRepository {
               // Profile sync should not block a valid Auth session.
             }
           }
-          final restored = remote!.copyWith(
+          var restored = remote!.copyWith(
             authProvider: provider == 'google' ? 'google' : 'email',
             sessionCreatedAt: local?.sessionCreatedAt,
           );
+          restored = await _unifyUserWorkspace(client, restored);
           await _hydrateLocalWorkspace(client, restored);
           await _saveLocalSession(restored);
           return restored;
@@ -385,6 +388,55 @@ class AuthRepository {
     final remoteId = client?.auth.currentUser?.id;
     if (remoteId != null && local?.id != remoteId) return null;
     return local;
+  }
+
+  Future<AppUser> _unifyUserWorkspace(
+    SupabaseClient client,
+    AppUser user,
+  ) async {
+    try {
+      final res = await client
+          .rpc('resolve_user_workspace')
+          .timeout(const Duration(seconds: 8));
+      if (res is Map && res['workspace_id'] != null) {
+        final resolvedId = res['workspace_id'].toString().trim();
+        if (resolvedId.isNotEmpty && resolvedId != user.factoryId) {
+          final updated = user.copyWith(factoryId: resolvedId);
+          await _hydrateLocalWorkspace(client, updated);
+          return updated;
+        }
+      }
+    } catch (_) {
+      // Fallback: If resolve_user_workspace RPC is not yet created on Supabase,
+      // check if user has active memberships in other workspaces with data
+      try {
+        final memberships = await client
+            .from('workspace_members')
+            .select('workspace_id, role, status')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .timeout(const Duration(seconds: 5));
+        if (memberships is List && memberships.length > 1) {
+          for (final m in memberships) {
+            final wId = m['workspace_id']?.toString() ?? '';
+            if (wId.isNotEmpty && wId != user.factoryId) {
+              final partsCheck = await client
+                  .from('parts')
+                  .select('id')
+                  .eq('factory_id', wId)
+                  .limit(1)
+                  .maybeSingle();
+              if (partsCheck != null) {
+                final updated = user.copyWith(factoryId: wId);
+                await _hydrateLocalWorkspace(client, updated);
+                return updated;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return user;
   }
 
   Future<void> _hydrateLocalWorkspace(
@@ -484,13 +536,14 @@ class AuthRepository {
     await db.setActiveWorkspaceId(workspaceIdStr);
     await _clearPendingSignup();
 
-    final user = AppUser(
+    var user = AppUser(
       id: userId,
       factoryId: workspaceIdStr,
       name: profileName,
       email: email,
       role: UserRole.fromValue(result['role'] as String? ?? 'owner') ?? UserRole.owner,
     );
+    user = await _unifyUserWorkspace(client, user);
     await _saveLocalSession(user);
     return user;
   }
@@ -533,13 +586,14 @@ class AuthRepository {
     await db.setActiveWorkspaceId(workspaceId);
     await _clearPendingSignup();
 
-    final user = AppUser(
+    var user = AppUser(
       id: userId,
       factoryId: workspaceId,
       name: profileName,
       email: response.user?.email ?? email,
       role: UserRole.fromValue(result['role'] as String? ?? 'owner') ?? UserRole.owner,
     );
+    user = await _unifyUserWorkspace(client, user);
     await _saveLocalSession(user);
     return user;
   }

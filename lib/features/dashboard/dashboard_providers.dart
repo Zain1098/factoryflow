@@ -303,7 +303,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
       'WHERE factory_id = ? AND machine_id = ? AND date = ?',
       [factoryId, mId, todayStr],
     );
-    final mQty = (mProd.first['qty'] as num?)?.toDouble() ?? 0.0;
+    final mQty = (mProd.firstOrNull?['qty'] as num?)?.toDouble() ?? 0.0;
 
     String status = 'Running';
     if (downtime.isNotEmpty) {
@@ -348,7 +348,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
         dStr,
       ],
     );
-    final wQty = (wProd.first['qty'] as num?)?.toDouble() ?? 0.0;
+    final wQty = (wProd.firstOrNull?['qty'] as num?)?.toDouble() ?? 0.0;
 
     weeklyData.add(DashboardWeeklyData(dayLabel: dLabel, qty: wQty));
   }
@@ -360,7 +360,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     [factoryId],
   );
   final pendingApprovals =
-      (pendingCorrectionRows.first['cnt'] as num?)?.toInt() ?? 0;
+      (pendingCorrectionRows.firstOrNull?['cnt'] as num?)?.toInt() ?? 0;
 
   // ── OEE Calculation ────────────────────────────────────────────────────────
   final downtimeRows = db.db.select(
@@ -369,7 +369,7 @@ final dashboardProvider = FutureProvider<DashboardData>((ref) async {
     [factoryId, todayStr],
   );
   final todayDowntimeMins =
-      (downtimeRows.first['total_mins'] as num?)?.toDouble() ?? 0.0;
+      (downtimeRows.firstOrNull?['total_mins'] as num?)?.toDouble() ?? 0.0;
 
   final plannedMinutes = (totalMachines > 0 ? totalMachines : 1) * 480.0;
   final availabilityRate =
