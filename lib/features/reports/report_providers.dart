@@ -69,6 +69,23 @@ final reportDateRangeProvider =
 
 // ─── 1. Daily Production Report ───────────────────────────────────────────────
 
+class DailyPartProduction {
+  const DailyPartProduction({
+    required this.partId,
+    required this.partName,
+    required this.partCode,
+    required this.qty,
+    this.goodQty = 0,
+    this.rejectQty = 0,
+  });
+  final String partId;
+  final String partName;
+  final String partCode;
+  final double qty;
+  final double goodQty;
+  final double rejectQty;
+}
+
 class DailyProductionRow {
   const DailyProductionRow({
     required this.date,
@@ -85,6 +102,7 @@ class DailyProductionRow {
     this.shiftBProd = 0,
     this.shiftCProd = 0,
     this.downtimeMinutes = 0,
+    this.parts = const [],
   });
   final String date;
   final double totalProduction;
@@ -100,6 +118,11 @@ class DailyProductionRow {
   final double shiftBProd;
   final double shiftCProd;
   final int downtimeMinutes;
+  final List<DailyPartProduction> parts;
+
+  String get partsSummary => parts.isEmpty
+      ? '—'
+      : parts.map((p) => '${p.partName} (${p.qty.toInt()} PCS)').join(', ');
 }
 
 final dailyProductionReportProvider =
@@ -111,22 +134,37 @@ final dailyProductionReportProvider =
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) return [];
 
-  final finalMachineId = flow.isMultiStage && flow.requiredMachineIds.isNotEmpty
+  // Active machine sequence order
+  final machineRows = db.db.select(
+    'SELECT id, name, sequence_order FROM machines WHERE factory_id = ? AND active = 1 ORDER BY sequence_order ASC, id ASC',
+    [factoryId],
+  );
+  final machineSeqMap = <String, int>{};
+  for (var i = 0; i < machineRows.length; i++) {
+    final mId = machineRows[i]['id']?.toString() ?? '';
+    final seq = (machineRows[i]['sequence_order'] as num?)?.toInt() ?? (i + 1);
+    machineSeqMap[mId] = seq;
+  }
+  final effectiveFinalMachineId = (flow.isMultiStage && flow.requiredMachineIds.isNotEmpty)
       ? flow.requiredMachineIds.last
-      : null;
+      : (machineRows.isNotEmpty ? machineRows.last['id']?.toString() : null);
 
-  // 1. Fetch raw production entries within date range
+  // 1. Fetch raw production entries within date range with part info
   final prodRows = db.db.select(
     '''
     SELECT
       p.date,
       p.machine_id,
       p.shift_id,
+      p.part_id,
+      pt.name AS part_name,
+      pt.code AS part_code,
       s.name AS shift_name,
       COALESCE(p.production_qty, 0) AS prod_qty,
       COALESCE(p.bp_reject_qty, 0) AS rej_qty,
       COALESCE(p.good_qty, p.production_qty - COALESCE(p.bp_reject_qty, 0)) AS good_qty
     FROM productions p
+    LEFT JOIN parts pt ON pt.id = p.part_id AND pt.factory_id = p.factory_id
     LEFT JOIN shifts s ON s.id = p.shift_id AND s.factory_id = p.factory_id
     WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
     ORDER BY p.date DESC
@@ -170,79 +208,150 @@ final dailyProductionReportProvider =
     }
   }
 
-  // 4. Group production entries by date and calculate totals
-  final grouped = <String, _DailyAccumulator>{};
+  // 4. Group production entries by date
+  final groupedByDate = <String, List<Map<String, dynamic>>>{};
+  for (final row in prodRows) {
+    final date = row['date']?.toString();
+    if (date != null && date.isNotEmpty) {
+      groupedByDate.putIfAbsent(date, () => []).add(row);
+    }
+  }
 
   // Ensure dates with downtime are also included if relevant
   for (final d in downtimeMap.keys) {
-    grouped.putIfAbsent(d, () => _DailyAccumulator(date: d));
+    groupedByDate.putIfAbsent(d, () => []);
   }
 
-  for (final row in prodRows) {
-    final date = row['date'] as String;
-    final shiftStr = (row['shift_name'] as String?) ??
-        (row['shift_id'] as String?) ??
-        '';
-    final machineId = row['machine_id'] as String?;
-    final prodQty = ((row['prod_qty'] ?? row['production_qty']) as num?)?.toDouble() ?? 0.0;
-    final rejQty = ((row['rej_qty'] ?? row['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
-    final goodQty = ((row['good_qty']) as num?)?.toDouble() ?? (prodQty - rejQty).clamp(0.0, double.infinity);
+  final sortedDates = groupedByDate.keys.toList()..sort((a, b) => b.compareTo(a));
 
-    // Check shift filter: if user filtered by A, B, or C
-    if (shiftFilter != null && shiftFilter.isNotEmpty) {
-      if (!shiftStr.toUpperCase().contains(shiftFilter.toUpperCase())) {
-        continue;
+  final dailyRows = <DailyProductionRow>[];
+
+  for (final d in sortedDates) {
+    final rowsForDate = groupedByDate[d]!;
+    final dtMins = downtimeMap[d] ?? 0;
+
+    // Filter by shift if shiftFilter is applied
+    final filteredRows = rowsForDate.where((row) {
+      if (shiftFilter == null || shiftFilter.isEmpty) return true;
+      final shiftStr = (row['shift_name'] as String?) ??
+          (row['shift_id'] as String?) ??
+          '';
+      return shiftStr.toUpperCase().contains(shiftFilter.toUpperCase());
+    }).toList();
+
+    // Rejections across all machines on this date (actual loss)
+    double dayTotalReject = 0.0;
+    for (final row in filteredRows) {
+      final rej = ((row['rej_qty'] ?? row['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
+      dayTotalReject += rej;
+    }
+
+    // Group filtered rows by part_id
+    final partGroups = <String, List<Map<String, dynamic>>>{};
+    for (final row in filteredRows) {
+      final partId = row['part_id']?.toString() ?? 'unknown';
+      partGroups.putIfAbsent(partId, () => []).add(row);
+    }
+
+    double dayTotalProd = 0.0;
+    double dayTotalGood = 0.0;
+    double shiftAGood = 0.0;
+    double shiftAProd = 0.0;
+    double shiftBGood = 0.0;
+    double shiftBProd = 0.0;
+    double shiftCGood = 0.0;
+    double shiftCProd = 0.0;
+
+    final partsList = <DailyPartProduction>[];
+
+    for (final entry in partGroups.entries) {
+      final partId = entry.key;
+      final pRows = entry.value;
+      final partName = pRows.first['part_name'] as String? ?? 'Part';
+      final partCode = pRows.first['part_code'] as String? ?? '';
+
+      // Determine the final/furthest machine stage for this part on this date
+      // to avoid summing across multiple machines for the same piece flow
+      final hasFinalMachineEntry = effectiveFinalMachineId != null &&
+          pRows.any((r) => r['machine_id'] == effectiveFinalMachineId);
+
+      final String selectedMachineId;
+      if (hasFinalMachineEntry) {
+        selectedMachineId = effectiveFinalMachineId;
+      } else if (pRows.length > 1) {
+        // Pick the machine with the highest sequence order
+        Map<String, dynamic>? furthestRow;
+        int maxSeq = -1;
+        for (final r in pRows) {
+          final mId = r['machine_id']?.toString() ?? '';
+          final seq = machineSeqMap[mId] ?? 0;
+          if (seq > maxSeq) {
+            maxSeq = seq;
+            furthestRow = r;
+          }
+        }
+        selectedMachineId = furthestRow?['machine_id']?.toString() ??
+            pRows.last['machine_id']?.toString() ??
+            '';
+      } else {
+        selectedMachineId = pRows.first['machine_id']?.toString() ?? '';
+      }
+
+      final stageRows =
+          pRows.where((r) => r['machine_id'] == selectedMachineId).toList();
+
+      double partProd = 0.0;
+      double partGood = 0.0;
+      double partRej = 0.0;
+
+      for (final r in stageRows) {
+        final prod = ((r['prod_qty'] ?? r['production_qty']) as num?)?.toDouble() ?? 0.0;
+        final rej = ((r['rej_qty'] ?? r['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
+        final good = ((r['good_qty']) as num?)?.toDouble() ??
+            (prod - rej).clamp(0.0, double.infinity);
+
+        partProd += prod;
+        partGood += good;
+        partRej += rej;
+
+        // Shift breakdown for this part
+        final shiftStr = ((r['shift_name'] as String?) ??
+                (r['shift_id'] as String?) ??
+                '')
+            .toUpperCase();
+        if (shiftStr.contains('B') || shiftStr == 'B') {
+          shiftBProd += prod;
+          shiftBGood += good;
+        } else if (shiftStr.contains('C') || shiftStr == 'C') {
+          shiftCProd += prod;
+          shiftCGood += good;
+        } else {
+          shiftAProd += prod;
+          shiftAGood += good;
+        }
+      }
+
+      dayTotalProd += partProd;
+      dayTotalGood += partGood;
+
+      if (partProd > 0 || partGood > 0) {
+        partsList.add(
+          DailyPartProduction(
+            partId: partId,
+            partName: partName,
+            partCode: partCode,
+            qty: partGood > 0 ? partGood : partProd,
+            goodQty: partGood,
+            rejectQty: partRej,
+          ),
+        );
       }
     }
 
-    final acc = grouped.putIfAbsent(date, () => _DailyAccumulator(date: date));
-
-    // Floor production input and rejections always reflect actual floor activity
-    acc.totalProd += prodQty;
-    acc.bpReject += rejQty;
-    acc.stageGoodQty += goodQty;
-
-    // Determine if this entry counts toward final finished good output
-    final countsAsFinal =
-        flow.countsAllStageOutput || finalMachineId == null || machineId == finalMachineId;
-    if (countsAsFinal) {
-      acc.finalGoodQty += goodQty;
-    }
-
-    // Shift breakdown
-    final upperShift = shiftStr.toUpperCase();
-    if (upperShift.contains('B') || shiftStr == 'B') {
-      acc.shiftBProd += prodQty;
-      acc.shiftBStageGood += goodQty;
-      if (countsAsFinal) acc.shiftBFinalGood += goodQty;
-    } else if (upperShift.contains('C') || shiftStr == 'C') {
-      acc.shiftCProd += prodQty;
-      acc.shiftCStageGood += goodQty;
-      if (countsAsFinal) acc.shiftCFinalGood += goodQty;
-    } else {
-      // Shift A or unassigned / standard shift
-      acc.shiftAProd += prodQty;
-      acc.shiftAStageGood += goodQty;
-      if (countsAsFinal) acc.shiftAFinalGood += goodQty;
-    }
-  }
-
-  // 5. Convert accumulated maps to DailyProductionRow sorted descending
-  final sortedDates = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
-
-  return sortedDates.map((d) {
-    final acc = grouped[d]!;
-    final dtMins = downtimeMap[d] ?? 0;
-
-    // If final stage output exists on this date, use it; otherwise fallback to
-    // stageGoodQty so intermediate machine work is never reported as 0.
-    final effectiveGood = acc.finalGoodQty > 0 ? acc.finalGoodQty : acc.stageGoodQty;
-    final effShiftAGood = acc.shiftAFinalGood > 0 ? acc.shiftAFinalGood : acc.shiftAStageGood;
-    final effShiftBGood = acc.shiftBFinalGood > 0 ? acc.shiftBFinalGood : acc.shiftBStageGood;
-    final effShiftCGood = acc.shiftCFinalGood > 0 ? acc.shiftCFinalGood : acc.shiftCStageGood;
+    // Sort parts by qty descending
+    partsList.sort((a, b) => b.qty.compareTo(a.qty));
 
     // Calculate target for this weekday: SQLite strftime('%w') 0=Sunday, 6=Saturday.
-    // In Dart: DateTime.weekday gives 1=Monday...7=Sunday.
     double target = 0.0;
     try {
       final parsed = DateTime.parse(d);
@@ -251,27 +360,32 @@ final dailyProductionReportProvider =
     } catch (_) {}
 
     final efficiency =
-        target > 0 ? (effectiveGood / target * 100).clamp(0.0, 999.0) : 0.0;
+        target > 0 ? (dayTotalGood / target * 100).clamp(0.0, 999.0) : 0.0;
     final rejectPct =
-        acc.totalProd > 0 ? (acc.bpReject / acc.totalProd * 100) : 0.0;
+        dayTotalProd > 0 ? (dayTotalReject / dayTotalProd * 100) : 0.0;
 
-    return DailyProductionRow(
-      date: d,
-      totalProduction: acc.totalProd,
-      bpReject: acc.bpReject,
-      goodQty: effectiveGood,
-      target: target,
-      efficiency: efficiency,
-      rejectPct: rejectPct,
-      shiftAGood: effShiftAGood,
-      shiftBGood: effShiftBGood,
-      shiftCGood: effShiftCGood,
-      shiftAProd: acc.shiftAProd,
-      shiftBProd: acc.shiftBProd,
-      shiftCProd: acc.shiftCProd,
-      downtimeMinutes: dtMins,
+    dailyRows.add(
+      DailyProductionRow(
+        date: d,
+        totalProduction: dayTotalProd,
+        bpReject: dayTotalReject,
+        goodQty: dayTotalGood,
+        target: target,
+        efficiency: efficiency,
+        rejectPct: rejectPct,
+        shiftAGood: shiftAGood,
+        shiftBGood: shiftBGood,
+        shiftCGood: shiftCGood,
+        shiftAProd: shiftAProd,
+        shiftBProd: shiftBProd,
+        shiftCProd: shiftCProd,
+        downtimeMinutes: dtMins,
+        parts: partsList,
+      ),
     );
-  }).where((r) {
+  }
+
+  return dailyRows.where((r) {
     // If shift filtered, only return rows that have activity or downtime
     if (shiftFilter != null && shiftFilter.isNotEmpty) {
       return r.totalProduction > 0 || r.bpReject > 0 || r.goodQty > 0;
@@ -279,24 +393,6 @@ final dailyProductionReportProvider =
     return true;
   }).toList();
 });
-
-class _DailyAccumulator {
-  _DailyAccumulator({required this.date});
-  final String date;
-  double totalProd = 0;
-  double bpReject = 0;
-  double finalGoodQty = 0;
-  double stageGoodQty = 0;
-  double shiftAFinalGood = 0;
-  double shiftAStageGood = 0;
-  double shiftBFinalGood = 0;
-  double shiftBStageGood = 0;
-  double shiftCFinalGood = 0;
-  double shiftCStageGood = 0;
-  double shiftAProd = 0;
-  double shiftBProd = 0;
-  double shiftCProd = 0;
-}
 
 // ─── 2. Machine-wise Report ───────────────────────────────────────────────────
 

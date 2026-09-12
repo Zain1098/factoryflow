@@ -42,6 +42,7 @@ class ExportService {
     final subtitle = '$fromDate  →  $toDate';
     const headers = [
       'Date',
+      'Parts Produced',
       'Total Production',
       'BP Reject',
       'Good Qty',
@@ -52,6 +53,7 @@ class ExportService {
     final data = rows
         .map((r) => [
               r.date,
+              r.partsSummary,
               _fmt(r.totalProduction),
               _fmt(r.bpReject),
               _fmt(r.goodQty),
@@ -66,6 +68,7 @@ class ExportService {
     final totalGood = rows.fold(0.0, (s, r) => s + r.goodQty);
     final summary = [
       'TOTAL',
+      '—',
       _fmt(totalProd),
       _fmt(totalReject),
       _fmt(totalGood),
@@ -96,6 +99,16 @@ class ExportService {
         headers: headers,
         data: data,
         summaryRow: summary,
+        columnWidths: const {
+          0: pw.FlexColumnWidth(1.1),
+          1: pw.FlexColumnWidth(2.4),
+          2: pw.FlexColumnWidth(1.0),
+          3: pw.FlexColumnWidth(0.9),
+          4: pw.FlexColumnWidth(1.0),
+          5: pw.FlexColumnWidth(0.9),
+          6: pw.FlexColumnWidth(0.9),
+          7: pw.FlexColumnWidth(0.9),
+        },
       );
       await _sharePdf(bytes: bytes, filename: 'production_report_${fromDate}_$toDate.pdf');
     }
@@ -677,7 +690,10 @@ class ExportService {
         backgroundColorHex: _headerFill,
         horizontalAlign: HorizontalAlign.Center,
       );
-      sheet.setColumnWidth(col, 18);
+      final isWideCol = headers[col].toLowerCase().contains('part') ||
+          headers[col].toLowerCase().contains('name') ||
+          headers[col].toLowerCase().contains('desc');
+      sheet.setColumnWidth(col, isWideCol ? 28 : 18);
     }
 
     // ── Data rows ──
@@ -724,6 +740,7 @@ class ExportService {
     required List<String> headers,
     required List<List<String>> data,
     List<String>? summaryRow,
+    Map<int, pw.TableColumnWidth>? columnWidths,
   }) async {
     final pdf = pw.Document();
 
@@ -802,7 +819,8 @@ class ExportService {
           return [
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.blueGrey200, width: 0.5),
-              columnWidths: {for (var i = 0; i < colCount; i++) i: const pw.FlexColumnWidth(1)},
+              columnWidths: columnWidths ??
+                  {for (var i = 0; i < colCount; i++) i: const pw.FlexColumnWidth(1)},
               children: tableRows,
             ),
           ];

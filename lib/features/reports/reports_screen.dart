@@ -1132,7 +1132,66 @@ class _DailyProductionReport extends ConsumerWidget {
                                   ),
                                 ],
                               ),
-                              const Divider(height: 12),
+
+                              // Parts Produced Badges
+                              if (r.parts.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 5,
+                                  children: r.parts.map((p) {
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.inventory_2_outlined,
+                                            size: 13,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            p.partName,
+                                            style: theme.textTheme.bodySmall?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            '${_n(p.qty)} PCS',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.teal.shade800,
+                                            ),
+                                          ),
+                                          if (p.rejectQty > 0) ...[
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '(${_n(p.rejectQty)} rej)',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.red.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                              const Divider(height: 14),
 
                               // Shift A / B / C Distribution Badges
                               Row(
