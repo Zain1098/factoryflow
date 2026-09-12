@@ -1230,18 +1230,20 @@ class _DailyProductionReport extends ConsumerWidget {
                               Row(
                                 children: [
                                   Text(
-                                    'Input: ${_n(r.totalProduction)} | Target: ${_n(r.target)}',
+                                    'Input: ${_n(r.totalProduction)} | Target: ${r.target > 0 ? _n(r.target) : "—"}',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                   const Spacer(),
                                   Text(
-                                    'Eff: ${_pct(r.efficiency)}',
+                                    r.target > 0 ? 'Eff: ${_pct(r.efficiency)}' : 'Eff: —',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: r.efficiency >= 80 ? Colors.teal : Colors.orange,
+                                      color: r.target > 0
+                                          ? (r.efficiency >= 80 ? Colors.teal : Colors.orange)
+                                          : theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ],

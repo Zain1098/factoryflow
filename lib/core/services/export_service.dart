@@ -50,6 +50,11 @@ class ExportService {
       'Efficiency %',
       'Reject %',
     ];
+    final totalProd = rows.fold(0.0, (s, r) => s + r.totalProduction);
+    final totalReject = rows.fold(0.0, (s, r) => s + r.bpReject);
+    final totalGood = rows.fold(0.0, (s, r) => s + r.goodQty);
+    final totalTarget = rows.fold(0.0, (s, r) => s + r.target);
+
     final data = rows
         .map((r) => [
               r.date,
@@ -57,23 +62,20 @@ class ExportService {
               _fmt(r.totalProduction),
               _fmt(r.bpReject),
               _fmt(r.goodQty),
-              _fmt(r.target),
-              '${r.efficiency.toStringAsFixed(1)}%',
+              r.target > 0 ? _fmt(r.target) : '—',
+              r.target > 0 ? '${r.efficiency.toStringAsFixed(1)}%' : '—',
               '${r.rejectPct.toStringAsFixed(1)}%',
             ],)
         .toList();
 
-    final totalProd = rows.fold(0.0, (s, r) => s + r.totalProduction);
-    final totalReject = rows.fold(0.0, (s, r) => s + r.bpReject);
-    final totalGood = rows.fold(0.0, (s, r) => s + r.goodQty);
     final summary = [
       'TOTAL',
       '—',
       _fmt(totalProd),
       _fmt(totalReject),
       _fmt(totalGood),
-      '—',
-      totalProd > 0 ? '${(totalGood / totalProd * 100).toStringAsFixed(1)}%' : '—',
+      totalTarget > 0 ? _fmt(totalTarget) : '—',
+      totalTarget > 0 ? '${(totalGood / totalTarget * 100).toStringAsFixed(1)}%' : '—',
       totalProd > 0 ? '${(totalReject / totalProd * 100).toStringAsFixed(1)}%' : '—',
     ];
 
