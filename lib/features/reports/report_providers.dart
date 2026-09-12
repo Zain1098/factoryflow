@@ -937,11 +937,15 @@ class LiveStockRow {
   /// Combined BP Rejection (Machine Scrap + Inspection Rejection)
   double get totalCombinedBpRejection => productionRejected + bpRejected;
 
-  /// Group 1: Total BP Pipeline
+  /// Group 1: Total BP Pipeline (Raw + BP Stock + BP Hold + BP Reject)
   double get totalBpGroup =>
-      rawMaterial + productionRejected + bpStock + bpHold + bpRejected;
+      rawMaterial + bpStock + bpHold + totalCombinedBpRejection;
 
-  /// Group 2: Total AP Pipeline
+  /// Group 2: Total AP Pipeline (At Vendor + Pending AP + Approved AP + AP Reject + Vendor Rework Hold + At Vendor for Rework)
+  double get totalApPipeline =>
+      atFaco + pendingAp + approvedAp + apRejected + rtvStock + rtvAtVendor;
+
+  /// Group 2 (Internal AP phase only): Pend + Appr + Rej + Rtv
   double get totalApGroup =>
       pendingAp + approvedAp + apRejected + rtvStock;
 
@@ -1000,22 +1004,26 @@ final liveStockReportProvider =
     final aprej = (r['aprej'] as num?)?.toDouble() ?? 0.0;
     final rtv = (r['rtv'] as num?)?.toDouble() ?? 0.0;
     final rtvAtVendor = (r['rtv_vendor'] as num?)?.toDouble() ?? 0.0;
+
+    // Merge machine production rejection directly into BP Rejection
+    final mergedBpRejected = bpRejected + productionRejected;
+
     return LiveStockRow(
       partId: r['id'] as String? ?? '',
       partName: r['name'] as String? ?? '—',
       partCode: r['code'] as String? ?? '',
       rawMaterial: raw,
-      productionRejected: productionRejected,
+      productionRejected: 0.0,
       bpStock: bp,
       bpHold: bpHold,
-      bpRejected: bpRejected,
+      bpRejected: mergedBpRejected,
       atFaco: faco,
       pendingAp: pap,
       approvedAp: aap,
       apRejected: aprej,
       rtvStock: rtv,
       rtvAtVendor: rtvAtVendor,
-      totalStock: raw + productionRejected + bp + bpHold + bpRejected + faco + pap + aap + aprej + rtv + rtvAtVendor,
+      totalStock: raw + bp + bpHold + mergedBpRejected + faco + pap + aap + aprej + rtv + rtvAtVendor,
     );
   }).toList();
 });

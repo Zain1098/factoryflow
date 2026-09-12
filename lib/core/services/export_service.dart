@@ -495,16 +495,17 @@ class ExportService {
       'Part Code',
       'Part Name',
       'Raw Material',
-      'Machine Rejected',
       'BP Stock',
       'BP Hold',
       'BP Rejected',
+      'Total BP',
       'At Vendor',
       'Pending AP',
       'Approved AP',
       'AP Rejected',
       'Vendor Rework Hold',
       'At Vendor for Rework',
+      'Total AP',
       'Total Stock',
     ];
     final data = rows
@@ -512,16 +513,17 @@ class ExportService {
               r.partCode,
               r.partName,
               _fmt(r.rawMaterial),
-              _fmt(r.productionRejected),
               _fmt(r.bpStock),
               _fmt(r.bpHold),
-              _fmt(r.bpRejected),
+              _fmt(r.totalCombinedBpRejection),
+              _fmt(r.totalBpGroup),
               _fmt(r.atFaco),
               _fmt(r.pendingAp),
               _fmt(r.approvedAp),
               _fmt(r.apRejected),
               _fmt(r.rtvStock),
               _fmt(r.rtvAtVendor),
+              _fmt(r.totalApPipeline),
               _fmt(r.totalStock),
             ],)
         .toList();
@@ -530,16 +532,17 @@ class ExportService {
       '—',
       'TOTAL',
       _fmt(rows.fold(0.0, (s, r) => s + r.rawMaterial)),
-      _fmt(rows.fold(0.0, (s, r) => s + r.productionRejected)),
       _fmt(rows.fold(0.0, (s, r) => s + r.bpStock)),
       _fmt(rows.fold(0.0, (s, r) => s + r.bpHold)),
-      _fmt(rows.fold(0.0, (s, r) => s + r.bpRejected)),
+      _fmt(rows.fold(0.0, (s, r) => s + r.totalCombinedBpRejection)),
+      _fmt(rows.fold(0.0, (s, r) => s + r.totalBpGroup)),
       _fmt(rows.fold(0.0, (s, r) => s + r.atFaco)),
       _fmt(rows.fold(0.0, (s, r) => s + r.pendingAp)),
       _fmt(rows.fold(0.0, (s, r) => s + r.approvedAp)),
       _fmt(rows.fold(0.0, (s, r) => s + r.apRejected)),
       _fmt(rows.fold(0.0, (s, r) => s + r.rtvStock)),
       _fmt(rows.fold(0.0, (s, r) => s + r.rtvAtVendor)),
+      _fmt(rows.fold(0.0, (s, r) => s + r.totalApPipeline)),
       _fmt(rows.fold(0.0, (s, r) => s + r.totalStock)),
     ];
 
@@ -565,6 +568,23 @@ class ExportService {
         headers: headers,
         data: data,
         summaryRow: summary,
+        columnWidths: const {
+          0: pw.FlexColumnWidth(0.9), // Part Code
+          1: pw.FlexColumnWidth(1.6), // Part Name
+          2: pw.FlexColumnWidth(0.8), // Raw Material
+          3: pw.FlexColumnWidth(0.8), // BP Stock
+          4: pw.FlexColumnWidth(0.8), // BP Hold
+          5: pw.FlexColumnWidth(0.8), // BP Rejected
+          6: pw.FlexColumnWidth(0.9), // Total BP
+          7: pw.FlexColumnWidth(0.8), // At Vendor
+          8: pw.FlexColumnWidth(0.8), // Pending AP
+          9: pw.FlexColumnWidth(0.8), // Approved AP
+          10: pw.FlexColumnWidth(0.8), // AP Rejected
+          11: pw.FlexColumnWidth(0.9), // Vendor Rework Hold
+          12: pw.FlexColumnWidth(0.9), // At Vendor for Rework
+          13: pw.FlexColumnWidth(0.9), // Total AP
+          14: pw.FlexColumnWidth(1.0), // Total Stock
+        },
       );
       await _sharePdf(bytes: bytes, filename: 'stock_report.pdf');
     }
@@ -692,10 +712,10 @@ class ExportService {
         backgroundColorHex: _headerFill,
         horizontalAlign: HorizontalAlign.Center,
       );
-      final isWideCol = headers[col].toLowerCase().contains('part') ||
-          headers[col].toLowerCase().contains('name') ||
-          headers[col].toLowerCase().contains('desc');
-      sheet.setColumnWidth(col, isWideCol ? 28 : 18);
+      final h = headers[col].toLowerCase();
+      final isWideCol = h.contains('part') || h.contains('name') || h.contains('desc');
+      final isTotalCol = h.contains('total');
+      sheet.setColumnWidth(col, isWideCol ? 26 : (isTotalCol ? 16 : 14));
     }
 
     // ── Data rows ──
@@ -794,28 +814,70 @@ class ExportService {
         ),
         build: (ctx) {
           final tableRows = <pw.TableRow>[];
+          final isDense = colCount > 10;
+          final cellPad = isDense
+              ? const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 3)
+              : const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4);
+          final dataFs = isDense ? 6.5 : 7.0;
+          final headerFs = isDense ? 7.0 : 8.0;
 
           // Header row
-          tableRows.add(pw.TableRow(
-            decoration: const pw.BoxDecoration(color: _pdfBlue),
-            children: headers.map((h) => _pdfCell(h, fontBold, color: _pdfWhite, isHeader: true)).toList(),
-          ),);
+          tableRows.add(
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: _pdfBlue),
+              children: headers
+                  .map(
+                    (h) => _pdfCell(
+                      h,
+                      fontBold,
+                      color: _pdfWhite,
+                      isHeader: true,
+                      fontSize: headerFs,
+                      padding: cellPad,
+                    ),
+                  )
+                  .toList(),
+            ),
+          );
 
           // Data rows
           for (var i = 0; i < data.length; i++) {
             final isAlt = i.isOdd;
-            tableRows.add(pw.TableRow(
-              decoration: isAlt ? const pw.BoxDecoration(color: _pdfLightBlue) : null,
-              children: data[i].map((cell) => _pdfCell(cell, font)).toList(),
-            ),);
+            tableRows.add(
+              pw.TableRow(
+                decoration: isAlt ? const pw.BoxDecoration(color: _pdfLightBlue) : null,
+                children: data[i]
+                    .map(
+                      (cell) => _pdfCell(
+                        cell,
+                        font,
+                        fontSize: dataFs,
+                        padding: cellPad,
+                      ),
+                    )
+                    .toList(),
+              ),
+            );
           }
 
           // Summary row
           if (summaryRow != null) {
-            tableRows.add(pw.TableRow(
-              decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D47A1')),
-              children: summaryRow.map((s) => _pdfCell(s, fontBold, color: _pdfWhite)).toList(),
-            ),);
+            tableRows.add(
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D47A1')),
+                children: summaryRow
+                    .map(
+                      (s) => _pdfCell(
+                        s,
+                        fontBold,
+                        color: _pdfWhite,
+                        fontSize: dataFs,
+                        padding: cellPad,
+                      ),
+                    )
+                    .toList(),
+              ),
+            );
           }
 
           return [
@@ -838,14 +900,16 @@ class ExportService {
     pw.Font font, {
     PdfColor? color,
     bool isHeader = false,
+    double? fontSize,
+    pw.EdgeInsets? padding,
   }) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      padding: padding ?? const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
       child: pw.Text(
         text,
         style: pw.TextStyle(
           font: font,
-          fontSize: isHeader ? 8 : 7,
+          fontSize: fontSize ?? (isHeader ? 8 : 7),
           color: color ?? PdfColors.black,
         ),
         textAlign: pw.TextAlign.center,
