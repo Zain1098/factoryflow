@@ -496,7 +496,7 @@ class SyncService {
               conflicts++;
               continue;
             } else if (result is Map && result['running_balance'] != null) {
-              final newBal = (result['running_balance'] as num).toDouble();
+              final newBal = (result['running_balance'] as num?)?.toDouble() ?? 0.0;
               await _db.updateStockLedgerRunningBalance(recordId, newBal);
             }
           } else if (operation == 'production_post') {

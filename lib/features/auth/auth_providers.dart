@@ -416,7 +416,7 @@ class AuthRepository {
             .eq('user_id', user.id)
             .eq('status', 'active')
             .timeout(const Duration(seconds: 5));
-        if (memberships is List && memberships.length > 1) {
+        if (memberships.length > 1) {
           for (final m in memberships) {
             final wId = m['workspace_id']?.toString() ?? '';
             if (wId.isNotEmpty && wId != user.factoryId) {

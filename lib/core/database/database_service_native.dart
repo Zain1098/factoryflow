@@ -879,7 +879,7 @@ class DatabaseService {
       [factoryId, partId, stage],
     );
     if (result.isEmpty) return 0;
-    return (result.first['running_balance'] as num).toDouble();
+    return (result.first['running_balance'] as num?)?.toDouble() ?? 0.0;
   }
 
   /// FIXED: Single aggregated query instead of N+1 per-part queries.
@@ -954,7 +954,10 @@ class DatabaseService {
     );
     final map = <String, double>{};
     for (final row in result) {
-      map[row['stage'] as String] = (row['total'] as num).toDouble();
+      final stage = row['stage'] as String?;
+      if (stage != null) {
+        map[stage] = (row['total'] as num?)?.toDouble() ?? 0.0;
+      }
     }
     return map;
   }
@@ -1018,10 +1021,10 @@ class DatabaseService {
       [factoryId, todayStr],
     );
     return {
-      'production': (prod.first['prod'] as num).toDouble(),
-      'bp_reject': (prod.first['bp_rej'] as num).toDouble(),
-      'ap_reject': (ap.first['ap_rej'] as num).toDouble(),
-      'dispatched': (disp.first['dispatched'] as num).toDouble(),
+      'production': (prod.firstOrNull?['prod'] as num?)?.toDouble() ?? 0.0,
+      'bp_reject': (prod.firstOrNull?['bp_rej'] as num?)?.toDouble() ?? 0.0,
+      'ap_reject': (ap.firstOrNull?['ap_rej'] as num?)?.toDouble() ?? 0.0,
+      'dispatched': (disp.firstOrNull?['dispatched'] as num?)?.toDouble() ?? 0.0,
     };
   }
 

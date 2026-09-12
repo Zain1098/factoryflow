@@ -91,7 +91,7 @@ class _ApInspectionScreenState extends ConsumerState<ApInspectionScreen>
           partId: id,
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
-          availableQty: (stockItem['balance'] as num).toDouble(),
+          availableQty: ((stockItem['balance'] ?? stockItem['available_qty']) as num?)?.toDouble() ?? 0.0,
         ),
       ),
     );

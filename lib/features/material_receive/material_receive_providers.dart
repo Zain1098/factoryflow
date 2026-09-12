@@ -443,12 +443,12 @@ class MaterialReceiveRepository {
     }
     final existing = Map<String, dynamic>.from(existingRows.first);
     final oldPartId = existing['part_id'] as String;
-    final oldQty = (existing['qty'] as num).toDouble();
+    final oldQty = (existing['qty'] as num?)?.toDouble() ?? 0.0;
     final oldPoRefId = existing['po_ref_id'] as String?;
 
     final effectiveOrderedQty = orderedQty ??
         (existing['ordered_qty'] != null
-            ? (existing['ordered_qty'] as num).toDouble()
+            ? ((existing['ordered_qty'] as num?)?.toDouble() ?? qty)
             : qty);
     final shortfall = (effectiveOrderedQty - qty).clamp(0.0, double.infinity);
 
@@ -579,7 +579,7 @@ class MaterialReceiveRepository {
     }
     final existing = Map<String, dynamic>.from(existingRows.first);
     final partId = existing['part_id'] as String;
-    final qty = (existing['qty'] as num).toDouble();
+    final qty = (existing['qty'] as num?)?.toDouble() ?? 0.0;
     final poRefId = existing['po_ref_id'] as String?;
 
     try {

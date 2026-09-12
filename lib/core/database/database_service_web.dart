@@ -914,6 +914,61 @@ class FakeDb {
     String sql, [
     List<Object?> params = const [],
   ]) {
+    // Special case: Reject Analysis query (WITH bp_inspection_rejects / all_dates_parts)
+    if (sql.contains('all_dates_parts') || sql.contains('bp_inspection_rejects')) {
+      final productions = _tables['productions'] ?? [];
+      final bpInspections = _tables['bp_inspections'] ?? [];
+      final apInspections = _tables['ap_inspections'] ?? [];
+      final parts = {for (final p in _tables['parts'] ?? []) p['id']: p['name']};
+
+      final grouped = <String, Map<String, dynamic>>{};
+      for (final p in productions) {
+        final date = p['date']?.toString() ?? '';
+        final partId = p['part_id']?.toString() ?? '';
+        final key = '$date|$partId';
+        final entry = grouped.putIfAbsent(key, () => {
+          'date': date,
+          'part_name': parts[partId] ?? '—',
+          'production': 0.0,
+          'bp_rej': 0.0,
+          'ap_rej': 0.0,
+        },);
+        entry['production'] = (entry['production'] as double) +
+            ((p['production_qty'] as num?)?.toDouble() ?? 0.0);
+        entry['bp_rej'] = (entry['bp_rej'] as double) +
+            ((p['bp_reject_qty'] as num?)?.toDouble() ?? 0.0);
+      }
+      for (final b in bpInspections) {
+        final date = b['date']?.toString() ?? '';
+        final partId = b['part_id']?.toString() ?? '';
+        final key = '$date|$partId';
+        final entry = grouped.putIfAbsent(key, () => {
+          'date': date,
+          'part_name': parts[partId] ?? '—',
+          'production': 0.0,
+          'bp_rej': 0.0,
+          'ap_rej': 0.0,
+        },);
+        entry['bp_rej'] = (entry['bp_rej'] as double) +
+            ((b['bp_reject_qty'] as num?)?.toDouble() ?? 0.0);
+      }
+      for (final a in apInspections) {
+        final date = a['date']?.toString() ?? '';
+        final partId = a['part_id']?.toString() ?? '';
+        final key = '$date|$partId';
+        final entry = grouped.putIfAbsent(key, () => {
+          'date': date,
+          'part_name': parts[partId] ?? '—',
+          'production': 0.0,
+          'bp_rej': 0.0,
+          'ap_rej': 0.0,
+        },);
+        entry['ap_rej'] = (entry['ap_rej'] as double) +
+            ((a['rejected_qty'] as num?)?.toDouble() ?? 0.0);
+      }
+      return grouped.values.toList();
+    }
+
     final tableMatch =
         RegExp(r'FROM\s+(\w+)', caseSensitive: false).firstMatch(sql);
     final table = tableMatch?.group(1);
@@ -953,6 +1008,27 @@ class FakeDb {
       }
     }
 
+    // Filter date BETWEEN ? AND ?
+    final betweenMatch = RegExp(
+      r'\bdate\s+BETWEEN\s+\?\s+AND\s+\?',
+      caseSensitive: false,
+    ).firstMatch(sql);
+    if (betweenMatch != null && params.isNotEmpty) {
+      final before = sql.substring(0, betweenMatch.start);
+      final idx = '?'.allMatches(before).length;
+      if (idx + 1 < params.length &&
+          params[idx] != null &&
+          params[idx + 1] != null) {
+        final fromStr = params[idx].toString();
+        final toStr = params[idx + 1].toString();
+        rows = rows.where((row) {
+          final d = row['date']?.toString();
+          if (d == null) return false;
+          return d.compareTo(fromStr) >= 0 && d.compareTo(toStr) <= 0;
+        }).toList();
+      }
+    }
+
     // Filter active = 1
     if (sql.toLowerCase().contains('active = 1')) {
       rows = rows.where((row) => row['active'] == 1 || row['active'] == true).toList();
@@ -981,7 +1057,7 @@ class FakeDb {
 
       if (isCount) {
         return [
-          <String, dynamic>{alias: rows.length}
+          <String, dynamic>{alias: rows.length},
         ];
       } else if (isSum) {
         final colMatch = RegExp(
@@ -1001,12 +1077,230 @@ class FakeDb {
           }
         }
         return [
-          <String, dynamic>{alias: sum}
+          <String, dynamic>{alias: sum},
         ];
       }
     }
 
-    return rows.map(Map<String, dynamic>.from).toList();
+    // Special query: Live Stock report (parts with stock_ledger stages)
+    if (table == 'parts' && sql.contains("sl.stage='raw_material'")) {
+      final ledgerRows = _tables['stock_ledger'] ?? [];
+      final result = <Map<String, dynamic>>[];
+      for (final part in rows) {
+        final partId = part['id'];
+        final factoryId = part['factory_id'];
+        final partLedger = ledgerRows
+            .where((l) => l['part_id'] == partId && l['factory_id'] == factoryId)
+            .toList();
+
+        double getLatestStageBalance(String stage) {
+          final matches = partLedger.where((l) => l['stage'] == stage).toList();
+          if (matches.isEmpty) return 0.0;
+          final last = matches.last;
+          return (last['running_balance'] as num?)?.toDouble() ??
+              (last['balance'] as num?)?.toDouble() ??
+              0.0;
+        }
+
+        result.add({
+          'id': partId,
+          'name': part['name'] ?? '',
+          'code': part['code'] ?? '',
+          'raw': getLatestStageBalance('raw_material'),
+          'production_rejected': getLatestStageBalance('production_rejected'),
+          'bp': getLatestStageBalance('bp_stock'),
+          'bp_hold': getLatestStageBalance('bp_hold'),
+          'bp_rejected': getLatestStageBalance('bp_rejected'),
+          'faco': getLatestStageBalance('at_faco'),
+          'pap': getLatestStageBalance('pending_ap'),
+          'aap': getLatestStageBalance('approved_ap'),
+          'aprej': getLatestStageBalance('ap_rejected'),
+          'rtv': getLatestStageBalance('rtv_stock'),
+          'rtv_vendor': getLatestStageBalance('rtv_at_vendor'),
+        });
+      }
+      return result;
+    }
+
+    // Special query: Machine Report (machines with productions & downtimes)
+    if (table == 'machines' && hasGroupBy && sql.contains('total_prod')) {
+      final productions = _tables['productions'] ?? [];
+      final downtimes = _tables['machine_downtimes'] ?? [];
+      final result = <Map<String, dynamic>>[];
+      for (final m in rows) {
+        final mId = m['id'];
+        final fId = m['factory_id'];
+        final mProds = productions
+            .where((p) => p['machine_id'] == mId && p['factory_id'] == fId)
+            .toList();
+        final mDts = downtimes
+            .where((d) => d['machine_id'] == mId && d['factory_id'] == fId)
+            .toList();
+
+        double totalProd = 0.0;
+        double bpRej = 0.0;
+        double good = 0.0;
+        final runDaysSet = <String>{};
+        for (final p in mProds) {
+          totalProd += (p['production_qty'] as num?)?.toDouble() ?? 0.0;
+          bpRej += (p['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+          good += (p['good_qty'] as num?)?.toDouble() ?? 0.0;
+          if (p['date'] != null) runDaysSet.add(p['date'].toString());
+        }
+
+        int dtMins = 0;
+        for (final d in mDts) {
+          dtMins += (d['duration_minutes'] as num?)?.toInt() ?? 0;
+        }
+
+        result.add({
+          'machine_name': m['name'] ?? '',
+          'total_prod': totalProd,
+          'bp_rej': bpRej,
+          'good': good,
+          'run_days': runDaysSet.length,
+          'downtime_mins': dtMins,
+        });
+      }
+      return result;
+    }
+
+    // Special query: Operator Report (operators with productions)
+    if (table == 'operators' && hasGroupBy && sql.contains('total_prod')) {
+      final productions = _tables['productions'] ?? [];
+      final result = <Map<String, dynamic>>[];
+      for (final o in rows) {
+        final oId = o['id'];
+        final fId = o['factory_id'];
+        final oProds = productions
+            .where((p) => p['operator_id'] == oId && p['factory_id'] == fId)
+            .toList();
+
+        double totalProd = 0.0;
+        double bpRej = 0.0;
+        double good = 0.0;
+        final runDaysSet = <String>{};
+        for (final p in oProds) {
+          totalProd += (p['production_qty'] as num?)?.toDouble() ?? 0.0;
+          bpRej += (p['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+          good += (p['good_qty'] as num?)?.toDouble() ?? 0.0;
+          if (p['date'] != null) runDaysSet.add(p['date'].toString());
+        }
+
+        result.add({
+          'op_name': o['name'] ?? '',
+          'total_prod': totalProd,
+          'bp_rej': bpRej,
+          'good': good,
+          'run_days': runDaysSet.length,
+        });
+      }
+      return result;
+    }
+
+    // Special query: Downtimes grouped by date
+    if (table == 'machine_downtimes' && hasGroupBy && sql.contains('GROUP BY date')) {
+      final dateMap = <String, int>{};
+      for (final r in rows) {
+        final date = r['date']?.toString() ?? '';
+        final mins = (r['duration_minutes'] as num?)?.toInt() ?? 0;
+        dateMap[date] = (dateMap[date] ?? 0) + mins;
+      }
+      return dateMap.entries
+          .map((e) => <String, dynamic>{'date': e.key, 'dt_mins': e.value})
+          .toList();
+    }
+
+    // Special query: Target Master grouped by day_of_week
+    if (table == 'target_master' && hasGroupBy && sql.contains('day_of_week')) {
+      final dowMap = <int, double>{};
+      for (final r in rows) {
+        final dow = (r['day_of_week'] as num?)?.toInt() ?? 0;
+        final tgt = (r['target_qty'] as num?)?.toDouble() ??
+            (r['target'] as num?)?.toDouble() ??
+            0.0;
+        dowMap[dow] = (dowMap[dow] ?? 0.0) + tgt;
+      }
+      return dowMap.entries
+          .map((e) => <String, dynamic>{'day_of_week': e.key, 'target': e.value})
+          .toList();
+    }
+
+    // General Join & Alias enrichment for all rows
+    final partsMap = {for (final p in _tables['parts'] ?? []) p['id']: p};
+    final vendorsMap = {for (final v in _tables['vendors'] ?? []) v['id']: v};
+    final machinesMap = {for (final m in _tables['machines'] ?? []) m['id']: m};
+    final operatorsMap = {for (final o in _tables['operators'] ?? []) o['id']: o};
+    final shiftsMap = {for (final s in _tables['shifts'] ?? []) s['id']: s};
+
+    final enriched = rows.map((r) {
+      final map = Map<String, dynamic>.from(r);
+
+      // Foreign key lookups
+      if (map['part_id'] != null && partsMap.containsKey(map['part_id'])) {
+        final p = partsMap[map['part_id']]!;
+        map.putIfAbsent('part_name', () => p['name'] ?? '—');
+        map.putIfAbsent('part_code', () => p['code'] ?? '—');
+      }
+      if (map['vendor_id'] != null && vendorsMap.containsKey(map['vendor_id'])) {
+        map.putIfAbsent('vendor_name', () => vendorsMap[map['vendor_id']]!['name'] ?? '—');
+      }
+      if (map['machine_id'] != null && machinesMap.containsKey(map['machine_id'])) {
+        map.putIfAbsent('machine_name', () => machinesMap[map['machine_id']]!['name'] ?? '—');
+      }
+      if (map['operator_id'] != null && operatorsMap.containsKey(map['operator_id'])) {
+        map.putIfAbsent('op_name', () => operatorsMap[map['operator_id']]!['name'] ?? '—');
+        map.putIfAbsent('operator_name', () => operatorsMap[map['operator_id']]!['name'] ?? '—');
+      }
+      if (map['shift_id'] != null && shiftsMap.containsKey(map['shift_id'])) {
+        map.putIfAbsent('shift_name', () => shiftsMap[map['shift_id']]!['name'] ?? '—');
+      }
+
+      // Column alias synonyms
+      if (map.containsKey('production_qty')) {
+        map.putIfAbsent('prod_qty', () => map['production_qty']);
+        map.putIfAbsent('total_prod', () => map['production_qty']);
+        map.putIfAbsent('production', () => map['production_qty']);
+      }
+      if (map.containsKey('bp_reject_qty')) {
+        map.putIfAbsent('rej_qty', () => map['bp_reject_qty']);
+        map.putIfAbsent('bp_rej', () => map['bp_reject_qty']);
+      }
+      if (!map.containsKey('good_qty') || map['good_qty'] == null) {
+        final prod = (map['production_qty'] as num?)?.toDouble() ?? 0.0;
+        final rej = (map['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+        map['good_qty'] = (prod - rej).clamp(0.0, double.infinity);
+      }
+      map.putIfAbsent('good', () => map['good_qty']);
+      if (map.containsKey('duration_minutes')) {
+        map.putIfAbsent('dt_mins', () => map['duration_minutes']);
+        map.putIfAbsent('downtime_mins', () => map['duration_minutes']);
+      }
+      if (map.containsKey('target_qty')) {
+        map.putIfAbsent('target', () => map['target_qty']);
+      }
+      if (map.containsKey('running_balance')) {
+        map.putIfAbsent('qty', () => map['running_balance']);
+        map.putIfAbsent('balance', () => map['running_balance']);
+      }
+      if (map.containsKey('balance')) {
+        map.putIfAbsent('available_qty', () => map['balance']);
+      }
+      if (map.containsKey('qty')) {
+        map.putIfAbsent('dispatch_qty', () => map['qty']);
+        map.putIfAbsent('dispatched', () => map['qty']);
+        map.putIfAbsent('remaining_qty', () => map['qty']);
+        map.putIfAbsent('rtv_qty', () => map['qty']);
+      }
+      if (map.containsKey('qty_received')) {
+        map.putIfAbsent('received', () => map['qty_received']);
+      }
+      map.putIfAbsent('run_days', () => 1);
+
+      return map;
+    }).toList();
+
+    return enriched;
   }
 
   void execute(String sql, [List<Object?> params = const []]) {

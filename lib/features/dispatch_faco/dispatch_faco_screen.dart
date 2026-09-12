@@ -468,7 +468,7 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                         runSpacing: 8,
                         children: availableBatches.map((batch) {
                           final bNum = batch['batch_number'] as String;
-                          final avail = (batch['available_qty'] as num).toInt();
+                          final avail = ((batch['available_qty'] ?? batch['balance']) as num?)?.toInt() ?? 0;
                           return ActionChip(
                             avatar: const Icon(
                               Icons.add_circle,

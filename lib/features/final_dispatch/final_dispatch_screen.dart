@@ -95,7 +95,7 @@ class _FinalDispatchScreenState extends ConsumerState<FinalDispatchScreen>
           partId: id,
           partCode: stockItem['code'] as String,
           partName: stockItem['name'] as String,
-          availableQty: (stockItem['balance'] as num).toDouble(),
+          availableQty: ((stockItem['balance'] ?? stockItem['available_qty']) as num?)?.toDouble() ?? 0.0,
         ),
       ),
     );
@@ -1101,7 +1101,7 @@ class _FinalDispatchBatchPickerSheetState
                       final item = filtered[i];
                       final id = item['id'] as String;
                       final batch = item['batch_number'] as String;
-                      final balance = (item['balance'] as num).toDouble();
+                      final balance = ((item['balance'] ?? item['available_qty']) as num?)?.toDouble() ?? 0.0;
                       final isSelected = widget.selectedItems.any(
                         (d) => d.partId == id && d.batchNumber == batch,
                       );

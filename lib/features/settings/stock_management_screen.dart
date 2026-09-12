@@ -288,7 +288,7 @@ class _PartStockCard extends ConsumerWidget {
                           ...batchesForPart.map((batch) => DropdownMenuItem<String>(
                                 value: batch['batch_number'] as String,
                                 child: Text(
-                                  '${batch['batch_number']} · ${_fmt((batch['balance'] as num).toDouble())} PCS',
+                                  '${batch['batch_number']} · ${_fmt(((batch['balance'] ?? batch['available_qty']) as num?)?.toDouble() ?? 0.0)} PCS',
                                 ),
                               ),),
                         ],
@@ -548,7 +548,7 @@ class _AdjustmentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final adjustedQty = (item['adjusted_qty'] as num).toDouble();
+    final adjustedQty = (item['adjusted_qty'] as num?)?.toDouble() ?? 0.0;
     final isPositive = adjustedQty >= 0;
     final stage = StockStage.values.firstWhere(
       (s) => s.value == item['stage'],

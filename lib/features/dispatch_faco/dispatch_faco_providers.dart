@@ -337,7 +337,7 @@ class DispatchFacoRepository {
 
     final rec = rows.first;
     final partId = rec['part_id'] as String;
-    final qty = (rec['qty'] as num).toDouble();
+    final qty = (rec['qty'] as num?)?.toDouble() ?? 0.0;
 
     // Check if downstream Faco receipt has already consumed this dispatch
     final receivedRows = _db.db.select(
@@ -346,7 +346,7 @@ class DispatchFacoRepository {
       [factoryId, dispatchId],
     );
     final totalReceived =
-        (receivedRows.first['total_received'] as num).toDouble();
+        (receivedRows.firstOrNull?['total_received'] as num?)?.toDouble() ?? 0.0;
     if (totalReceived > 0) {
       return (
         success: false,
@@ -438,7 +438,7 @@ class DispatchFacoRepository {
 
     final rec = rows.first;
     final partId = rec['part_id'] as String;
-    final oldQty = (rec['qty'] as num).toDouble();
+    final oldQty = (rec['qty'] as num?)?.toDouble() ?? 0.0;
     final qtyDiff = newQty - oldQty;
 
     // Check downstream receipts against new quantity
@@ -448,7 +448,7 @@ class DispatchFacoRepository {
       [factoryId, dispatchId],
     );
     final totalReceived =
-        (receivedRows.first['total_received'] as num).toDouble();
+        (receivedRows.firstOrNull?['total_received'] as num?)?.toDouble() ?? 0.0;
     if (newQty < totalReceived) {
       return (
         success: false,

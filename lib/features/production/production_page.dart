@@ -2491,10 +2491,11 @@ class _ProductionScreenState extends ConsumerState<ProductionScreen> {
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
             ),
             const SizedBox(height: 6),
-            Text('• Return ${(record['production_qty'] as num).toInt()} PCS back to input stock'),
-            Text('• Remove ${(record['good_qty'] as num).toInt()} PCS from output stock'),
-            if ((record['bp_reject_qty'] as num) > 0)
-              Text('• Remove ${(record['bp_reject_qty'] as num).toInt()} PCS from rejected stock'),
+            Text('• Return ${((record['production_qty'] ?? record['prod_qty']) as num?)?.toInt() ?? 0} PCS back to input stock'),
+            Text('• Remove ${((record['good_qty']) as num?)?.toInt() ?? 0} PCS from output stock'),
+            if (((record['bp_reject_qty'] ?? record['rej_qty']) as num?) != null &&
+                (((record['bp_reject_qty'] ?? record['rej_qty']) as num?) ?? 0) > 0)
+              Text('• Remove ${((record['bp_reject_qty'] ?? record['rej_qty']) as num?)?.toInt() ?? 0} PCS from rejected stock'),
           ],
         ),
         actions: [

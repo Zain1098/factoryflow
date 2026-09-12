@@ -146,7 +146,10 @@ final dailyProductionReportProvider =
   );
   final downtimeMap = <String, int>{};
   for (final r in dtRows) {
-    downtimeMap[r['date'] as String] = (r['dt_mins'] as num).toInt();
+    final d = r['date'] as String?;
+    if (d != null) {
+      downtimeMap[d] = ((r['dt_mins'] ?? r['duration_minutes']) as num?)?.toInt() ?? 0;
+    }
   }
 
   // 3. Fetch day-of-week targets
@@ -161,8 +164,10 @@ final dailyProductionReportProvider =
   );
   final targetMap = <int, double>{};
   for (final r in targetRows) {
-    targetMap[(r['day_of_week'] as num).toInt()] =
-        (r['target'] as num).toDouble();
+    final dow = ((r['day_of_week']) as num?)?.toInt();
+    if (dow != null) {
+      targetMap[dow] = ((r['target'] ?? r['target_qty']) as num?)?.toDouble() ?? 0.0;
+    }
   }
 
   // 4. Group production entries by date and calculate totals
@@ -179,9 +184,9 @@ final dailyProductionReportProvider =
         (row['shift_id'] as String?) ??
         '';
     final machineId = row['machine_id'] as String?;
-    final prodQty = (row['prod_qty'] as num).toDouble();
-    final rejQty = (row['rej_qty'] as num).toDouble();
-    final goodQty = (row['good_qty'] as num).toDouble();
+    final prodQty = ((row['prod_qty'] ?? row['production_qty']) as num?)?.toDouble() ?? 0.0;
+    final rejQty = ((row['rej_qty'] ?? row['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
+    final goodQty = ((row['good_qty']) as num?)?.toDouble() ?? (prodQty - rejQty).clamp(0.0, double.infinity);
 
     // Check shift filter: if user filtered by A, B, or C
     if (shiftFilter != null && shiftFilter.isNotEmpty) {
@@ -354,16 +359,16 @@ final machineReportProvider =
   );
 
   return rows.map((r) {
-    final prod = (r['total_prod'] as num).toDouble();
-    final bp = (r['bp_rej'] as num).toDouble();
+    final prod = ((r['total_prod'] ?? r['production_qty']) as num?)?.toDouble() ?? 0.0;
+    final bp = ((r['bp_rej'] ?? r['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
     return MachineReportRow(
-      machineName: r['machine_name'] as String,
+      machineName: r['machine_name'] as String? ?? '—',
       totalProduction: prod,
       bpReject: bp,
-      goodQty: (r['good'] as num).toDouble(),
+      goodQty: ((r['good'] ?? r['good_qty']) as num?)?.toDouble() ?? 0.0,
       rejectPct: prod > 0 ? (bp / prod * 100) : 0,
-      downtimeMinutes: (r['downtime_mins'] as num).toInt(),
-      runDays: (r['run_days'] as num).toInt(),
+      downtimeMinutes: ((r['downtime_mins'] ?? r['duration_minutes']) as num?)?.toInt() ?? 0,
+      runDays: ((r['run_days']) as num?)?.toInt() ?? 0,
     );
   }).toList();
 });
@@ -415,14 +420,14 @@ final operatorReportProvider =
   );
 
   return rows.map((r) {
-    final prod = (r['total_prod'] as num).toDouble();
-    final bp = (r['bp_rej'] as num).toDouble();
-    final days = (r['run_days'] as num).toInt();
+    final prod = ((r['total_prod'] ?? r['production_qty']) as num?)?.toDouble() ?? 0.0;
+    final bp = ((r['bp_rej'] ?? r['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
+    final days = ((r['run_days']) as num?)?.toInt() ?? 0;
     return OperatorReportRow(
-      operatorName: r['op_name'] as String,
+      operatorName: r['op_name'] as String? ?? '—',
       totalProduction: prod,
       bpReject: bp,
-      goodQty: (r['good'] as num).toDouble(),
+      goodQty: ((r['good'] ?? r['good_qty']) as num?)?.toDouble() ?? 0.0,
       rejectPct: prod > 0 ? (bp / prod * 100) : 0,
       runDays: days,
       avgPerDay: days > 0 ? prod / days : 0,
@@ -474,12 +479,12 @@ final downtimeReportProvider =
   return rows
       .map(
         (r) => DowntimeRow(
-          date: r['date'] as String,
+          date: r['date'] as String? ?? '',
           machineName: r['machine_name'] as String? ?? '—',
           startTime: r['start_time'] as String? ?? '',
           endTime: r['end_time'] as String?,
-          durationMinutes: (r['duration_minutes'] as num).toInt(),
-          reason: r['reason'] as String,
+          durationMinutes: ((r['duration_minutes'] ?? r['dt_mins']) as num?)?.toInt() ?? 0,
+          reason: r['reason'] as String? ?? '—',
         ),
       )
       .toList();
@@ -573,12 +578,12 @@ final rejectAnalysisProvider =
   );
 
   return rows.map((r) {
-    final prod = (r['production'] as num).toDouble();
-    final bp = (r['bp_rej'] as num).toDouble();
-    final ap = (r['ap_rej'] as num).toDouble();
+    final prod = ((r['production'] ?? r['production_qty']) as num?)?.toDouble() ?? 0.0;
+    final bp = ((r['bp_rej'] ?? r['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
+    final ap = ((r['ap_rej'] ?? r['rejected_qty']) as num?)?.toDouble() ?? 0.0;
     final total = bp + ap;
     return RejectAnalysisRow(
-      date: r['date'] as String,
+      date: r['date'] as String? ?? '',
       partName: r['part_name'] as String? ?? '—',
       bpReject: bp,
       apReject: ap,
@@ -633,10 +638,10 @@ final rtvReportProvider =
   return rows
       .map(
         (r) => RtvReportRow(
-          date: r['date'] as String,
+          date: r['date'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
           vendorName: r['vendor_name'] as String? ?? '—',
-          rtvQty: (r['rtv_qty'] as num).toDouble(),
+          rtvQty: ((r['rtv_qty'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
           status: r['status'] as String? ?? 'pending',
           expectedReturn: r['expected_return_date'] as String?,
           cycleNumber: (r['cycle_number'] as num?)?.toInt() ?? 1,
@@ -693,12 +698,12 @@ final dispatchReportProvider =
   return rows
       .map(
         (r) => DispatchReportRow(
-          date: r['date'] as String,
+          date: r['date'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
           customerName: r['customer_name'] as String? ?? '—',
-          dispatchQty: (r['dispatch_qty'] as num).toDouble(),
-          challanNumber: r['challan'] as String,
-          vehicleNumber: r['vehicle'] as String,
+          dispatchQty: ((r['dispatch_qty'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
+          challanNumber: r['challan'] as String? ?? '—',
+          vehicleNumber: r['vehicle'] as String? ?? '—',
         ),
       )
       .toList();
@@ -756,8 +761,8 @@ final facoPendingReportProvider =
   );
 
   final list = rows.map((r) {
-    final disp = (r['dispatched'] as num).toDouble();
-    final recv = (r['received'] as num).toDouble();
+    final disp = ((r['dispatched'] ?? r['qty']) as num?)?.toDouble() ?? 0.0;
+    final recv = ((r['received'] ?? r['qty_received']) as num?)?.toDouble() ?? 0.0;
     return FacoPendingRow(
       partName: r['part_name'] as String? ?? '—',
       vendorName: r['vendor_name'] as String? ?? '—',
@@ -888,20 +893,20 @@ final liveStockReportProvider =
   );
 
   return rows.map((r) {
-    final raw = (r['raw'] as num).toDouble();
-    final productionRejected = (r['production_rejected'] as num).toDouble();
-    final bp = (r['bp'] as num).toDouble();
-    final bpHold = (r['bp_hold'] as num).toDouble();
-    final bpRejected = (r['bp_rejected'] as num).toDouble();
-    final faco = (r['faco'] as num).toDouble();
-    final pap = (r['pap'] as num).toDouble();
-    final aap = (r['aap'] as num).toDouble();
-    final aprej = (r['aprej'] as num).toDouble();
-    final rtv = (r['rtv'] as num).toDouble();
-    final rtvAtVendor = (r['rtv_vendor'] as num).toDouble();
+    final raw = (r['raw'] as num?)?.toDouble() ?? 0.0;
+    final productionRejected = (r['production_rejected'] as num?)?.toDouble() ?? 0.0;
+    final bp = (r['bp'] as num?)?.toDouble() ?? 0.0;
+    final bpHold = (r['bp_hold'] as num?)?.toDouble() ?? 0.0;
+    final bpRejected = (r['bp_rejected'] as num?)?.toDouble() ?? 0.0;
+    final faco = (r['faco'] as num?)?.toDouble() ?? 0.0;
+    final pap = (r['pap'] as num?)?.toDouble() ?? 0.0;
+    final aap = (r['aap'] as num?)?.toDouble() ?? 0.0;
+    final aprej = (r['aprej'] as num?)?.toDouble() ?? 0.0;
+    final rtv = (r['rtv'] as num?)?.toDouble() ?? 0.0;
+    final rtvAtVendor = (r['rtv_vendor'] as num?)?.toDouble() ?? 0.0;
     return LiveStockRow(
-      partId: r['id'] as String,
-      partName: r['name'] as String,
+      partId: r['id'] as String? ?? '',
+      partName: r['name'] as String? ?? '—',
       partCode: r['code'] as String? ?? '',
       rawMaterial: raw,
       productionRejected: productionRejected,
@@ -963,12 +968,12 @@ final ledgerMovementProvider =
   return rows
       .map(
         (r) => LedgerMovementRow(
-          date: r['date'] as String,
+          date: r['date'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
-          stage: r['stage'] as String,
-          direction: r['direction'] as String,
-          qty: (r['qty'] as num).toDouble(),
-          runningBalance: (r['running_balance'] as num).toDouble(),
+          stage: r['stage'] as String? ?? '',
+          direction: r['direction'] as String? ?? '',
+          qty: ((r['qty'] ?? r['running_balance']) as num?)?.toDouble() ?? 0.0,
+          runningBalance: ((r['running_balance'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
           refTable: r['ref_table'] as String? ?? '—',
         ),
       )
@@ -1086,11 +1091,11 @@ final holdMaterialReportProvider =
 
   final bpHoldList = bpRows.map((r) {
     return BpHoldRow(
-      date: r['date'] as String,
+      date: r['date'] as String? ?? '',
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
       machineName: 'BP Hold',
-      qty: (r['qty'] as num).toDouble(),
+      qty: ((r['qty'] ?? r['running_balance']) as num?)?.toDouble() ?? 0.0,
       reason: r['reason'] as String? ?? '—',
     );
   }).toList();
@@ -1133,7 +1138,7 @@ final holdMaterialReportProvider =
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
       vendorName: r['vendor_name'] as String? ?? '—',
-      qty: (r['qty'] as num).toDouble(),
+      qty: ((r['qty'] ?? r['running_balance']) as num?)?.toDouble() ?? 0.0,
       status: 'awaiting_vendor_rework',
       agingDays: aging,
     );
@@ -1236,15 +1241,15 @@ final vendorMovementProvider =
   final dispatches = dRows
       .map(
         (r) => VendorDispatchRow(
-          id: r['id'] as String,
-          date: r['date'] as String,
+          id: r['id'] as String? ?? '',
+          date: r['date'] as String? ?? '',
           time: formatTimeWithoutSeconds(r['time'] as String?),
           partName: r['part_name'] as String? ?? '—',
           vendorName: r['vendor_name'] as String? ?? '—',
-          qty: (r['qty'] as num).toDouble(),
-          challanNumber: r['challan_number'] as String,
-          batchNumber: r['batch_number'] as String,
-          remarks: r['remarks'] as String,
+          qty: ((r['qty'] ?? r['dispatch_qty']) as num?)?.toDouble() ?? 0.0,
+          challanNumber: r['challan_number'] as String? ?? '—',
+          batchNumber: r['batch_number'] as String? ?? '—',
+          remarks: r['remarks'] as String? ?? '',
         ),
       )
       .toList();
@@ -1270,15 +1275,15 @@ final vendorMovementProvider =
   final receipts = rRows
       .map(
         (r) => VendorReceiveRow(
-          id: r['id'] as String,
-          date: r['date'] as String,
+          id: r['id'] as String? ?? '',
+          date: r['date'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
           vendorName: r['vendor_name'] as String? ?? '—',
-          qtyReceived: (r['qty_received'] as num).toDouble(),
-          supplierChallan: r['supplier_challan'] as String,
-          batchNumber: r['batch_number'] as String,
-          remarks: r['remarks'] as String,
-          dispatchChallan: r['dispatch_challan'] as String,
+          qtyReceived: ((r['qty_received'] ?? r['received']) as num?)?.toDouble() ?? 0.0,
+          supplierChallan: r['supplier_challan'] as String? ?? '—',
+          batchNumber: r['batch_number'] as String? ?? '—',
+          remarks: r['remarks'] as String? ?? '',
+          dispatchChallan: r['dispatch_challan'] as String? ?? '—',
         ),
       )
       .toList();

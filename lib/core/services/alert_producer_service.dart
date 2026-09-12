@@ -72,8 +72,8 @@ class AlertProducerService {
         [factoryId, _lowStockThreshold],
       );
       for (final row in rows) {
-        final partName = row['name'] as String;
-        final balance = (row['balance'] as num).toDouble();
+        final partName = row['name'] as String? ?? 'Item';
+        final balance = ((row['balance'] ?? row['running_balance']) as num?)?.toDouble() ?? 0.0;
         await NotificationService.instance.showLowStock(
           partName,
           balance,

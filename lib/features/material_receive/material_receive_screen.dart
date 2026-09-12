@@ -417,7 +417,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
     final po = _openOrders.firstWhere((o) => o['id'] == poId);
     setState(() {
       _poRefId = poId;
-      _poOrderedQty = (po['ordered_qty'] as num).toDouble();
+      _poOrderedQty = ((po['ordered_qty'] ?? po['qty']) as num?)?.toDouble() ?? 0.0;
       // Pre-fill supplier from PO
       _supplierId = po['supplier_id'] as String?;
       // Pre-fill qty with ordered qty

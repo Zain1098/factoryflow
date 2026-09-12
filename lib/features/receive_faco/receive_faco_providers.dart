@@ -114,7 +114,7 @@ class ReceiveFacoRepository {
             error: 'The selected vendor dispatch is no longer available.',
           );
         }
-        dispatchedQty = (rows.first['qty'] as num).toDouble();
+        dispatchedQty = (rows.first['qty'] as num?)?.toDouble() ?? 0.0;
         final receivedRows = _db.db.select(
           'SELECT COALESCE(SUM(qty_received), 0) AS received '
           'FROM receive_from_facos '
@@ -122,7 +122,7 @@ class ReceiveFacoRepository {
           [factoryId, dispatchRefId],
         );
         final alreadyReceived =
-            (receivedRows.first['received'] as num).toDouble();
+            (receivedRows.firstOrNull?['received'] as num?)?.toDouble() ?? 0.0;
         final remaining = dispatchedQty - alreadyReceived;
         if (remaining <= 0) {
           return const ReceiveFacoResult(
@@ -285,7 +285,7 @@ class ReceiveFacoRepository {
 
     final rec = rows.first;
     final partId = rec['part_id'] as String;
-    final qtyReceived = (rec['qty_received'] as num).toDouble();
+    final qtyReceived = (rec['qty_received'] as num?)?.toDouble() ?? 0.0;
 
     // Downstream safety: Check if pendingAp stock has enough balance.
     // If pendingAp < qtyReceived, downstream AP inspection has already consumed this material.
@@ -385,7 +385,7 @@ class ReceiveFacoRepository {
 
     final rec = rows.first;
     final partId = rec['part_id'] as String;
-    final oldQty = (rec['qty_received'] as num).toDouble();
+    final oldQty = (rec['qty_received'] as num?)?.toDouble() ?? 0.0;
     final dispatchRefId = rec['dispatch_ref_id'] as String?;
     final qtyDiff = newQty - oldQty;
 
@@ -397,14 +397,14 @@ class ReceiveFacoRepository {
         [factoryId, dispatchRefId],
       );
       if (dispRows.isNotEmpty) {
-        dispatchedQty = (dispRows.first['qty'] as num).toDouble();
+        dispatchedQty = (dispRows.first['qty'] as num?)?.toDouble() ?? 0.0;
         final otherReceipts = _db.db.select(
           'SELECT COALESCE(SUM(qty_received), 0) AS total_other '
           'FROM receive_from_facos WHERE factory_id = ? AND dispatch_ref_id = ? AND id != ?',
           [factoryId, dispatchRefId, receiptId],
         );
         final otherTotal =
-            (otherReceipts.first['total_other'] as num).toDouble();
+            (otherReceipts.firstOrNull?['total_other'] as num?)?.toDouble() ?? 0.0;
         if (newQty + otherTotal > dispatchedQty) {
           final maxAllowed = dispatchedQty - otherTotal;
           return (

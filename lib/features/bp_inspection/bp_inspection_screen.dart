@@ -698,7 +698,7 @@ class _ActiveBpHoldTab extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final item = items[index];
-                  final qty = (item['hold_qty'] as num).toDouble();
+                  final qty = ((item['hold_qty'] ?? item['qty']) as num?)?.toDouble() ?? 0.0;
                   final partName = item['part_name'] as String? ?? '';
                   final partCode = item['part_code'] as String? ?? '';
                   final reason = item['reason'] as String? ?? 'Quality hold';
@@ -831,7 +831,7 @@ class _ActiveBpHoldTab extends ConsumerWidget {
     final partId = item['part_id'] as String;
     final partCode = item['part_code'] as String? ?? '';
     final partName = item['part_name'] as String? ?? '';
-    final totalHoldQty = (item['hold_qty'] as num).toDouble();
+    final totalHoldQty = ((item['hold_qty'] ?? item['qty']) as num?)?.toDouble() ?? 0.0;
     final batchNumber = item['batch_number'] as String? ?? 'OPEN-$partCode';
 
     final inspectQtyCtrl = TextEditingController(text: '${totalHoldQty.toInt()}');
@@ -1213,7 +1213,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final item = items[index];
-                  final qty = (item['qty'] as num).toDouble();
+                  final qty = ((item['qty'] ?? item['hold_qty']) as num?)?.toDouble() ?? 0.0;
                   final partCode = item['part_code'] as String? ?? '';
                   final partName = item['part_name'] as String? ?? '';
                   final batchNumber = item['batch_number'] as String? ?? 'OPEN-$partCode';

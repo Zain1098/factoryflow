@@ -622,9 +622,9 @@ class ProductionRepository {
     final rec = rows.first;
     final partId = rec['part_id'] as String;
     final machineId = rec['machine_id'] as String;
-    final prodQty = (rec['production_qty'] as num).toDouble();
-    final rejectQty = (rec['bp_reject_qty'] as num).toDouble();
-    final goodQty = (rec['good_qty'] as num).toDouble();
+    final prodQty = ((rec['production_qty'] ?? rec['prod_qty']) as num?)?.toDouble() ?? 0.0;
+    final rejectQty = ((rec['bp_reject_qty'] ?? rec['rej_qty']) as num?)?.toDouble() ?? 0.0;
+    final goodQty = (rec['good_qty'] as num?)?.toDouble() ?? (prodQty - rejectQty).clamp(0.0, double.infinity);
 
     // Determine stages
     final sequenceIndex = _flow.requiredMachineIds.indexOf(machineId);
@@ -765,9 +765,9 @@ class ProductionRepository {
     final rec = rows.first;
     final partId = rec['part_id'] as String;
     final machineId = rec['machine_id'] as String;
-    final oldProdQty = (rec['production_qty'] as num).toDouble();
-    final oldRejectQty = (rec['bp_reject_qty'] as num).toDouble();
-    final oldGoodQty = (rec['good_qty'] as num).toDouble();
+    final oldProdQty = ((rec['production_qty'] ?? rec['prod_qty']) as num?)?.toDouble() ?? 0.0;
+    final oldRejectQty = ((rec['bp_reject_qty'] ?? rec['rej_qty']) as num?)?.toDouble() ?? 0.0;
+    final oldGoodQty = (rec['good_qty'] as num?)?.toDouble() ?? (oldProdQty - oldRejectQty).clamp(0.0, double.infinity);
     final newGoodQty = (newProductionQty - newRejectQty).clamp(0.0, double.infinity);
 
     // Determine stages

@@ -432,7 +432,7 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     children: availableBatches.map((dispatch) {
                       final bNum = dispatch['batch_number'] as String? ?? '';
                       final remaining =
-                          (dispatch['remaining_qty'] as num).toInt();
+                          ((dispatch['remaining_qty'] ?? dispatch['qty']) as num?)?.toInt() ?? 0;
                       return ActionChip(
                         avatar: const Icon(
                           Icons.add_circle,
