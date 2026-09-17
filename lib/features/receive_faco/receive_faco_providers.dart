@@ -83,6 +83,19 @@ class ReceiveFacoRepository {
     bool anyShortage = false;
     double? lastDispatchedQty;
 
+    // Aggregate requested quantities per dispatchRefId and per part across all items
+    final Map<String, double> requestedByDispatchRef = {};
+    final Map<String, double> requestedByPart = {};
+    for (final item in items) {
+      final ref = item.dispatchRefId ?? 'OPEN-AT-FACO-${item.partId}';
+      requestedByDispatchRef[ref] =
+          (requestedByDispatchRef[ref] ?? 0.0) + item.qty;
+      requestedByPart[item.partId] =
+          (requestedByPart[item.partId] ?? 0.0) + item.qty;
+    }
+
+    final Set<String> validatedRefs = {};
+
     for (final item in items) {
       final partId = item.partId;
       final qtyReceived = item.qty;
@@ -93,11 +106,13 @@ class ReceiveFacoRepository {
       if (dispatchRefId != null && dispatchRefId.startsWith('OPEN-AT-FACO-')) {
         final availableVendorStock =
             await _ledger.getAvailableStock(partId, StockStage.atFaco);
-        if (qtyReceived > availableVendorStock) {
+        final totalOpenReq =
+            requestedByDispatchRef[dispatchRefId] ?? qtyReceived;
+        if (totalOpenReq > availableVendorStock) {
           return ReceiveFacoResult(
             success: false,
             error:
-                'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+                'Total received quantity (${totalOpenReq.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
           );
         }
         dispatchedQty = availableVendorStock;
@@ -130,22 +145,29 @@ class ReceiveFacoRepository {
             error: 'This vendor dispatch has already been received in full.',
           );
         }
-        if (qtyReceived > remaining) {
-          return ReceiveFacoResult(
-            success: false,
-            error:
-                'Received quantity (${qtyReceived.toInt()}) exceeds the remaining dispatch quantity (${remaining.toInt()} PCS).',
-          );
+
+        if (!validatedRefs.contains(dispatchRefId)) {
+          validatedRefs.add(dispatchRefId);
+          final totalDispReq =
+              requestedByDispatchRef[dispatchRefId] ?? qtyReceived;
+          if (totalDispReq > remaining) {
+            return ReceiveFacoResult(
+              success: false,
+              error:
+                  'Total received quantity (${totalDispReq.toInt()}) exceeds remaining dispatch quantity (${remaining.toInt()} PCS).',
+            );
+          }
         }
         shortageFlag = qtyReceived < remaining;
       } else {
         final availableVendorStock =
             await _ledger.getAvailableStock(partId, StockStage.atFaco);
-        if (qtyReceived > availableVendorStock) {
+        final totalPartReq = requestedByPart[partId] ?? qtyReceived;
+        if (totalPartReq > availableVendorStock) {
           return ReceiveFacoResult(
             success: false,
             error:
-                'Received quantity (${qtyReceived.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
+                'Total received quantity (${totalPartReq.toInt()}) exceeds available Vendor Stock (${availableVendorStock.toInt()} PCS).',
           );
         }
         dispatchedQty = availableVendorStock;
@@ -551,57 +573,103 @@ class ReceiveFacoRepository {
     return (success: true, error: '');
   }
 
-  Future<List<Map<String, dynamic>>> getPendingDispatches(String partId) async {
+  Future<List<Map<String, dynamic>>> getPendingDispatches(
+    String partId, {
+    String? vendorId,
+  }) async {
     final factoryId = _db.activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
 
+    final where = StringBuffer('df.factory_id = ? AND df.part_id = ?');
+    final params = <Object?>[factoryId, partId];
+    if (vendorId != null && vendorId.isNotEmpty) {
+      where.write(' AND df.vendor_id = ?');
+      params.add(vendorId);
+    }
+
     final rows = _db.db.select(
-      '''SELECT df.id, df.batch_number, df.qty, df.date,
+      '''SELECT df.id, df.batch_number, df.qty, df.date, df.time,
+                df.vendor_id, v.name AS vendor_name,
+                COALESCE(df.challan_number, '') AS dispatch_challan,
                 p.code AS part_code, p.name AS part_name,
                 df.qty - COALESCE(SUM(rf.qty_received), 0) AS remaining_qty
          FROM dispatch_to_facos df
          LEFT JOIN parts p ON p.id = df.part_id AND p.factory_id = df.factory_id
+         LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
          LEFT JOIN receive_from_facos rf
            ON rf.factory_id = df.factory_id AND rf.dispatch_ref_id = df.id
-         WHERE df.factory_id = ? AND df.part_id = ?
-         GROUP BY df.id, df.batch_number, df.qty, df.date, p.code, p.name
+         WHERE $where
+         GROUP BY df.id, df.batch_number, df.qty, df.date, df.time, df.vendor_id, v.name, df.challan_number, p.code, p.name
          HAVING df.qty - COALESCE(SUM(rf.qty_received), 0) > 0
-         ORDER BY df.date DESC LIMIT 20''',
-      [factoryId, partId],
+         ORDER BY df.date DESC LIMIT 30''',
+      params,
     );
     final list = rows.map((r) => Map<String, dynamic>.from(r)).toList();
 
     // Check if there is manual / opening at_faco stock in the stock ledger
-    final totalAtVendor =
-        await _ledger.getAvailableStock(partId, StockStage.atFaco);
-    final trackedDispatches = list.fold<double>(
-      0.0,
-      (sum, r) => sum + ((r['remaining_qty'] as num?)?.toDouble() ?? 0.0),
-    );
-    final unbatched = totalAtVendor - trackedDispatches;
-
-    if (unbatched > 0) {
-      final partRows = _db.db.select(
-        'SELECT code, name FROM parts WHERE factory_id = ? AND id = ?',
-        [factoryId, partId],
+    // (Only added when viewing all pending dispatches, not filtered to a single vendor)
+    if (vendorId == null || vendorId.isEmpty) {
+      final totalAtVendor =
+          await _ledger.getAvailableStock(partId, StockStage.atFaco);
+      final trackedDispatches = list.fold<double>(
+        0.0,
+        (sum, r) => sum + ((r['remaining_qty'] as num?)?.toDouble() ?? 0.0),
       );
-      final code =
-          partRows.isNotEmpty ? partRows.first['code'] as String? ?? '' : '';
-      final name =
-          partRows.isNotEmpty ? partRows.first['name'] as String? ?? '' : '';
+      final unbatched = totalAtVendor - trackedDispatches;
 
-      list.add({
-        'id': 'OPEN-AT-FACO-$partId',
-        'batch_number': 'OPEN-$code',
-        'qty': unbatched,
-        'date': DateTime.now().toIso8601String().substring(0, 10),
-        'part_code': code,
-        'part_name': name,
-        'remaining_qty': unbatched,
-      });
+      if (unbatched > 0) {
+        final partRows = _db.db.select(
+          'SELECT code, name FROM parts WHERE factory_id = ? AND id = ?',
+          [factoryId, partId],
+        );
+        final code =
+            partRows.isNotEmpty ? partRows.first['code'] as String? ?? '' : '';
+        final name =
+            partRows.isNotEmpty ? partRows.first['name'] as String? ?? '' : '';
+
+        list.add({
+          'id': 'OPEN-AT-FACO-$partId',
+          'batch_number': 'OPEN-$code',
+          'qty': unbatched,
+          'date': DateTime.now().toIso8601String().substring(0, 10),
+          'part_code': code,
+          'part_name': name,
+          'vendor_name': 'Opening Vendor Stock',
+          'dispatch_challan': 'OPEN',
+          'remaining_qty': unbatched,
+        });
+      }
     }
 
     return list;
+  }
+
+  /// Fast lookup of pending dispatch by challan number, batch number, or code
+  /// Used for barcode scanning and quick search.
+  Future<List<Map<String, dynamic>>> lookupPendingDispatch(String query) async {
+    final factoryId = _db.activeWorkspaceId.trim();
+    final q = query.trim();
+    if (factoryId.isEmpty || q.isEmpty) return [];
+
+    final rows = _db.db.select(
+      '''SELECT df.id, df.batch_number, df.qty, df.date, df.time,
+                df.part_id, df.vendor_id, v.name AS vendor_name,
+                COALESCE(df.challan_number, '') AS dispatch_challan,
+                p.code AS part_code, p.name AS part_name,
+                df.qty - COALESCE(SUM(rf.qty_received), 0) AS remaining_qty
+         FROM dispatch_to_facos df
+         LEFT JOIN parts p ON p.id = df.part_id AND p.factory_id = df.factory_id
+         LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
+         LEFT JOIN receive_from_facos rf
+           ON rf.factory_id = df.factory_id AND rf.dispatch_ref_id = df.id
+         WHERE df.factory_id = ?
+           AND (df.challan_number = ? OR df.batch_number = ? OR df.challan_number LIKE ? OR df.batch_number LIKE ?)
+         GROUP BY df.id, df.batch_number, df.qty, df.date, df.time, df.part_id, df.vendor_id, v.name, df.challan_number, p.code, p.name
+         HAVING df.qty - COALESCE(SUM(rf.qty_received), 0) > 0
+         ORDER BY df.date DESC LIMIT 10''',
+      [factoryId, q, q, '%$q%', '%$q%'],
+    );
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 }
 

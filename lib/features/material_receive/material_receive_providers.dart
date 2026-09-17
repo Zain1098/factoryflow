@@ -219,14 +219,19 @@ class PurchaseOrderRepository {
       );
     }
 
+    final totalReceived = await _db.getPurchaseOrderTotalReceived(id);
+    if (totalReceived > 0) {
+      return PurchaseOrderResult(
+        success: false,
+        error:
+            'Cannot delete order: ${totalReceived.toInt()} PCS has already been received against this PO. Please delete the associated material receipts first to preserve the audit trail.',
+      );
+    }
+
     try {
       await _db.runInTransaction(() async {
         _db.db.execute(
           'DELETE FROM purchase_orders WHERE factory_id = ? AND id = ?',
-          [factoryId, id],
-        );
-        _db.db.execute(
-          'UPDATE material_receives SET po_ref_id = NULL WHERE factory_id = ? AND po_ref_id = ?',
           [factoryId, id],
         );
         await _sync.queueDelete(
@@ -253,8 +258,11 @@ class PurchaseOrderRepository {
   Future<Map<String, double>> getPendingRemaining() =>
       _db.getPendingPurchaseOrdersRemaining();
 
-  Future<List<Map<String, dynamic>>> getAll({int limit = 50}) =>
+  Future<List<Map<String, dynamic>>> getAll({int limit = 200}) =>
       _db.getAllPurchaseOrders(limit: limit);
+
+  Future<Map<String, dynamic>?> findByPoNumber(String poNumber) =>
+      _db.findPurchaseOrderByNumber(poNumber);
 
   Future<String> generateNextPoNumber({DateTime? date}) async {
     final d = date ?? DateTime.now();
@@ -324,8 +332,15 @@ class MaterialReceiveRepository {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    final effectiveOrderedQty = orderedQty ?? qty;
-    final shortfall = (effectiveOrderedQty - qty).clamp(0.0, double.infinity);
+    final prevReceived = poRefId != null
+        ? await _db.getPurchaseOrderTotalReceived(poRefId)
+        : 0.0;
+    final totalReceivedAfter = prevReceived + qty;
+    final effectiveOrderedQty = orderedQty ?? (prevReceived > 0 ? prevReceived + qty : qty);
+    final remainingShortfall =
+        (effectiveOrderedQty - totalReceivedAfter).clamp(0.0, double.infinity);
+    final newPoStatus =
+        totalReceivedAfter >= effectiveOrderedQty ? 'received' : 'processing';
 
     final record = {
       'id': id,
@@ -338,7 +353,7 @@ class MaterialReceiveRepository {
       'part_id': partId,
       'qty': qty,
       'ordered_qty': effectiveOrderedQty,
-      'shortfall': shortfall,
+      'shortfall': remainingShortfall,
       'remarks': remarks,
       'created_by': createdBy,
       'created_at': now.toIso8601String(),
@@ -350,14 +365,14 @@ class MaterialReceiveRepository {
         await _db.insertRecord('material_receives', record);
 
         if (poRefId != null) {
-          await _db.updatePurchaseOrderStatus(poRefId, 'received');
+          await _db.updatePurchaseOrderStatus(poRefId, newPoStatus);
           await _sync.queueUpdate(
             tableName: 'purchase_orders',
             recordId: poRefId,
             payload: {
               'id': poRefId,
               'factory_id': factoryId,
-              'status': 'received',
+              'status': newPoStatus,
             },
             triggerSync: false,
           );
@@ -397,7 +412,7 @@ class MaterialReceiveRepository {
     final finalResult = MaterialReceiveResult(
       success: true,
       recordId: id,
-      shortfall: shortfall,
+      shortfall: remainingShortfall,
     );
     _lastReceiveFingerprint = fingerprint;
     _lastReceiveTime = DateTime.now();
@@ -472,8 +487,37 @@ class MaterialReceiveRepository {
 
     try {
       await _db.runInTransaction(() async {
-        // Adjust stock ledger if part or qty changed
-        if (oldPartId != partId || oldQty != qty) {
+        // Adjust stock ledger using Net Delta
+        if (oldPartId == partId) {
+          final delta = qty - oldQty;
+          if (delta > 0) {
+            final inResult = await _ledger.materialReceiveIn(
+              partId: partId,
+              qty: delta,
+              refId: id,
+              triggerSync: false,
+            );
+            if (!inResult.success) {
+              throw StockPostingFailure(
+                inResult.error ?? 'Could not record additional raw material stock.',
+              );
+            }
+          } else if (delta < 0) {
+            final outResult = await _ledger.materialReceiveOut(
+              partId: partId,
+              qty: -delta,
+              refId: id,
+              triggerSync: false,
+            );
+            if (!outResult.success) {
+              throw StockPostingFailure(
+                outResult.error ??
+                    'Cannot reduce receipt quantity: material has already been consumed in production.',
+              );
+            }
+          }
+        } else {
+          // Part was changed entirely
           final outResult = await _ledger.materialReceiveOut(
             partId: oldPartId,
             qty: oldQty,
@@ -482,7 +526,7 @@ class MaterialReceiveRepository {
           );
           if (!outResult.success) {
             throw StockPostingFailure(
-              outResult.error ?? 'Could not adjust previous stock.',
+              'Cannot change Part: $oldQty PCS of previous raw material has already been consumed in production.',
             );
           }
           final inResult = await _ledger.materialReceiveIn(
@@ -498,40 +542,45 @@ class MaterialReceiveRepository {
           }
         }
 
-        // Handle PO status transitions
-        if (oldPoRefId != null && oldPoRefId != poRefId) {
-          await _db.updatePurchaseOrderStatus(oldPoRefId, 'pending');
-          await _sync.queueUpdate(
-            tableName: 'purchase_orders',
-            recordId: oldPoRefId,
-            payload: {
-              'id': oldPoRefId,
-              'factory_id': factoryId,
-              'status': 'pending',
-            },
-            triggerSync: false,
-          );
-        }
-        if (poRefId != null) {
-          await _db.updatePurchaseOrderStatus(poRefId, 'received');
-          await _sync.queueUpdate(
-            tableName: 'purchase_orders',
-            recordId: poRefId,
-            payload: {
-              'id': poRefId,
-              'factory_id': factoryId,
-              'status': 'received',
-            },
-            triggerSync: false,
-          );
-        }
-
         final setClauses = updatePayload.keys.map((k) => '$k = ?').join(', ');
         final values = [...updatePayload.values, factoryId, id];
         _db.db.execute(
           'UPDATE material_receives SET $setClauses WHERE factory_id = ? AND id = ?',
           values,
         );
+
+        // Recompute PO status for old and new PO
+        if (oldPoRefId != null && oldPoRefId != poRefId) {
+          final oldPoStatus =
+              await _db.recomputePurchaseOrderStatus(oldPoRefId);
+          if (oldPoStatus != null) {
+            await _sync.queueUpdate(
+              tableName: 'purchase_orders',
+              recordId: oldPoRefId,
+              payload: {
+                'id': oldPoRefId,
+                'factory_id': factoryId,
+                'status': oldPoStatus,
+              },
+              triggerSync: false,
+            );
+          }
+        }
+        if (poRefId != null) {
+          final newPoStatus = await _db.recomputePurchaseOrderStatus(poRefId);
+          if (newPoStatus != null) {
+            await _sync.queueUpdate(
+              tableName: 'purchase_orders',
+              recordId: poRefId,
+              payload: {
+                'id': poRefId,
+                'factory_id': factoryId,
+                'status': newPoStatus,
+              },
+              triggerSync: false,
+            );
+          }
+        }
 
         await _sync.queueUpdate(
           tableName: 'material_receives',
@@ -592,21 +641,8 @@ class MaterialReceiveRepository {
         );
         if (!outResult.success) {
           throw StockPostingFailure(
-            outResult.error ?? 'Could not rollback raw material stock.',
-          );
-        }
-
-        if (poRefId != null) {
-          await _db.updatePurchaseOrderStatus(poRefId, 'pending');
-          await _sync.queueUpdate(
-            tableName: 'purchase_orders',
-            recordId: poRefId,
-            payload: {
-              'id': poRefId,
-              'factory_id': factoryId,
-              'status': 'pending',
-            },
-            triggerSync: false,
+            outResult.error ??
+                'Could not rollback raw material stock: material may have already been consumed in production.',
           );
         }
 
@@ -614,6 +650,23 @@ class MaterialReceiveRepository {
           'DELETE FROM material_receives WHERE factory_id = ? AND id = ?',
           [factoryId, id],
         );
+
+        if (poRefId != null) {
+          final recomputedStatus =
+              await _db.recomputePurchaseOrderStatus(poRefId);
+          if (recomputedStatus != null) {
+            await _sync.queueUpdate(
+              tableName: 'purchase_orders',
+              recordId: poRefId,
+              payload: {
+                'id': poRefId,
+                'factory_id': factoryId,
+                'status': recomputedStatus,
+              },
+              triggerSync: false,
+            );
+          }
+        }
 
         await _sync.queueDelete(
           tableName: 'material_receives',
@@ -646,6 +699,9 @@ class MaterialReceiveRepository {
 
     final String query;
     final List<dynamic> params;
+    final effectiveLimit = dateFilter != null
+        ? (limit < 500 ? 500 : limit)
+        : (limit < 200 ? 200 : limit);
 
     if (dateFilter != null) {
       query = 'SELECT mr.*, p.name as part_name, p.code as part_code, s.name as supplier_name '
@@ -655,7 +711,7 @@ class MaterialReceiveRepository {
           'WHERE mr.factory_id = ? '
           'AND (TRIM(mr.date) = ? OR mr.date LIKE ? OR date(mr.date) = ?) '
           'ORDER BY mr.created_at DESC LIMIT ?';
-      params = [factoryId, dateFilter, '$dateFilter%', dateFilter, limit];
+      params = [factoryId, dateFilter, '$dateFilter%', dateFilter, effectiveLimit];
     } else {
       query = 'SELECT mr.*, p.name as part_name, p.code as part_code, s.name as supplier_name '
           'FROM material_receives mr '
@@ -663,7 +719,7 @@ class MaterialReceiveRepository {
           'LEFT JOIN suppliers s ON s.id = mr.supplier_id AND s.factory_id = mr.factory_id '
           'WHERE mr.factory_id = ? '
           'ORDER BY mr.created_at DESC LIMIT ?';
-      params = [factoryId, limit];
+      params = [factoryId, effectiveLimit];
     }
 
     final rows = _db.db.select(query, params);

@@ -7,6 +7,7 @@ import '../../core/database/database_service.dart';
 import '../../core/network/sync_service.dart';
 import '../../core/providers/stock_invalidation_helper.dart';
 import '../../core/services/stock_ledger_service.dart';
+import '../../core/widgets/shared_widgets.dart';
 import '../auth/auth_providers.dart';
 import '../final_dispatch/final_dispatch_providers.dart';
 import 'physical_stock_audit_screen.dart';
@@ -609,21 +610,7 @@ class _AdjustmentTile extends StatelessWidget {
   }
 
   String _formatDate(DateTime dt) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${dt.day} ${months[dt.month - 1]} ${dt.year}  '
+    return '${formatAppDate(dt)}  '
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

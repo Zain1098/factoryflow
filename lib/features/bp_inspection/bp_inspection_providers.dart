@@ -264,9 +264,29 @@ class BpInspectionRepository {
          LEFT JOIN parts p ON p.id = sa.part_id AND p.factory_id = sa.factory_id
          WHERE sa.factory_id = ? AND sa.stage IN ('bp_hold', 'bp_rejected')
 
-         ORDER BY date DESC, sort_id DESC LIMIT ?''',
-      [factoryId, factoryId, factoryId, limit],
+         UNION ALL
+
+         SELECT 
+           'machine_reject' AS event_type,
+           pr.id, pr.factory_id, pr.date, pr.batch_number, pr.part_id,
+           p.name AS part_name, p.code AS part_code, m.name AS machine_name,
+           COALESCE(op.name, pr.created_by, 'Machine Operator') AS inspector_name,
+           pr.production_qty AS inspected_qty,
+           pr.bp_reject_qty AS bp_reject_qty,
+           'Machine Rejection' AS reject_reason_name,
+           COALESCE(pr.remarks, 'Rejected at machine during production') AS remarks,
+           NULL AS photo_url, pr.sync_status,
+           pr.rowid AS sort_id
+         FROM productions pr
+         LEFT JOIN parts p ON p.id = pr.part_id AND p.factory_id = pr.factory_id
+         LEFT JOIN machines m ON m.id = pr.machine_id AND m.factory_id = pr.factory_id
+         LEFT JOIN operators op ON op.id = pr.operator_id AND op.factory_id = pr.factory_id
+         WHERE pr.factory_id = ? AND pr.bp_reject_qty > 0
+
+         ORDER BY sort_id DESC LIMIT ?''',
+      [factoryId, factoryId, factoryId, factoryId, limit],
     );
+    print('BP_RECENT_FETCH: factoryId=$factoryId, rows=${rows.length}');
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
@@ -530,26 +550,49 @@ class BpInspectionRepository {
 
     final rows = _db.db.select(
       '''SELECT p.id AS part_id, p.code AS part_code, p.name AS part_name,
-                bi.batch_number,
-                SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) AS qty,
-                COALESCE(r.reason, bi.reject_reason_id, 'Quality reject') AS reason,
-                bi.date AS reject_date
-         FROM bp_inspections bi
-         INNER JOIN parts p ON p.id = bi.part_id AND p.factory_id = bi.factory_id
-         LEFT JOIN bp_reject_reasons r ON r.id = bi.reject_reason_id AND r.factory_id = bi.factory_id
+                cr.batch_number,
+                SUM(cr.reject_qty) - COALESCE(actions.actioned_qty, 0) AS qty,
+                GROUP_CONCAT(DISTINCT cr.reason) AS reason,
+                MAX(cr.reject_date) AS reject_date,
+                GROUP_CONCAT(DISTINCT cr.source) AS source
+         FROM (
+           SELECT 
+             bi.factory_id, bi.part_id, bi.batch_number,
+             bi.bp_reject_qty AS reject_qty,
+             COALESCE(r.reason, bi.reject_reason_id, 'Quality QC reject') AS reason,
+             bi.date AS reject_date,
+             'BP QC Inspection' AS source
+           FROM bp_inspections bi
+           LEFT JOIN bp_reject_reasons r ON r.id = bi.reject_reason_id AND r.factory_id = bi.factory_id
+           WHERE bi.factory_id = ? AND bi.bp_reject_qty > 0
+
+           UNION ALL
+
+           SELECT 
+             pr.factory_id, pr.part_id, pr.batch_number,
+             pr.bp_reject_qty AS reject_qty,
+             COALESCE('Machine Reject: ' || m.name, 'Machine Rejection') AS reason,
+             pr.date AS reject_date,
+             COALESCE('Machine: ' || m.name, 'Machine Production') AS source
+           FROM productions pr
+           LEFT JOIN machines m ON m.id = pr.machine_id AND m.factory_id = pr.factory_id
+           WHERE pr.factory_id = ? AND pr.bp_reject_qty > 0
+         ) cr
+         INNER JOIN parts p ON p.id = cr.part_id AND p.factory_id = cr.factory_id
          LEFT JOIN (
            SELECT factory_id, part_id, batch_number, SUM(qty) AS actioned_qty
            FROM bp_rejected_actions WHERE action = 'final_rejected'
            GROUP BY factory_id, part_id, batch_number
-         ) actions ON actions.factory_id = bi.factory_id
-           AND actions.part_id = bi.part_id AND actions.batch_number = bi.batch_number
-         WHERE bi.factory_id = ? AND p.active = 1
-         GROUP BY bi.factory_id, bi.part_id, bi.batch_number, p.code, p.name, actions.actioned_qty
-         HAVING SUM(bi.bp_reject_qty) - COALESCE(actions.actioned_qty, 0) > 0
-         ORDER BY bi.batch_number DESC, p.name''',
-      [factoryId],
+         ) actions ON actions.factory_id = cr.factory_id
+           AND actions.part_id = cr.part_id AND actions.batch_number = cr.batch_number
+         WHERE p.active = 1
+         GROUP BY cr.factory_id, cr.part_id, cr.batch_number, p.code, p.name, actions.actioned_qty
+         HAVING SUM(cr.reject_qty) - COALESCE(actions.actioned_qty, 0) > 0
+         ORDER BY MAX(cr.reject_date) DESC, cr.batch_number DESC, p.name''',
+      [factoryId, factoryId],
     );
     final items = rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    print('BP_REJECTED_STOCK_FETCH: factoryId=$factoryId, rows=${rows.length}');
 
     // Also include any parts that have BP rejected balance in stock_ledger
     // (e.g. from Settings → Stock Management manual adjustment)
@@ -597,21 +640,22 @@ final bpInspectionRepositoryProvider = Provider<BpInspectionRepository>((ref) {
 });
 
 final bpInspectionListProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(bpInspectionRepositoryProvider).getRecent();
 });
 
 final recentBatchesProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   return ref.watch(bpInspectionRepositoryProvider).getRecentBatches();
 });
 
-final bpRejectedStockProvider = FutureProvider<List<Map<String, dynamic>>>((ref) {
+final bpRejectedStockProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
   return ref.watch(bpInspectionRepositoryProvider).getRejectedStock();
 });
 
 final bpHoldStockProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) {
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
   return ref.watch(bpInspectionRepositoryProvider).getBpHoldStock();
 });
 

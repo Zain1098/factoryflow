@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -120,6 +121,7 @@ class SyncService {
   Future<bool> isOnline() async {
     final onlineCheck = _onlineCheck;
     if (onlineCheck != null) return onlineCheck();
+    if (kIsWeb) return true;
     try {
       final result = await Connectivity()
           .checkConnectivity()
@@ -143,10 +145,31 @@ class SyncService {
     }
   }
 
+  Future<int>? _activeHydration;
+
   /// Pulls the active company's shared records onto a newly signed-in mobile.
   /// Pending local records are never overwritten; normal upload remains the
   /// source of truth for offline work made on this device.
   Future<int> hydrateActiveWorkspace({
+    String? explicitFactoryId,
+    bool force = false,
+  }) async {
+    if (_activeHydration != null) {
+      return await _activeHydration!;
+    }
+    final future = _doHydrateActiveWorkspace(
+      explicitFactoryId: explicitFactoryId,
+      force: force,
+    );
+    _activeHydration = future;
+    try {
+      return await future;
+    } finally {
+      _activeHydration = null;
+    }
+  }
+
+  Future<int> _doHydrateActiveWorkspace({
     String? explicitFactoryId,
     bool force = false,
   }) async {

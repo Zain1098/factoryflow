@@ -555,6 +555,9 @@ class SaveButton extends StatelessWidget {
     return EntryInfoSurface(
       padding: const EdgeInsets.all(6),
       child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(0, 48),
+        ),
         onPressed: isLoading ? null : onPressed,
         icon: isLoading
             ? const SizedBox(

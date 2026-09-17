@@ -119,8 +119,37 @@ class DispatchFacoRepository {
       );
     }
 
+    // Aggregate requested quantities per part and per batch across all items
+    final Map<String, double> partTotalQty = {};
+    final Map<String, double> batchTotalQty = {};
+    for (final item in items) {
+      partTotalQty[item.partId] = (partTotalQty[item.partId] ?? 0.0) + item.qty;
+      final batchKey = '${item.partId}::${item.batchNumber}';
+      batchTotalQty[batchKey] = (batchTotalQty[batchKey] ?? 0.0) + item.qty;
+    }
+
+    // 1. Verify part-level aggregate against available Own BP Stock
+    for (final entry in partTotalQty.entries) {
+      final partId = entry.key;
+      final requestedTotal = entry.value;
+      final available =
+          await _ledger.getAvailableStock(partId, StockStage.bpStock);
+      if (requestedTotal > available) {
+        final partCode = items.firstWhere((i) => i.partId == partId).partCode;
+        return DispatchFacoResult(
+          success: false,
+          error:
+              '$partCode: total dispatch qty (${requestedTotal.toInt()}) exceeds Own BP Stock (${available.toInt()} PCS).',
+        );
+      }
+    }
+
+    // 2. Verify batch-level validity & balances
+    final Set<String> checkedBatches = {};
     for (final item in items) {
       final isOpeningBatch = item.batchNumber!.startsWith('OPEN-');
+      final batchKey = '${item.partId}::${item.batchNumber}';
+
       final batchPart = _db.db.select(
         'SELECT id FROM productions '
         'WHERE factory_id = ? AND batch_number = ? AND part_id = ? LIMIT 1',
@@ -133,17 +162,9 @@ class DispatchFacoRepository {
               '${item.partCode}: selected batch does not belong to this part.',
         );
       }
-      final available =
-          await _ledger.getAvailableStock(item.partId, StockStage.bpStock);
-      if (item.qty > available) {
-        return DispatchFacoResult(
-          success: false,
-          error:
-              '${item.partCode}: dispatch qty (${item.qty.toInt()}) exceeds Own BP Stock (${available.toInt()} PCS)',
-        );
-      }
 
-      if (!isOpeningBatch) {
+      if (!isOpeningBatch && !checkedBatches.contains(batchKey)) {
+        checkedBatches.add(batchKey);
         final finalMachineId =
             _flow.isMultiStage ? _flow.requiredMachineIds.last : null;
         final batchRows = _db.db.select(
@@ -177,11 +198,12 @@ class DispatchFacoRepository {
         );
         final batchAvailable =
             (batchRows.single['available_qty'] as num?)?.toDouble() ?? 0;
-        if (item.qty > batchAvailable) {
+        final totalBatchReq = batchTotalQty[batchKey] ?? item.qty;
+        if (totalBatchReq > batchAvailable) {
           return DispatchFacoResult(
             success: false,
             error:
-                '${item.partCode}: dispatch qty exceeds this batch balance (${batchAvailable.toInt()} PCS).',
+                '${item.partCode}: total dispatch qty for batch ${item.batchNumber} (${totalBatchReq.toInt()} PCS) exceeds available balance (${batchAvailable.toInt()} PCS).',
           );
         }
       }
@@ -309,7 +331,22 @@ class DispatchFacoRepository {
       '$orderBy',
       params,
     );
-    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+
+    return rows.map((r) {
+      final map = Map<String, dynamic>.from(r);
+      final qty = (map['qty'] as num?)?.toDouble() ?? 0.0;
+      final received = (map['received_qty'] as num?)?.toDouble() ?? 0.0;
+      final remaining = (qty - received).clamp(0.0, double.infinity);
+      map['remaining_qty'] = remaining;
+      if (received >= qty && qty > 0) {
+        map['delivery_status'] = 'completed';
+      } else if (received > 0) {
+        map['delivery_status'] = 'partial';
+      } else {
+        map['delivery_status'] = 'pending';
+      }
+      return map;
+    }).toList();
   }
 
   /// Safely delete a vendor dispatch record and revert its stock movement.
@@ -395,6 +432,14 @@ class DispatchFacoRepository {
           userId: userId,
           factoryId: factoryId,
           reason: reason,
+        );
+
+        // 4. Queue deletion tombstone for Supabase cloud synchronization
+        await _sync.queueDelete(
+          tableName: 'dispatch_to_facos',
+          recordId: dispatchId,
+          factoryId: factoryId,
+          triggerSync: false,
         );
       });
 

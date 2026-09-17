@@ -25,6 +25,8 @@ class _ReceiveFacoLine {
     required this.dispatchRefId,
     required this.remainingQty,
     required this.dispatchedQty,
+    this.vendorName = '',
+    this.dispatchChallan = '',
     required VoidCallback onQtyChanged,
   }) {
     qtyCtrl.addListener(onQtyChanged);
@@ -37,6 +39,8 @@ class _ReceiveFacoLine {
   final String? dispatchRefId;
   final double remainingQty;
   final double dispatchedQty;
+  final String vendorName;
+  final String dispatchChallan;
   final TextEditingController qtyCtrl = TextEditingController();
 
   double get qty => double.tryParse(qtyCtrl.text.trim()) ?? 0;
@@ -96,17 +100,22 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
 
     final remaining = (dispatch['remaining_qty'] as num?)?.toDouble() ?? 0.0;
     final totalDisp = (dispatch['qty'] as num?)?.toDouble() ?? remaining;
+    final vendor = dispatch['vendor_name'] as String? ?? '';
+    final challan = dispatch['dispatch_challan'] as String? ?? '';
+    final pId = dispatch['part_id'] as String? ?? _partId ?? '';
 
     setState(() {
       _items.add(
         _ReceiveFacoLine(
-          partId: _partId!,
+          partId: pId,
           partCode: dispatch['part_code'] as String? ?? '',
           partName: dispatch['part_name'] as String? ?? '',
           batchNumber: batchNum,
           dispatchRefId: dispatchId,
           remainingQty: remaining,
           dispatchedQty: totalDisp,
+          vendorName: vendor,
+          dispatchChallan: challan,
           onQtyChanged: _onQtyChanged,
         ),
       );
@@ -121,6 +130,33 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
   }
 
   Future<void> _onPartChanged(String? partId) async {
+    if (_items.isNotEmpty && partId != _partId) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Change Part?'),
+          content: const Text(
+            'Changing the selected part will clear previously added batches. Proceed?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Change'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+      for (final item in _items) {
+        item.dispose();
+      }
+      _items.clear();
+    }
+
     setState(() {
       _partId = partId;
       _pendingDispatches = [];
@@ -129,7 +165,96 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
       final dispatches = await ref
           .read(receiveFacoRepositoryProvider)
           .getPendingDispatches(partId);
-      setState(() => _pendingDispatches = dispatches);
+      if (mounted) setState(() => _pendingDispatches = dispatches);
+    }
+  }
+
+  Future<void> _handleBarcodeScan() async {
+    final code = await BarcodeScannerView.scan(
+      context,
+      title: 'Scan Vendor Challan or Batch Barcode',
+    );
+    if (code == null || code.trim().isEmpty) return;
+    final cleanCode = code.trim();
+
+    try {
+      final repo = ref.read(receiveFacoRepositoryProvider);
+      final matches = await repo.lookupPendingDispatch(cleanCode);
+
+      if (matches.isNotEmpty) {
+        final found = matches.first;
+        final targetPartId = found['part_id'] as String?;
+        final challan = found['dispatch_challan'] as String?;
+        final bNum = found['batch_number'] as String? ?? '';
+
+        if (challan != null && challan.isNotEmpty) {
+          _challanCtrl.text = challan;
+        } else {
+          _challanCtrl.text = cleanCode;
+        }
+
+        if (targetPartId != null && targetPartId.isNotEmpty && targetPartId != _partId) {
+          if (_items.isNotEmpty) {
+            if (!mounted) return;
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Switch Part for Scanned Batch?'),
+                content: Text(
+                  'Scanned batch $bNum belongs to a different part (${found['part_code'] ?? ''}). '
+                  'Clear current list and switch to this part?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Switch'),
+                  ),
+                ],
+              ),
+            );
+            if (confirm != true) return;
+            for (final item in _items) {
+              item.dispose();
+            }
+            _items.clear();
+          }
+          if (mounted) {
+            setState(() {
+              _partId = targetPartId;
+            });
+          }
+          final dispatches = await repo.getPendingDispatches(targetPartId);
+          if (mounted) setState(() => _pendingDispatches = dispatches);
+        }
+
+        _addBatch(found);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Matched: $bNum (${found['vendor_name'] ?? 'Vendor'})',
+              ),
+              backgroundColor: Colors.teal,
+            ),
+          );
+        }
+      } else {
+        _challanCtrl.text = cleanCode;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Challan number set to: $cleanCode'),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      _challanCtrl.text = cleanCode;
     }
   }
 
@@ -431,18 +556,26 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                     runSpacing: 8,
                     children: availableBatches.map((dispatch) {
                       final bNum = dispatch['batch_number'] as String? ?? '';
+                      final vName = dispatch['vendor_name'] as String? ?? '';
+                      final chNum = dispatch['dispatch_challan'] as String? ?? '';
                       final remaining =
                           ((dispatch['remaining_qty'] ?? dispatch['qty']) as num?)?.toInt() ?? 0;
+                      final labelParts = <String>[];
+                      if (chNum.isNotEmpty) labelParts.add(chNum);
+                      labelParts.add(bNum.isNotEmpty ? bNum : 'Batch');
+                      if (vName.isNotEmpty) labelParts.add(vName);
+                      labelParts.add('$remaining PCS');
+
                       return ActionChip(
                         avatar: const Icon(
                           Icons.add_circle,
                           size: 16,
                           color: Colors.teal,
                         ),
-                        label: Text('$bNum ($remaining PCS left)'),
+                        label: Text(labelParts.join(' • ')),
                         labelStyle: const TextStyle(
                           fontWeight: FontWeight.w500,
-                          fontSize: 12,
+                          fontSize: 11,
                         ),
                         backgroundColor: Colors.teal.withValues(alpha: 0.06),
                         side: BorderSide(
@@ -554,6 +687,62 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                               ),
                             ],
                           ),
+                          if (item.dispatchChallan.isNotEmpty ||
+                              item.vendorName.isNotEmpty) ...[
+                            const SizedBox(height: 5),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (item.dispatchChallan.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueGrey.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.receipt_long_outlined, size: 12, color: Colors.blueGrey),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          item.dispatchChallan,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.blueGrey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (item.vendorName.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.indigo.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.business_outlined, size: 12, color: Colors.indigo),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          item.vendorName,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.indigo,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 6),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -747,16 +936,8 @@ class _ReceiveFacoScreenState extends ConsumerState<ReceiveFacoScreen>
                 prefixIcon: const Icon(Icons.receipt_outlined),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.qr_code_scanner_rounded),
-                  tooltip: 'Scan Vendor Challan Barcode',
-                  onPressed: () async {
-                    final code = await BarcodeScannerView.scan(
-                      context,
-                      title: 'Scan Vendor Challan Code',
-                    );
-                    if (code != null && code.isNotEmpty) {
-                      _challanCtrl.text = code;
-                    }
-                  },
+                  tooltip: 'Scan Vendor Challan or Batch Barcode',
+                  onPressed: _handleBarcodeScan,
                 ),
               ),
               const SizedBox(height: 12),

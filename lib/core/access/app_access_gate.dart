@@ -7,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/auth/auth_providers.dart';
 import '../database/database_service.dart';
 import '../network/sync_service.dart';
-import '../providers/master_data_providers.dart';
 import '../providers/stock_invalidation_helper.dart';
 import 'app_access_state.dart';
 
@@ -85,7 +84,8 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
     // Supabase is reachable.
     final localSession = await ref.read(authRepositoryProvider).getLocalSession();
     final isAlreadyLoggedIn = ref.read(currentUserProvider).value != null || localSession != null;
-    final effectiveBackground = background || isAlreadyLoggedIn || _hasVerifiedAccess;
+    final isInteractiveSigningIn = ref.read(currentUserProvider).isLoading;
+    final effectiveBackground = background || isAlreadyLoggedIn || _hasVerifiedAccess || isInteractiveSigningIn;
 
     if (!await ref.read(syncServiceProvider).isOnline()) {
       await _allowCachedSession();
@@ -194,9 +194,6 @@ class _AppAccessGateState extends ConsumerState<AppAccessGate>
               refreshAllStockAndEntryProviders(ref);
             }
           }).catchError((_) {}),
-        );
-        unawaited(
-          ref.read(masterDataRepositoryProvider).syncMasterDataFromSupabase(),
         );
       }
     } catch (_) {

@@ -158,7 +158,7 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.steelBlue,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 50),
+          minimumSize: const Size(0, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -345,7 +345,7 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.steelBlueLight,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 50),
+          minimumSize: const Size(0, 50),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

@@ -1613,29 +1613,47 @@ class DatabaseService {
     final factoryId = activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final result = db.select(
-      "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
+      "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name, "
+      "COALESCE(rcv.received_qty, 0.0) as received_qty, "
+      "MAX(0.0, po.ordered_qty - COALESCE(rcv.received_qty, 0.0)) as remaining_qty "
       "FROM purchase_orders po "
+      "LEFT JOIN ( "
+      "  SELECT po_ref_id, SUM(qty) as received_qty "
+      "  FROM material_receives "
+      "  WHERE factory_id = ? AND po_ref_id IS NOT NULL "
+      "  GROUP BY po_ref_id "
+      ") rcv ON rcv.po_ref_id = po.id "
       "LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id "
       "LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.factory_id = po.factory_id "
-      "WHERE po.factory_id = ? AND po.part_id = ? AND po.status != 'received' "
-      "ORDER BY po.created_at DESC LIMIT 20",
-      [factoryId, partId],
+      "WHERE po.factory_id = ? AND po.part_id = ? "
+      "  AND po.status NOT IN ('received', 'cancelled') "
+      "  AND (po.ordered_qty - COALESCE(rcv.received_qty, 0.0)) > 0 "
+      "ORDER BY po.created_at DESC LIMIT 100",
+      [factoryId, factoryId, partId],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
 
   Future<List<Map<String, dynamic>>> getAllPurchaseOrders(
-      {int limit = 50,}) async {
+      {int limit = 200,}) async {
     final factoryId = activeWorkspaceId.trim();
     if (factoryId.isEmpty) return [];
     final result = db.select(
-      "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name "
+      "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name, "
+      "COALESCE(rcv.received_qty, 0.0) as received_qty, "
+      "MAX(0.0, po.ordered_qty - COALESCE(rcv.received_qty, 0.0)) as remaining_qty "
       "FROM purchase_orders po "
+      "LEFT JOIN ( "
+      "  SELECT po_ref_id, SUM(qty) as received_qty "
+      "  FROM material_receives "
+      "  WHERE factory_id = ? AND po_ref_id IS NOT NULL "
+      "  GROUP BY po_ref_id "
+      ") rcv ON rcv.po_ref_id = po.id "
       "LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id "
       "LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.factory_id = po.factory_id "
       "WHERE po.factory_id = ? "
       "ORDER BY po.created_at DESC LIMIT ?",
-      [factoryId, limit],
+      [factoryId, factoryId, limit],
     );
     return result.map(_rowToMap).toList().cast<Map<String, dynamic>>();
   }
@@ -1647,6 +1665,77 @@ class DatabaseService {
       'UPDATE purchase_orders SET status = ? WHERE factory_id = ? AND id = ?',
       [status, factoryId, id],
     );
+  }
+
+  Future<String?> recomputePurchaseOrderStatus(String poId) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return null;
+    final poRows = db.select(
+      'SELECT status, ordered_qty FROM purchase_orders WHERE factory_id = ? AND id = ?',
+      [factoryId, poId],
+    );
+    if (poRows.isEmpty) return null;
+    final currentStatus = poRows.first['status'] as String? ?? 'pending';
+    if (currentStatus == 'cancelled') return 'cancelled';
+
+    final orderedQty = (poRows.first['ordered_qty'] as num?)?.toDouble() ?? 0.0;
+    final rcvRows = db.select(
+      'SELECT COALESCE(SUM(qty), 0.0) as total_rcv FROM material_receives WHERE factory_id = ? AND po_ref_id = ?',
+      [factoryId, poId],
+    );
+    final totalRcv = (rcvRows.first['total_rcv'] as num?)?.toDouble() ?? 0.0;
+
+    final String newStatus;
+    if (totalRcv >= orderedQty && orderedQty > 0) {
+      newStatus = 'received';
+    } else if (totalRcv > 0) {
+      newStatus = 'processing';
+    } else {
+      newStatus = 'pending';
+    }
+
+    if (newStatus != currentStatus) {
+      db.execute(
+        'UPDATE purchase_orders SET status = ? WHERE factory_id = ? AND id = ?',
+        [newStatus, factoryId, poId],
+      );
+    }
+    return newStatus;
+  }
+
+  Future<double> getPurchaseOrderTotalReceived(String poId) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty) return 0.0;
+    final rows = db.select(
+      'SELECT COALESCE(SUM(qty), 0.0) as total_rcv FROM material_receives WHERE factory_id = ? AND po_ref_id = ?',
+      [factoryId, poId],
+    );
+    if (rows.isEmpty) return 0.0;
+    return (rows.first['total_rcv'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  Future<Map<String, dynamic>?> findPurchaseOrderByNumber(String poNumber) async {
+    final factoryId = activeWorkspaceId.trim();
+    if (factoryId.isEmpty || poNumber.trim().isEmpty) return null;
+    final rows = db.select(
+      "SELECT po.*, p.code as part_code, p.name as part_name, s.name as supplier_name, "
+      "COALESCE(rcv.received_qty, 0.0) as received_qty, "
+      "MAX(0.0, po.ordered_qty - COALESCE(rcv.received_qty, 0.0)) as remaining_qty "
+      "FROM purchase_orders po "
+      "LEFT JOIN ( "
+      "  SELECT po_ref_id, SUM(qty) as received_qty "
+      "  FROM material_receives "
+      "  WHERE factory_id = ? AND po_ref_id IS NOT NULL "
+      "  GROUP BY po_ref_id "
+      ") rcv ON rcv.po_ref_id = po.id "
+      "LEFT JOIN parts p ON p.id = po.part_id AND p.factory_id = po.factory_id "
+      "LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.factory_id = po.factory_id "
+      "WHERE po.factory_id = ? AND LOWER(TRIM(po.po_number)) = LOWER(TRIM(?)) "
+      "LIMIT 1",
+      [factoryId, factoryId, poNumber.trim()],
+    );
+    if (rows.isEmpty) return null;
+    return Map<String, dynamic>.from(rows.first);
   }
 
   Future<Map<String, double>> getPendingPurchaseOrdersRemaining() async {

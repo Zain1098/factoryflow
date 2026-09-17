@@ -43,6 +43,10 @@ class DateRange {
     final now = DateTime.now();
     return DateRange(now.subtract(const Duration(days: 29)), now);
   }
+
+  static DateRange allTime() {
+    return DateRange(DateTime(2020, 1, 1), DateTime.now().add(const Duration(days: 365)));
+  }
 }
 
 // ─── Shift Filter Provider ───────────────────────────────────────────────────
@@ -297,8 +301,9 @@ final dailyProductionReportProvider =
         selectedMachineId = pRows.first['machine_id']?.toString() ?? '';
       }
 
-      final stageRows =
-          pRows.where((r) => r['machine_id'] == selectedMachineId).toList();
+      final stageRows = pRows
+          .where((r) => (r['machine_id']?.toString() ?? '') == selectedMachineId)
+          .toList();
 
       double partProd = 0.0;
       double partGood = 0.0;
@@ -396,6 +401,23 @@ final dailyProductionReportProvider =
 
 // ─── 2. Machine-wise Report ───────────────────────────────────────────────────
 
+class MachinePartProduction {
+  const MachinePartProduction({
+    required this.partId,
+    required this.partName,
+    required this.partCode,
+    required this.totalQty,
+    required this.goodQty,
+    required this.rejectQty,
+  });
+  final String partId;
+  final String partName;
+  final String partCode;
+  final double totalQty;
+  final double goodQty;
+  final double rejectQty;
+}
+
 class MachineReportRow {
   const MachineReportRow({
     required this.machineName,
@@ -405,6 +427,8 @@ class MachineReportRow {
     required this.rejectPct,
     required this.downtimeMinutes,
     required this.runDays,
+    this.machineId = '',
+    this.parts = const [],
   });
   final String machineName;
   final double totalProduction;
@@ -413,6 +437,8 @@ class MachineReportRow {
   final double rejectPct;
   final int downtimeMinutes;
   final int runDays;
+  final String machineId;
+  final List<MachinePartProduction> parts;
 }
 
 final machineReportProvider =
@@ -425,6 +451,7 @@ final machineReportProvider =
   final rows = db.db.select(
     '''
     SELECT
+      m.id AS machine_id,
       m.name AS machine_name,
       COALESCE(SUM(p.production_qty), 0) AS total_prod,
       COALESCE(SUM(p.bp_reject_qty), 0) AS bp_rej,
@@ -454,10 +481,51 @@ final machineReportProvider =
     ],
   );
 
+  // Query parts produced on machines within date range
+  final partRows = db.db.select(
+    '''
+    SELECT
+      p.machine_id,
+      pt.id AS part_id,
+      pt.name AS part_name,
+      pt.code AS part_code,
+      SUM(p.production_qty) AS qty,
+      SUM(p.good_qty) AS good_qty,
+      SUM(p.bp_reject_qty) AS reject_qty
+    FROM productions p
+    INNER JOIN parts pt ON pt.id = p.part_id AND pt.factory_id = p.factory_id
+    WHERE p.factory_id = ? AND p.date BETWEEN ? AND ?
+    GROUP BY p.machine_id, pt.id, pt.name, pt.code
+    ORDER BY qty DESC
+  ''',
+    [
+      factoryId,
+      range.fromStr,
+      range.toStr,
+    ],
+  );
+
+  final partsByMachine = <String, List<MachinePartProduction>>{};
+  for (final pr in partRows) {
+    final mId = pr['machine_id']?.toString() ?? '';
+    if (mId.isEmpty) continue;
+    final item = MachinePartProduction(
+      partId: pr['part_id']?.toString() ?? '',
+      partName: pr['part_name']?.toString() ?? '—',
+      partCode: pr['part_code']?.toString() ?? '—',
+      totalQty: ((pr['qty'] ?? pr['production_qty']) as num?)?.toDouble() ?? 0.0,
+      goodQty: (pr['good_qty'] as num?)?.toDouble() ?? 0.0,
+      rejectQty: ((pr['reject_qty'] ?? pr['bp_reject_qty']) as num?)?.toDouble() ?? 0.0,
+    );
+    partsByMachine.putIfAbsent(mId, () => []).add(item);
+  }
+
   return rows.map((r) {
+    final mId = r['machine_id']?.toString() ?? '';
     final prod = ((r['total_prod'] ?? r['production_qty']) as num?)?.toDouble() ?? 0.0;
     final bp = ((r['bp_rej'] ?? r['bp_reject_qty']) as num?)?.toDouble() ?? 0.0;
     return MachineReportRow(
+      machineId: mId,
       machineName: r['machine_name'] as String? ?? '—',
       totalProduction: prod,
       bpReject: bp,
@@ -465,6 +533,7 @@ final machineReportProvider =
       rejectPct: prod > 0 ? (bp / prod * 100) : 0,
       downtimeMinutes: ((r['downtime_mins'] ?? r['duration_minutes']) as num?)?.toInt() ?? 0,
       runDays: ((r['run_days']) as num?)?.toInt() ?? 0,
+      parts: partsByMachine[mId] ?? const [],
     );
   }).toList();
 });
@@ -575,7 +644,7 @@ final downtimeReportProvider =
   return rows
       .map(
         (r) => DowntimeRow(
-          date: r['date'] as String? ?? '',
+          date: formatAppDate(r['date'] as String? ?? ''),
           machineName: r['machine_name'] as String? ?? '—',
           startTime: r['start_time'] as String? ?? '',
           endTime: r['end_time'] as String?,
@@ -655,6 +724,7 @@ final rejectAnalysisProvider =
     LEFT JOIN bp_inspection_rejects bi ON bi.factory_id = adp.factory_id AND bi.part_id = adp.part_id AND bi.date = adp.date
     LEFT JOIN ap_inspection_rejects ap ON ap.factory_id = adp.factory_id AND ap.part_id = adp.part_id AND ap.date = adp.date
     LEFT JOIN manual_adj_rejects ma ON ma.factory_id = adp.factory_id AND ma.part_id = adp.part_id AND ma.date = adp.date
+    WHERE (COALESCE(pr.production, 0) > 0 OR (COALESCE(pr.mach_rej, 0) + COALESCE(bi.qty, 0) + COALESCE(ma.bp_adj, 0) + COALESCE(ma.prod_adj, 0)) > 0 OR COALESCE(ap.qty, 0) > 0)
     ORDER BY adp.date DESC, pt.name
   ''',
     [
@@ -679,8 +749,8 @@ final rejectAnalysisProvider =
     final ap = ((r['ap_rej'] ?? r['rejected_qty']) as num?)?.toDouble() ?? 0.0;
     final total = bp + ap;
     return RejectAnalysisRow(
-      date: r['date'] as String? ?? '',
-      partName: r['part_name'] as String? ?? '—',
+      date: formatAppDate(r['date']?.toString() ?? ''),
+      partName: r['part_name']?.toString() ?? '—',
       bpReject: bp,
       apReject: ap,
       totalReject: total,
@@ -734,12 +804,12 @@ final rtvReportProvider =
   return rows
       .map(
         (r) => RtvReportRow(
-          date: r['date'] as String? ?? '',
+          date: formatAppDate(r['date'] as String? ?? ''),
           partName: r['part_name'] as String? ?? '—',
           vendorName: r['vendor_name'] as String? ?? '—',
           rtvQty: ((r['rtv_qty'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
           status: r['status'] as String? ?? 'pending',
-          expectedReturn: r['expected_return_date'] as String?,
+          expectedReturn: r['expected_return_date'] != null ? formatAppDate(r['expected_return_date']) : null,
           cycleNumber: (r['cycle_number'] as num?)?.toInt() ?? 1,
         ),
       )
@@ -794,7 +864,7 @@ final dispatchReportProvider =
   return rows
       .map(
         (r) => DispatchReportRow(
-          date: r['date'] as String? ?? '',
+          date: formatAppDate(r['date'] as String? ?? ''),
           partName: r['part_name'] as String? ?? '—',
           customerName: r['customer_name'] as String? ?? '—',
           dispatchQty: ((r['dispatch_qty'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
@@ -1072,7 +1142,7 @@ final ledgerMovementProvider =
   return rows
       .map(
         (r) => LedgerMovementRow(
-          date: r['date'] as String? ?? '',
+          date: formatAppDate(r['date'] as String? ?? ''),
           partName: r['part_name'] as String? ?? '—',
           stage: r['stage'] as String? ?? '',
           direction: r['direction'] as String? ?? '',
@@ -1115,13 +1185,18 @@ class BpHoldRow {
     required this.machineName,
     required this.qty,
     required this.reason,
+    this.direction = 'in',
+    this.runningBalance = 0,
   });
+
   final String date;
   final String partCode;
   final String partName;
   final String machineName;
   final double qty;
   final String reason;
+  final String direction;
+  final double runningBalance;
 }
 
 class RtvHoldRow {
@@ -1133,6 +1208,8 @@ class RtvHoldRow {
     required this.qty,
     required this.status,
     required this.agingDays,
+    this.direction = 'in',
+    this.runningBalance = 0,
   });
   final String date;
   final String partCode;
@@ -1141,6 +1218,8 @@ class RtvHoldRow {
   final double qty;
   final String status;
   final int agingDays;
+  final String direction;
+  final double runningBalance;
 }
 
 class HoldMaterialReportData {
@@ -1158,6 +1237,7 @@ class HoldMaterialReportData {
 final holdMaterialReportProvider =
     FutureProvider.autoDispose<HoldMaterialReportData>((ref) async {
   final db = ref.watch(databaseServiceProvider);
+  final range = ref.watch(reportDateRangeProvider);
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) {
     return const HoldMaterialReportData(
@@ -1166,71 +1246,61 @@ final holdMaterialReportProvider =
     );
   }
 
-  // Read the current ledger balance, not historical inspection rows. Opening
-  // stock and later adjustments must be visible here as soon as they are saved.
+  // BP Hold rows for the selected date range
   final bpRows = db.db.select(
     '''
     SELECT sl.date, p.code as part_code, p.name as part_name,
            COALESCE(sa.remarks, bi.remarks, 'BP quality hold') AS reason,
-           sl.running_balance AS qty
+           sl.qty, sl.running_balance, sl.direction,
+           COALESCE(m.name, 'BP Inspection') AS machine_name
     FROM stock_ledger sl
     INNER JOIN parts p ON p.id = sl.part_id AND p.factory_id = sl.factory_id
     LEFT JOIN stock_adjustments sa ON sa.id = sl.ref_id
       AND sa.factory_id = sl.factory_id
     LEFT JOIN bp_inspections bi ON bi.id = sl.ref_id
       AND bi.factory_id = sl.factory_id
+    LEFT JOIN machines m ON m.id = bi.machine_id
     WHERE sl.factory_id = ? AND sl.stage = 'bp_hold'
-      AND sl.rowid = (
-        SELECT current_row.rowid FROM stock_ledger current_row
-        WHERE current_row.factory_id = sl.factory_id
-          AND current_row.part_id = sl.part_id
-          AND current_row.stage = sl.stage
-        ORDER BY current_row.created_at DESC, current_row.rowid DESC LIMIT 1
-      )
-      AND sl.running_balance > 0
-    ORDER BY sl.date DESC
+      AND sl.date BETWEEN ? AND ?
+    ORDER BY sl.date DESC, sl.created_at DESC
   ''',
-    [factoryId],
+    [factoryId, range.fromStr, range.toStr],
   );
 
   final bpHoldList = bpRows.map((r) {
     return BpHoldRow(
-      date: r['date'] as String? ?? '',
+      date: formatAppDate(r['date'] as String? ?? ''),
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
-      machineName: 'BP Hold',
+      machineName: r['machine_name'] as String? ?? 'BP Hold',
       qty: ((r['qty'] ?? r['running_balance']) as num?)?.toDouble() ?? 0.0,
       reason: r['reason'] as String? ?? '—',
+      direction: r['direction'] as String? ?? 'in',
+      runningBalance: ((r['running_balance'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
     );
   }).toList();
 
-  // RTV held inside the company is distinct from material already sent to a
-  // vendor for rework. This tab reports only the former.
+  // RTV Hold rows for the selected date range
   final rtvRows = db.db.select(
     '''
     SELECT sl.date, p.code as part_code, p.name as part_name,
-           COALESCE(sa.remarks, 'Awaiting vendor rework') AS vendor_name,
-           sl.running_balance AS qty
+           COALESCE(v.name, sa.remarks, 'Awaiting vendor rework') AS vendor_name,
+           sl.qty, sl.running_balance, sl.direction, sl.stage
     FROM stock_ledger sl
     INNER JOIN parts p ON p.id = sl.part_id AND p.factory_id = sl.factory_id
     LEFT JOIN stock_adjustments sa ON sa.id = sl.ref_id
       AND sa.factory_id = sl.factory_id
-    WHERE sl.factory_id = ? AND sl.stage = 'rtv_stock'
-      AND sl.rowid = (
-        SELECT current_row.rowid FROM stock_ledger current_row
-        WHERE current_row.factory_id = sl.factory_id
-          AND current_row.part_id = sl.part_id
-          AND current_row.stage = sl.stage
-        ORDER BY current_row.created_at DESC, current_row.rowid DESC LIMIT 1
-      )
-      AND sl.running_balance > 0
-    ORDER BY sl.date DESC
+    LEFT JOIN rtvs r ON r.id = sl.ref_id AND r.factory_id = sl.factory_id
+    LEFT JOIN vendors v ON v.id = r.vendor_id AND v.factory_id = sl.factory_id
+    WHERE sl.factory_id = ? AND sl.stage IN ('rtv_stock', 'rtv_at_vendor')
+      AND sl.date BETWEEN ? AND ?
+    ORDER BY sl.date DESC, sl.created_at DESC
   ''',
-    [factoryId],
+    [factoryId, range.fromStr, range.toStr],
   );
 
   final rtvHoldList = rtvRows.map((r) {
-    final rtvDateStr = r['date'] as String;
+    final rtvDateStr = r['date'] as String? ?? '';
     int aging = 0;
     try {
       final parsedDate = DateTime.parse(rtvDateStr);
@@ -1238,13 +1308,15 @@ final holdMaterialReportProvider =
     } catch (_) {}
 
     return RtvHoldRow(
-      date: rtvDateStr,
+      date: formatAppDate(rtvDateStr),
       partCode: r['part_code'] as String? ?? '—',
       partName: r['part_name'] as String? ?? '—',
       vendorName: r['vendor_name'] as String? ?? '—',
       qty: ((r['qty'] ?? r['running_balance']) as num?)?.toDouble() ?? 0.0,
-      status: 'awaiting_vendor_rework',
+      status: r['stage'] == 'rtv_at_vendor' ? 'at_vendor_rework' : 'awaiting_vendor_rework',
       agingDays: aging,
+      direction: r['direction'] as String? ?? 'in',
+      runningBalance: ((r['running_balance'] ?? r['qty']) as num?)?.toDouble() ?? 0.0,
     );
   }).toList();
 
@@ -1256,12 +1328,37 @@ final holdMaterialReportProvider =
 
 // ─── 12. Vendor Movement (Sent & Received Detailed Logs) ──────────────────────
 
+class _VendorMovementPartFilterNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void set(String? s) => state = s;
+}
+
+final vendorMovementPartFilterProvider =
+    NotifierProvider<_VendorMovementPartFilterNotifier, String?>(
+  _VendorMovementPartFilterNotifier.new,
+);
+
+class _VendorMovementVendorFilterNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void set(String? s) => state = s;
+}
+
+final vendorMovementVendorFilterProvider =
+    NotifierProvider<_VendorMovementVendorFilterNotifier, String?>(
+  _VendorMovementVendorFilterNotifier.new,
+);
+
 class VendorDispatchRow {
   const VendorDispatchRow({
     required this.id,
+    required this.rawDate,
     required this.date,
     required this.time,
+    required this.partId,
     required this.partName,
+    required this.vendorId,
     required this.vendorName,
     required this.qty,
     required this.challanNumber,
@@ -1269,9 +1366,12 @@ class VendorDispatchRow {
     required this.remarks,
   });
   final String id;
+  final String rawDate;
   final String date;
   final String time;
+  final String partId;
   final String partName;
+  final String vendorId;
   final String vendorName;
   final double qty;
   final String challanNumber;
@@ -1282,8 +1382,11 @@ class VendorDispatchRow {
 class VendorReceiveRow {
   const VendorReceiveRow({
     required this.id,
+    required this.rawDate,
     required this.date,
+    required this.partId,
     required this.partName,
+    required this.vendorId,
     required this.vendorName,
     required this.qtyReceived,
     required this.supplierChallan,
@@ -1292,8 +1395,11 @@ class VendorReceiveRow {
     required this.dispatchChallan,
   });
   final String id;
+  final String rawDate;
   final String date;
+  final String partId;
   final String partName;
+  final String vendorId;
   final String vendorName;
   final double qtyReceived;
   final String supplierChallan;
@@ -1302,53 +1408,146 @@ class VendorReceiveRow {
   final String dispatchChallan;
 }
 
+class DailyVendorMovement {
+  const DailyVendorMovement({
+    required this.rawDate,
+    required this.displayDate,
+    required this.workOrderQty,
+    required this.physicalQty,
+    required this.dayDifference,
+    required this.runningBalance,
+    required this.dispatches,
+    required this.receipts,
+  });
+  final String rawDate;
+  final String displayDate;
+  final double workOrderQty;
+  final double physicalQty;
+  final double dayDifference;
+  final double runningBalance;
+  final List<VendorDispatchRow> dispatches;
+  final List<VendorReceiveRow> receipts;
+
+  bool get hasMovement => workOrderQty > 0 || physicalQty > 0;
+}
+
 class VendorMovementData {
   const VendorMovementData({
     required this.dispatches,
     required this.receipts,
+    required this.dailyMovements,
+    this.openingBalance = 0.0,
   });
   final List<VendorDispatchRow> dispatches;
   final List<VendorReceiveRow> receipts;
+  final List<DailyVendorMovement> dailyMovements;
+  final double openingBalance;
 
   double get totalDispatched =>
       dispatches.fold(0.0, (sum, item) => sum + item.qty);
   double get totalReceived =>
       receipts.fold(0.0, (sum, item) => sum + item.qtyReceived);
-  double get netPending => (totalDispatched - totalReceived).clamp(0, double.infinity);
+  double get netPending => (openingBalance + totalDispatched - totalReceived).clamp(0, double.infinity);
 }
 
 final vendorMovementProvider =
     FutureProvider.autoDispose<VendorMovementData>((ref) async {
   final db = ref.watch(databaseServiceProvider);
   final range = ref.watch(reportDateRangeProvider);
+  final partFilter = ref.watch(vendorMovementPartFilterProvider);
+  final vendorFilter = ref.watch(vendorMovementVendorFilterProvider);
+
   final factoryId = db.activeWorkspaceId.trim();
   if (factoryId.isEmpty) {
-    return const VendorMovementData(dispatches: [], receipts: []);
+    return const VendorMovementData(
+      dispatches: [],
+      receipts: [],
+      dailyMovements: [],
+    );
   }
 
-  // 1. Dispatches to Vendor
+  // 1. Opening balance prior to range.fromStr
+  double openingBalance = 0.0;
+  try {
+    final opDispWhere = StringBuffer('factory_id = ? AND date < ?');
+    final opDispParams = <Object?>[factoryId, range.fromStr];
+    if (partFilter != null && partFilter.isNotEmpty) {
+      opDispWhere.write(' AND part_id = ?');
+      opDispParams.add(partFilter);
+    }
+    if (vendorFilter != null && vendorFilter.isNotEmpty) {
+      opDispWhere.write(' AND vendor_id = ?');
+      opDispParams.add(vendorFilter);
+    }
+    final opDispRows = db.db.select(
+      'SELECT COALESCE(SUM(qty), 0) AS total FROM dispatch_to_facos WHERE $opDispWhere',
+      opDispParams,
+    );
+    final priorDisp = ((opDispRows.firstOrNull?['total']) as num?)?.toDouble() ?? 0.0;
+
+    final opRecWhere = StringBuffer('rf.factory_id = ? AND rf.date < ?');
+    final opRecParams = <Object?>[factoryId, range.fromStr];
+    if (partFilter != null && partFilter.isNotEmpty) {
+      opRecWhere.write(' AND rf.part_id = ?');
+      opRecParams.add(partFilter);
+    }
+    if (vendorFilter != null && vendorFilter.isNotEmpty) {
+      opRecWhere.write(' AND df.vendor_id = ?');
+      opRecParams.add(vendorFilter);
+    }
+    final opRecRows = db.db.select(
+      '''
+      SELECT COALESCE(SUM(rf.qty_received), 0) AS total
+      FROM receive_from_facos rf
+      LEFT JOIN dispatch_to_facos df ON df.id = rf.dispatch_ref_id AND df.factory_id = rf.factory_id
+      WHERE $opRecWhere
+      ''',
+      opRecParams,
+    );
+    final priorRec = ((opRecRows.firstOrNull?['total']) as num?)?.toDouble() ?? 0.0;
+    openingBalance = (priorDisp - priorRec).clamp(0, double.infinity);
+  } catch (_) {
+    openingBalance = 0.0;
+  }
+
+  // 2. Dispatches to Vendor in range
+  final dWhere = StringBuffer('df.factory_id = ? AND df.date BETWEEN ? AND ?');
+  final dParams = <Object?>[factoryId, range.fromStr, range.toStr];
+  if (partFilter != null && partFilter.isNotEmpty) {
+    dWhere.write(' AND df.part_id = ?');
+    dParams.add(partFilter);
+  }
+  if (vendorFilter != null && vendorFilter.isNotEmpty) {
+    dWhere.write(' AND df.vendor_id = ?');
+    dParams.add(vendorFilter);
+  }
+
   final dRows = db.db.select(
     '''
-    SELECT df.id, df.date, df.time, pt.name AS part_name, v.name AS vendor_name,
+    SELECT df.id, df.date AS raw_date, df.time, df.part_id, pt.name AS part_name,
+           df.vendor_id, v.name AS vendor_name,
            df.qty, COALESCE(df.challan_number, '') AS challan_number,
            COALESCE(df.batch_number, '') AS batch_number,
            COALESCE(df.remarks, '') AS remarks
     FROM dispatch_to_facos df
     LEFT JOIN parts pt ON pt.id = df.part_id AND pt.factory_id = df.factory_id
     LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
-    WHERE df.factory_id = ? AND df.date BETWEEN ? AND ?
+    WHERE $dWhere
     ORDER BY df.date DESC, df.time DESC
   ''',
-    [factoryId, range.fromStr, range.toStr],
+    dParams,
   );
 
   final dispatches = dRows
       .map(
         (r) => VendorDispatchRow(
           id: r['id'] as String? ?? '',
-          date: r['date'] as String? ?? '',
+          rawDate: r['raw_date'] as String? ?? '',
+          date: formatAppDate(r['raw_date'] as String? ?? ''),
           time: formatTimeWithoutSeconds(r['time'] as String?),
+          partId: r['part_id'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
+          vendorId: r['vendor_id'] as String? ?? '',
           vendorName: r['vendor_name'] as String? ?? '—',
           qty: ((r['qty'] ?? r['dispatch_qty']) as num?)?.toDouble() ?? 0.0,
           challanNumber: r['challan_number'] as String? ?? '—',
@@ -1358,10 +1557,22 @@ final vendorMovementProvider =
       )
       .toList();
 
-  // 2. Receipts from Vendor
+  // 3. Receipts from Vendor in range
+  final rWhere = StringBuffer('rf.factory_id = ? AND rf.date BETWEEN ? AND ?');
+  final rParams = <Object?>[factoryId, range.fromStr, range.toStr];
+  if (partFilter != null && partFilter.isNotEmpty) {
+    rWhere.write(' AND rf.part_id = ?');
+    rParams.add(partFilter);
+  }
+  if (vendorFilter != null && vendorFilter.isNotEmpty) {
+    rWhere.write(' AND df.vendor_id = ?');
+    rParams.add(vendorFilter);
+  }
+
   final rRows = db.db.select(
     '''
-    SELECT rf.id, rf.date, pt.name AS part_name, v.name AS vendor_name,
+    SELECT rf.id, rf.date AS raw_date, rf.part_id, pt.name AS part_name,
+           df.vendor_id, v.name AS vendor_name,
            rf.qty_received, COALESCE(rf.supplier_challan, '') AS supplier_challan,
            COALESCE(rf.batch_number, '') AS batch_number,
            COALESCE(rf.remarks, '') AS remarks,
@@ -1370,18 +1581,21 @@ final vendorMovementProvider =
     LEFT JOIN parts pt ON pt.id = rf.part_id AND pt.factory_id = rf.factory_id
     LEFT JOIN dispatch_to_facos df ON df.id = rf.dispatch_ref_id AND df.factory_id = rf.factory_id
     LEFT JOIN vendors v ON v.id = df.vendor_id AND v.factory_id = df.factory_id
-    WHERE rf.factory_id = ? AND rf.date BETWEEN ? AND ?
+    WHERE $rWhere
     ORDER BY rf.date DESC
   ''',
-    [factoryId, range.fromStr, range.toStr],
+    rParams,
   );
 
   final receipts = rRows
       .map(
         (r) => VendorReceiveRow(
           id: r['id'] as String? ?? '',
-          date: r['date'] as String? ?? '',
+          rawDate: r['raw_date'] as String? ?? '',
+          date: formatAppDate(r['raw_date'] as String? ?? ''),
+          partId: r['part_id'] as String? ?? '',
           partName: r['part_name'] as String? ?? '—',
+          vendorId: r['vendor_id'] as String? ?? '',
           vendorName: r['vendor_name'] as String? ?? '—',
           qtyReceived: ((r['qty_received'] ?? r['received']) as num?)?.toDouble() ?? 0.0,
           supplierChallan: r['supplier_challan'] as String? ?? '—',
@@ -1392,8 +1606,75 @@ final vendorMovementProvider =
       )
       .toList();
 
+  // 4. Build Date-wise Daily Movement Register
+  // Group all transactions by rawDate (YYYY-MM-DD)
+  final dateSet = <String>{};
+  for (final d in dispatches) {
+    if (d.rawDate.isNotEmpty) dateSet.add(d.rawDate);
+  }
+  for (final r in receipts) {
+    if (r.rawDate.isNotEmpty) dateSet.add(r.rawDate);
+  }
+
+  // Also include calendar days if range is <= 31 days so register matches physical book sequence
+  final daySpan = range.to.difference(range.from).inDays;
+  if (daySpan >= 0 && daySpan <= 31) {
+    for (int i = 0; i <= daySpan; i++) {
+      final curDate = range.from.add(Duration(days: i));
+      final curStr =
+          '${curDate.year}-${curDate.month.toString().padLeft(2, '0')}-${curDate.day.toString().padLeft(2, '0')}';
+      dateSet.add(curStr);
+    }
+  }
+
+  // Sort dates chronologically to calculate running balance
+  final sortedDates = dateSet.toList()..sort();
+
+  final Map<String, List<VendorDispatchRow>> dByDate = {};
+  for (final d in dispatches) {
+    dByDate.putIfAbsent(d.rawDate, () => []).add(d);
+  }
+
+  final Map<String, List<VendorReceiveRow>> rByDate = {};
+  for (final r in receipts) {
+    rByDate.putIfAbsent(r.rawDate, () => []).add(r);
+  }
+
+  double curRunningBalance = openingBalance;
+  final List<DailyVendorMovement> chronologicalMovements = [];
+
+  for (final dt in sortedDates) {
+    final dayDispatches = dByDate[dt] ?? [];
+    final dayReceipts = rByDate[dt] ?? [];
+
+    final daySent = dayDispatches.fold(0.0, (s, x) => s + x.qty);
+    final dayRec = dayReceipts.fold(0.0, (s, x) => s + x.qtyReceived);
+    final dayDiff = daySent - dayRec;
+    curRunningBalance += dayDiff;
+
+    chronologicalMovements.add(
+      DailyVendorMovement(
+        rawDate: dt,
+        displayDate: formatAppDate(dt),
+        workOrderQty: daySent,
+        physicalQty: dayRec,
+        dayDifference: dayDiff,
+        runningBalance: curRunningBalance,
+        dispatches: dayDispatches,
+        receipts: dayReceipts,
+      ),
+    );
+  }
+
+  // Present daily movements in descending order (latest day first) for convenient mobile browsing,
+  // while retaining correct running balance computed chronologically
+  final dailyMovements = chronologicalMovements.reversed.toList();
+
   return VendorMovementData(
     dispatches: dispatches,
     receipts: receipts,
+    dailyMovements: dailyMovements,
+    openingBalance: openingBalance,
   );
 });
+

@@ -670,15 +670,13 @@ class StockLedgerService {
     }
 
     if (rejectQty > 0) {
-      final rejectResult = await _writeCustomStage(
+      final rejectResult = await _writeIn(
         partId: partId,
-        stage: kProductionRejectedStage,
-        stageLabel: 'Production Rejected',
-        direction: LedgerDirection.in_,
+        stage: StockStage.bpRejected,
         qty: rejectQty,
+        refTable: 'productions',
         refId: refId,
         triggerSync: triggerSync,
-        queueForSync: queueForSync,
       );
       if (!rejectResult.success) return rejectResult;
     }

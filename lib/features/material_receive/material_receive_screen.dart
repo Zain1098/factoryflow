@@ -218,7 +218,7 @@ class _PlaceOrderTabState extends ConsumerState<_PlaceOrderTab> {
                 final oldDate = _recordedAt;
                 setState(() => _recordedAt = dt);
                 if (oldDate.day != dt.day || oldDate.month != dt.month) {
-                  if (_poCtrl.text.trim().isEmpty || _poCtrl.text.startsWith('PO-')) {
+                  if (_poCtrl.text.trim().isEmpty) {
                     _generatePoNumber();
                   }
                 }
@@ -375,6 +375,8 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
   String? _supplierId;
   String? _poRefId;
   double? _poOrderedQty;
+  double? _poRemainingQty;
+  double? _poReceivedQty;
   final _qtyCtrl = TextEditingController();
   final _poCtrl = TextEditingController();
   final _remarksCtrl = TextEditingController();
@@ -399,6 +401,8 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
       _partId = partId;
       _poRefId = null;
       _poOrderedQty = null;
+      _poRemainingQty = null;
+      _poReceivedQty = null;
       _openOrders = [];
     });
     if (partId != null) {
@@ -411,17 +415,28 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
 
   void _onPoSelected(String? poId) {
     if (poId == null) {
-      setState(() { _poRefId = null; _poOrderedQty = null; });
+      setState(() {
+        _poRefId = null;
+        _poOrderedQty = null;
+        _poRemainingQty = null;
+        _poReceivedQty = null;
+      });
       return;
     }
     final po = _openOrders.firstWhere((o) => o['id'] == poId);
+    final ordered = ((po['ordered_qty'] ?? po['qty']) as num?)?.toDouble() ?? 0.0;
+    final rcv = (po['received_qty'] as num?)?.toDouble() ?? 0.0;
+    final rem = ((po['remaining_qty'] as num?)?.toDouble() ?? (ordered - rcv)).clamp(0.0, double.infinity);
+
     setState(() {
       _poRefId = poId;
-      _poOrderedQty = ((po['ordered_qty'] ?? po['qty']) as num?)?.toDouble() ?? 0.0;
+      _poOrderedQty = ordered;
+      _poReceivedQty = rcv;
+      _poRemainingQty = rem;
       // Pre-fill supplier from PO
       _supplierId = po['supplier_id'] as String?;
-      // Pre-fill qty with ordered qty
-      _qtyCtrl.text = _poOrderedQty!.toStringAsFixed(0);
+      // Pre-fill qty with remaining balance if partial, otherwise ordered qty
+      _qtyCtrl.text = rem > 0 ? rem.toStringAsFixed(0) : ordered.toStringAsFixed(0);
       // Auto-fill PO / Challan field with linked PO number
       final poNum = (po['po_number'] as String?)?.trim();
       if (poNum != null && poNum.isNotEmpty) {
@@ -433,7 +448,15 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
   double get _shortfall {
     if (_poOrderedQty == null) return 0;
     final received = double.tryParse(_qtyCtrl.text) ?? 0;
-    return (_poOrderedQty! - received).clamp(0.0, double.infinity);
+    final target = _poRemainingQty ?? _poOrderedQty!;
+    return (target - received).clamp(0.0, double.infinity);
+  }
+
+  double get _excess {
+    if (_poOrderedQty == null) return 0;
+    final received = double.tryParse(_qtyCtrl.text) ?? 0;
+    final target = _poRemainingQty ?? _poOrderedQty!;
+    return (received - target).clamp(0.0, double.infinity);
   }
 
   Future<void> _save() async {
@@ -494,6 +517,8 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
       _supplierId = null;
       _poRefId = null;
       _poOrderedQty = null;
+      _poRemainingQty = null;
+      _poReceivedQty = null;
       _openOrders = [];
       _recordedAt = DateTime.now();
     });
@@ -505,6 +530,7 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
     final parts = ref.watch(partsProvider);
     final suppliers = ref.watch(suppliersProvider);
     final shortfall = _shortfall;
+    final excess = _excess;
 
     return EntryFormScroll(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -556,10 +582,12 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
                         ..._openOrders.map((o) {
                           final poNum = (o['po_number'] as String?)?.trim();
                           final displayPo = (poNum != null && poNum.isNotEmpty) ? poNum : 'PO';
-                          final qtyStr = (o['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0';
+                          final ordStr = (o['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0';
+                          final rcvStr = (o['received_qty'] as num?)?.toStringAsFixed(0) ?? '0';
+                          final remStr = (o['remaining_qty'] as num?)?.toStringAsFixed(0) ?? '0';
                           return DropdownMenuItem(
                             value: o['id'] as String,
-                            child: Text('$displayPo · $qtyStr PCS'),
+                            child: Text('$displayPo · $rcvStr / $ordStr ($remStr Rem)'),
                           );
                         }),
                       ],
@@ -584,20 +612,32 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
                         ? Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: (shortfall > 0 ? Colors.orange : Colors.green).withValues(alpha: 0.15),
+                              color: (excess > 0
+                                      ? Colors.blue
+                                      : (shortfall > 0 ? Colors.orange : Colors.green))
+                                  .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
-                                color: (shortfall > 0 ? Colors.orange : Colors.green).withValues(alpha: 0.4),
+                                color: (excess > 0
+                                        ? Colors.blue
+                                        : (shortfall > 0 ? Colors.orange : Colors.green))
+                                    .withValues(alpha: 0.4),
                               ),
                             ),
                             child: Text(
-                              shortfall > 0
-                                  ? 'SHORTFALL: ${shortfall.toStringAsFixed(0)} PCS'
-                                  : 'ORDER FULFILLED',
+                              excess > 0
+                                  ? 'EXCESS: +${excess.toStringAsFixed(0)} PCS'
+                                  : (shortfall > 0
+                                      ? 'PENDING: ${shortfall.toStringAsFixed(0)} PCS'
+                                      : 'ORDER FULFILLED'),
                               style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: shortfall > 0 ? Colors.orange.shade800 : Colors.green.shade800,
+                                color: excess > 0
+                                    ? Colors.blue.shade800
+                                    : (shortfall > 0
+                                        ? Colors.orange.shade800
+                                        : Colors.green.shade800),
                               ),
                             ),
                           )
@@ -611,20 +651,70 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
                         color: theme.colorScheme.primaryContainer.withValues(alpha: 0.25),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
                         children: [
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Icon(Icons.assignment_outlined, size: 16),
-                              const SizedBox(width: 6),
-                              Text('Ordered from Supplier:', style: theme.textTheme.bodySmall),
+                              Row(
+                                children: [
+                                  const Icon(Icons.assignment_outlined, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text('Total PO Ordered:', style: theme.textTheme.bodySmall),
+                                ],
+                              ),
+                              Text(
+                                '${_poOrderedQty!.toStringAsFixed(0)} PCS',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
                             ],
                           ),
-                          Text(
-                            '${_poOrderedQty!.toStringAsFixed(0)} PCS',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
+                          if (_poReceivedQty != null && _poReceivedQty! > 0) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.check_circle_outline, size: 16, color: Colors.green),
+                                    const SizedBox(width: 6),
+                                    Text('Previously Received:', style: theme.textTheme.bodySmall),
+                                  ],
+                                ),
+                                Text(
+                                  '${_poReceivedQty!.toStringAsFixed(0)} PCS',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          if (_poRemainingQty != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.hourglass_bottom, size: 16, color: Colors.orange),
+                                    const SizedBox(width: 6),
+                                    Text('Remaining Balance:', style: theme.textTheme.bodySmall),
+                                  ],
+                                ),
+                                Text(
+                                  '${_poRemainingQty!.toStringAsFixed(0)} PCS',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -686,8 +776,27 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
                           context,
                           title: 'Scan Supplier Challan / PO',
                         );
-                        if (code != null && code.isNotEmpty) {
-                          _poCtrl.text = code;
+                        if (code != null && code.trim().isNotEmpty) {
+                          final cleanCode = code.trim();
+                          _poCtrl.text = cleanCode;
+                          final match = await ref
+                              .read(purchaseOrderRepositoryProvider)
+                              .findByPoNumber(cleanCode);
+                          if (match != null && mounted) {
+                            final matchPartId = match['part_id'] as String?;
+                            if (matchPartId != null) {
+                              await _onPartChanged(matchPartId);
+                              _onPoSelected(match['id'] as String?);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Auto-linked to PO: $cleanCode (${match['part_code']})',
+                                  ),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          }
                         }
                       },
                     ),
@@ -742,7 +851,17 @@ class _ReceiveMaterialTabState extends ConsumerState<_ReceiveMaterialTab> {
 
 // ─── Tab 3: History ───────────────────────────────────────────────────────────
 
-// ─── Tab 3: History ───────────────────────────────────────────────────────────
+DateTime _parseRecordedAt(String? dateStr, String? timeStr) {
+  if (dateStr == null || dateStr.trim().isEmpty) return DateTime.now();
+  final d = DateTime.tryParse(dateStr.trim()) ?? DateTime.now();
+  if (timeStr != null && timeStr.contains(':')) {
+    final parts = timeStr.split(':');
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+    return DateTime(d.year, d.month, d.day, h, m);
+  }
+  return d;
+}
 
 class _HistoryTab extends ConsumerStatefulWidget {
   @override
@@ -866,6 +985,20 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
                             '${(r['ordered_qty'] as num?)?.toStringAsFixed(0) ?? '0'} PCS',
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                           ),
+                          if (r['received_qty'] != null && (r['received_qty'] as num) > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                '${(r['received_qty'] as num).toInt()} rcv · ${(r['remaining_qty'] as num?)?.toInt() ?? 0} rem',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: (r['remaining_qty'] as num? ?? 0) <= 0
+                                      ? Colors.green.shade700
+                                      : Colors.blue.shade800,
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 4),
                           _StatusChip(status),
                         ],
@@ -1483,7 +1616,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
     final poCtrl = TextEditingController(text: r['po_number'] as String? ?? '');
     final remarksCtrl = TextEditingController(text: r['remarks'] as String? ?? '');
     String selectedStatus = r['status'] as String? ?? 'pending';
-    DateTime recordedAt = DateTime.tryParse(r['date'] as String? ?? '') ?? DateTime.now();
+    DateTime recordedAt = _parseRecordedAt(r['date'] as String?, r['time'] as String?);
 
     await showDialog<void>(
       context: context,
@@ -1659,6 +1792,28 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
   }
 
   Future<void> _confirmDeleteOrder(BuildContext context, Map<String, dynamic> r) async {
+    final receivedQty = (r['received_qty'] as num?)?.toDouble() ?? 0.0;
+    if (receivedQty > 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 36),
+          title: const Text('Cannot Delete Order'),
+          content: Text(
+            'Material (${receivedQty.toInt()} PCS) has already been received against this Purchase Order (${r['po_number'] ?? r['part_code']}).\n\n'
+            'To preserve the factory audit trail and inventory integrity, please delete the associated material receipts first before deleting this order.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showConfirmDialog(
       context,
       title: 'Delete Purchase Order?',
@@ -1776,7 +1931,7 @@ class _HistoryTabState extends ConsumerState<_HistoryTab>
     final poCtrl = TextEditingController(text: r['po_id'] as String? ?? '');
     final remarksCtrl = TextEditingController(text: r['remarks'] as String? ?? '');
     String? selectedPoRefId = r['po_ref_id'] as String?;
-    DateTime recordedAt = DateTime.tryParse(r['date'] as String? ?? '') ?? DateTime.now();
+    DateTime recordedAt = _parseRecordedAt(r['date'] as String?, r['time'] as String?);
 
     List<Map<String, dynamic>> openOrders = [];
     if (selectedPartId.isNotEmpty) {

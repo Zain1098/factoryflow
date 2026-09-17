@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'report_providers.dart';
+import '../../core/providers/master_data_providers.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../../core/services/export_service.dart';
 
@@ -16,14 +17,6 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   int _selectedCategoryIndex = 0; // 0 = All, 1 = Production, 2 = Quality, 3 = Inventory
-  String _searchQuery = '';
-  final TextEditingController _searchCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -128,20 +121,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       displayedSections = allSections;
     }
 
-    // Filter by Search Query
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      displayedSections = displayedSections
-          .map((sec) {
-            final filteredTiles = sec.tiles.where((t) {
-              return t.title.toLowerCase().contains(q) ||
-                  t.subtitle.toLowerCase().contains(q);
-            }).toList();
-            return _ReportSection(sec.title, sec.color, filteredTiles);
-          })
-          .where((sec) => sec.tiles.isNotEmpty)
-          .toList();
-    }
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surfaceContainerLowest,
@@ -191,47 +170,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
           const SizedBox(height: 14),
 
-          // ── Search & Filter Field ──────────────────────────────────────────
-          Container(
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
-              ),
-            ),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (val) => setState(() => _searchQuery = val.trim()),
-              style: const TextStyle(fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Filter reports by name or metric...',
-                hintStyle: TextStyle(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-                prefixIcon: const Icon(Icons.filter_list_rounded, size: 18),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded, size: 16),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.transparent,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           // ── Category Pills (All, Production, Quality, Inventory) ───────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -262,13 +200,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     color: theme.colorScheme.outline,
                   ),
                   const SizedBox(height: 10),
-                  Text(
-                    'No reports match "$_searchQuery"',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  const Text(
+                    'No reports found in this category',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Try searching for production, reject, stock, downtime...',
+                    'Select "All Reports" to view all available reports.',
                     style: TextStyle(
                       fontSize: 12,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -410,6 +348,322 @@ class _DateRangeChips extends ConsumerWidget {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Reusable In-Screen Date Range & Calendar Header ────────────────────────
+
+class _ReportDateHeader extends ConsumerWidget {
+  const _ReportDateHeader({
+    required this.accentColor,
+    this.title,
+  });
+
+  final Color accentColor;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final presets = [
+      ('Today', DateRange.today()),
+      ('Yesterday', DateRange.yesterday()),
+      ('This Week', DateRange.thisWeek()),
+      ('This Month', DateRange.thisMonth()),
+      ('Last 30d', DateRange.last30()),
+      ('All Time', DateRange.allTime()),
+    ];
+
+    final isSingleDay = range.fromStr == range.toStr;
+    final dateDisplayText = isSingleDay
+        ? formatAppDate(range.from)
+        : '${formatAppDate(range.from)} – ${formatAppDate(range.to)}';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 10, 14, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2430) : theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.28),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withValues(alpha: 0.07),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.calendar_month_rounded, size: 18, color: accentColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title ?? 'FILTER BY DATE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      dateDisplayText,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: () => _pickCustomDateRange(context, ref, range),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_calendar_rounded, size: 14, color: accentColor),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Change',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: accentColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: presets.map((p) {
+                final isSelected =
+                    range.fromStr == p.$2.fromStr && range.toStr == p.$2.toStr;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(p.$1),
+                    selected: isSelected,
+                    onSelected: (_) =>
+                        ref.read(reportDateRangeProvider.notifier).set(p.$2),
+                    selectedColor: accentColor,
+                    backgroundColor: isDark
+                        ? const Color(0xFF272F3E)
+                        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      fontSize: 11,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: isSelected
+                            ? Colors.transparent
+                            : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickCustomDateRange(
+    BuildContext context,
+    WidgetRef ref,
+    DateRange current,
+  ) async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(
+        start: current.from.isBefore(DateTime(2023)) ? DateTime.now() : current.from,
+        end: current.to.isBefore(DateTime(2023)) ? DateTime.now() : current.to,
+      ),
+      helpText: 'Select Date Range for Report',
+      saveText: 'Apply',
+    );
+    if (picked != null) {
+      ref.read(reportDateRangeProvider.notifier).set(
+            DateRange(picked.start, picked.end),
+          );
+    }
+  }
+}
+
+// ─── Floating Part Total Summary Box ────────────────────────────────────────
+
+class _ReportPartSummaryBox extends StatelessWidget {
+  const _ReportPartSummaryBox({
+    required this.partTotals,
+    required this.title,
+    this.accentColor = Colors.tealAccent,
+    this.backgroundColor = const Color(0xFF0F382C),
+    this.icon = Icons.inventory_2_outlined,
+  });
+
+  final Map<String, double> partTotals;
+  final String title;
+  final Color accentColor;
+  final Color backgroundColor;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    if (partTotals.isEmpty) return const SizedBox.shrink();
+
+    final grandTotal = partTotals.values.fold(0.0, (sum, q) => sum + q);
+
+    return Positioned(
+      right: 16,
+      bottom: 16,
+      child: Material(
+        elevation: 8,
+        borderRadius: BorderRadius.circular(14),
+        color: backgroundColor,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 260, minWidth: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: accentColor.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        icon,
+                        size: 14,
+                        color: accentColor,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${grandTotal == grandTotal.toInt() ? grandTotal.toInt() : grandTotal.toStringAsFixed(1)} PCS',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Divider(color: Colors.white24, height: 1),
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 120),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: partTotals.entries.map(
+                      (e) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${e.key} :',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${e.value == e.value.toInt() ? e.value.toInt() : e.value.toStringAsFixed(1)} PCS',
+                              style: TextStyle(
+                                color: accentColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1403,41 +1657,326 @@ class _MachineReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(machineReportProvider);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalProd = data.fold(0.0, (s, r) => s + r.totalProduction);
+      final totalGood = data.fold(0.0, (s, r) => s + r.goodQty);
+      final totalRej = data.fold(0.0, (s, r) => s + r.bpReject);
       final totalDt = data.fold(0, (s, r) => s + r.downtimeMinutes);
-      return _ReportPage(
-        title: 'Machine-wise Report',
-        color: Colors.blue,
-        summaryCards: [
-          _SummaryCard('Total Prod', _n(totalProd)),
-          _SummaryCard('Machines', '${data.length}'),
-          _SummaryCard('Total Downtime', _mins(totalDt)),
-        ],
-        tableHeader: const [
-          'Machine',
-          'Production',
-          'BP Rej',
-          'Good',
-          'Rej %',
-          'Downtime',
-          'Days',
-        ],
-        rows: data
-            .map(
-              (r) => [
-                r.machineName,
-                _n(r.totalProduction),
-                _n(r.bpReject),
-                _n(r.goodQty),
-                _pct(r.rejectPct),
-                _mins(r.downtimeMinutes),
-                '${r.runDays}',
+
+      // Group totals per part across all machines for floating summary box
+      final Map<String, double> partTotals = {};
+      for (final m in data) {
+        for (final p in m.parts) {
+          partTotals[p.partName] = (partTotals[p.partName] ?? 0.0) + p.totalQty;
+        }
+      }
+
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Machine-wise Report'),
+        ),
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                const _ReportDateHeader(
+                  accentColor: Colors.blueAccent,
+                  title: 'MACHINE PERFORMANCE PERIOD',
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Total Output',
+                          value: '${totalProd == totalProd.toInt() ? totalProd.toInt() : totalProd} PCS',
+                          color: Colors.blueAccent,
+                          icon: Icons.precision_manufacturing_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Good Parts',
+                          value: '${totalGood == totalGood.toInt() ? totalGood.toInt() : totalGood} PCS',
+                          color: Colors.green,
+                          icon: Icons.check_circle_outline_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'BP Rejects',
+                          value: '${totalRej == totalRej.toInt() ? totalRej.toInt() : totalRej} PCS',
+                          color: Colors.redAccent,
+                          icon: Icons.cancel_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Total Downtime',
+                          value: _mins(totalDt),
+                          color: Colors.orangeAccent,
+                          icon: Icons.timer_outlined,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: data.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.precision_manufacturing_outlined,
+                                size: 56,
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No machine data found for selected period',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+                          itemCount: data.length,
+                          itemBuilder: (context, i) {
+                            final r = data[i];
+                            final hasProd = r.totalProduction > 0;
+                            final rejRate = r.rejectPct;
+                            final rateColor = rejRate > 5
+                                ? Colors.redAccent
+                                : (rejRate > 2 ? Colors.orange : Colors.green);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF1E2430)
+                                    : theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: hasProd
+                                      ? Colors.blueAccent.withValues(alpha: 0.3)
+                                      : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                                  width: hasProd ? 1.2 : 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: (hasProd ? Colors.blueAccent : Colors.grey)
+                                              .withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Icon(
+                                          Icons.precision_manufacturing_rounded,
+                                          size: 18,
+                                          color: hasProd ? Colors.blueAccent : Colors.grey,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              r.machineName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Active in period: ${r.runDays} day${r.runDays == 1 ? '' : 's'}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: theme.colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: (hasProd ? Colors.green : Colors.grey)
+                                              .withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          hasProd ? 'PRODUCING' : 'IDLE',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: hasProd ? Colors.green : Colors.grey,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF171B24)
+                                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        _MetricItem(
+                                          label: 'Production',
+                                          value: '${_n(r.totalProduction)} PCS',
+                                          bold: true,
+                                        ),
+                                        _MetricItem(
+                                          label: 'Good Qty',
+                                          value: '${_n(r.goodQty)} PCS',
+                                          color: Colors.green,
+                                        ),
+                                        _MetricItem(
+                                          label: 'BP Rej',
+                                          value: '${_n(r.bpReject)} PCS',
+                                          color: Colors.redAccent,
+                                        ),
+                                        _MetricItem(
+                                          label: 'Downtime',
+                                          value: _mins(r.downtimeMinutes),
+                                          color: Colors.orangeAccent,
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: rateColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: rateColor.withValues(alpha: 0.3)),
+                                          ),
+                                          child: Text(
+                                            _pct(r.rejectPct),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: rateColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (r.parts.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'PARTS PRODUCED ON THIS MACHINE',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.7,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: r.parts.map((pt) {
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: isDark
+                                                ? const Color(0xFF232A38)
+                                                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                pt.partName,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                '${pt.totalQty.toInt()} PCS',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.blueAccent,
+                                                ),
+                                              ),
+                                              if (pt.rejectQty > 0) ...[
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '(${pt.rejectQty.toInt()} Rej)',
+                                                  style: const TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.redAccent,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ],
-            )
-            .toList(),
-        emptyMessage: 'No machine data for selected range',
+            ),
+            _ReportPartSummaryBox(
+              partTotals: partTotals,
+              title: 'TOTAL PRODUCED',
+              accentColor: Colors.lightBlueAccent,
+              backgroundColor: const Color(0xFF0C2436),
+              icon: Icons.precision_manufacturing_rounded,
+            ),
+          ],
+        ),
       );
     });
   }
@@ -1566,50 +2105,32 @@ class _RejectReport extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(rejectAnalysisProvider);
     final range = ref.watch(reportDateRangeProvider);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return _loadingOrError(async, () {
       final data = async.value!;
       final totalBp = data.fold(0.0, (s, r) => s + r.bpReject);
       final totalAp = data.fold(0.0, (s, r) => s + r.apReject);
       final totalProd = data.fold(0.0, (s, r) => s + r.production);
-      final overallPct =
-          totalProd > 0 ? ((totalBp + totalAp) / totalProd * 100) : 0.0;
-      return _ReportPage(
-        title: 'Reject Analysis',
-        color: Colors.red,
-        summaryCards: [
-          _SummaryCard('BP Reject', _n(totalBp)),
-          _SummaryCard('AP Reject', _n(totalAp)),
-          _SummaryCard('Total Rej', _n(totalBp + totalAp)),
-          _SummaryCard('Overall %', _pct(overallPct)),
-        ],
-        tableHeader: const [
-          'Date',
-          'Part',
-          'Production',
-          'BP Rej',
-          'AP Rej',
-          'Total',
-          'Rej %',
-        ],
-        rows: data
-            .map(
-              (r) => [
-                _fmtDate(r.date),
-                r.partName.length > 12
-                    ? '${r.partName.substring(0, 12)}…'
-                    : r.partName,
-                _n(r.production),
-                _n(r.bpReject),
-                _n(r.apReject),
-                _n(r.totalReject),
-                _pct(r.rejectPct),
-              ],
-            )
-            .toList(),
-        emptyMessage: 'No reject data for selected range',
-        onExport: data.isEmpty
-            ? null
-            : () => ExportSheet.show(
+      final totalRej = totalBp + totalAp;
+      final overallPct = totalProd > 0 ? (totalRej / totalProd * 100) : 0.0;
+
+      // Group totals per part for the floating summary box
+      final Map<String, double> partTotals = {};
+      for (final r in data) {
+        partTotals[r.partName] = (partTotals[r.partName] ?? 0.0) + r.totalReject;
+      }
+
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Reject & Defect Analysis'),
+          actions: [
+            if (data.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.ios_share_rounded),
+                tooltip: 'Export Report',
+                onPressed: () => ExportSheet.show(
                   context: context,
                   onExcel: () => ExportService.exportQualityReport(
                     context: context,
@@ -1626,6 +2147,223 @@ class _RejectReport extends ConsumerWidget {
                     format: ExportFormat.pdf,
                   ),
                 ),
+              ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                const _ReportDateHeader(
+                  accentColor: Color(0xFFEF5350),
+                  title: 'REJECT ANALYSIS PERIOD',
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Total Rejections',
+                          value: '${totalRej == totalRej.toInt() ? totalRej.toInt() : totalRej} PCS',
+                          color: const Color(0xFFEF5350),
+                          icon: Icons.cancel_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'BP Rejects',
+                          value: '${totalBp == totalBp.toInt() ? totalBp.toInt() : totalBp} PCS',
+                          color: Colors.amber.shade700,
+                          icon: Icons.warning_amber_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'AP Rejects',
+                          value: '${totalAp == totalAp.toInt() ? totalAp.toInt() : totalAp} PCS',
+                          color: Colors.purpleAccent,
+                          icon: Icons.assignment_late_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Rejection Rate',
+                          value: _pct(overallPct),
+                          color: overallPct > 5
+                              ? Colors.redAccent
+                              : (overallPct > 2 ? Colors.orangeAccent : Colors.green),
+                          icon: Icons.percent_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: data.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 56,
+                                color: Colors.green.withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No rejection records found for selected period',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+                          itemCount: data.length,
+                          itemBuilder: (context, i) {
+                            final r = data[i];
+                            final rejRate = r.rejectPct;
+                            final rateColor = rejRate > 5
+                                ? Colors.redAccent
+                                : (rejRate > 2 ? Colors.orange : Colors.green);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF1E2430)
+                                    : theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEF5350).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(
+                                          Icons.precision_manufacturing_outlined,
+                                          size: 16,
+                                          color: Color(0xFFEF5350),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          r.partName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          _fmtDate(r.date),
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: theme.colorScheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF171B24)
+                                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        _MetricItem(label: 'Production', value: '${_n(r.production)} PCS'),
+                                        _MetricItem(
+                                          label: 'BP Rej',
+                                          value: '${_n(r.bpReject)} PCS',
+                                          color: Colors.amber.shade700,
+                                        ),
+                                        _MetricItem(
+                                          label: 'AP Rej',
+                                          value: '${_n(r.apReject)} PCS',
+                                          color: Colors.purpleAccent,
+                                        ),
+                                        _MetricItem(
+                                          label: 'Total Rej',
+                                          value: '${_n(r.totalReject)} PCS',
+                                          color: const Color(0xFFEF5350),
+                                          bold: true,
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: rateColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: rateColor.withValues(alpha: 0.3)),
+                                          ),
+                                          child: Text(
+                                            _pct(r.rejectPct),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: rateColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+            _ReportPartSummaryBox(
+              partTotals: partTotals,
+              title: 'TOTAL REJECTS',
+              accentColor: const Color(0xFFFF5252),
+              backgroundColor: const Color(0xFF2A1215),
+              icon: Icons.cancel_presentation_rounded,
+            ),
+          ],
+        ),
       );
     });
   }
@@ -1639,45 +2377,277 @@ class _RtvReport extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(rtvReportProvider);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return _loadingOrError(async, () {
       final data = async.value!;
-      return _ReportPage(
-        title: 'RTV Analysis',
-        color: Colors.deepOrange,
-        summaryCards: [
-          _SummaryCard('Total RTV', _n(data.totalRtvQty)),
-          _SummaryCard('Pending', '${data.pendingCount}'),
-          _SummaryCard('Entries', '${data.length}'),
-        ],
-        tableHeader: const [
-          'Date',
-          'Part',
-          'Vendor',
-          'Qty',
-          'Status',
-          'Exp. Return',
-          'Cycle',
-        ],
-        rows: data
-            .map(
-              (r) => [
-                _fmtDate(r.date),
-                r.partName.length > 10
-                    ? '${r.partName.substring(0, 10)}…'
-                    : r.partName,
-                r.vendorName.length > 10
-                    ? '${r.vendorName.substring(0, 10)}…'
-                    : r.vendorName,
-                _n(r.rtvQty),
-                r.status,
-                r.expectedReturn != null ? _fmtDate(r.expectedReturn!) : '—',
-                '#${r.cycleNumber}',
+      final totalRtv = data.totalRtvQty;
+      final pendingCount = data.pendingCount;
+
+      // Group totals per part for the floating summary box
+      final Map<String, double> partTotals = {};
+      for (final r in data) {
+        partTotals[r.partName] = (partTotals[r.partName] ?? 0.0) + r.rtvQty;
+      }
+
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('RTV & Vendor Debit Notes'),
+        ),
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                const _ReportDateHeader(
+                  accentColor: Color(0xFFFF9100),
+                  title: 'RTV FILTER PERIOD',
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Total RTV Qty',
+                          value: '${totalRtv == totalRtv.toInt() ? totalRtv.toInt() : totalRtv} PCS',
+                          color: const Color(0xFFFF9100),
+                          icon: Icons.assignment_return_outlined,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Pending Rework',
+                          value: '$pendingCount',
+                          color: Colors.redAccent,
+                          icon: Icons.hourglass_top_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Total Records',
+                          value: '${data.length}',
+                          color: Colors.blueAccent,
+                          icon: Icons.receipt_long_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: data.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.inbox_outlined,
+                                size: 56,
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No RTV records found for selected period',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+                          itemCount: data.length,
+                          itemBuilder: (context, i) {
+                            final r = data[i];
+                            final isPending = r.status.toLowerCase().contains('pending');
+                            final statusColor = isPending ? Colors.orange : Colors.green;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF1E2430)
+                                    : theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFF9100).withValues(alpha: 0.14),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(
+                                          Icons.assignment_return_rounded,
+                                          size: 16,
+                                          color: Color(0xFFFF9100),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              r.partName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Row(
+                                              children: [
+                                                Icon(Icons.storefront_outlined, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  r.vendorName,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: theme.colorScheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            '${_n(r.rtvQty)} PCS',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFFFF9100),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              r.status.toUpperCase(),
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: statusColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Date: ${_fmtDate(r.date)} · Cycle: #${r.cycleNumber}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      if (r.expectedReturn != null)
+                                        Text(
+                                          'Exp: ${r.expectedReturn}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme.colorScheme.primary,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ],
-            )
-            .toList(),
-        emptyMessage: 'No RTV data for selected range',
+            ),
+            _ReportPartSummaryBox(
+              partTotals: partTotals,
+              title: 'TOTAL RTV',
+              accentColor: const Color(0xFFFF9100),
+              backgroundColor: const Color(0xFF2E1C0A),
+              icon: Icons.assignment_return_outlined,
+            ),
+          ],
+        ),
       );
     });
+  }
+}
+
+class _MetricItem extends StatelessWidget {
+  const _MetricItem({
+    required this.label,
+    required this.value,
+    this.color,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final Color? color;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 9.5,
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+            color: color ?? theme.colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1742,11 +2712,12 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   String _search = '';
+  bool _activeDaysOnly = false; // false = Show all days in register (like physical book)
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -1755,28 +2726,779 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
     super.dispose();
   }
 
+  void _pickDateRange(BuildContext context) async {
+    final current = ref.read(reportDateRangeProvider);
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(
+        start: current.from.isBefore(DateTime(2020)) ? DateTime.now() : current.from,
+        end: current.to.isBefore(DateTime(2020)) ? DateTime.now() : current.to,
+      ),
+      helpText: 'Select Date Range for Movement Register',
+      saveText: 'Apply',
+    );
+    if (picked != null) {
+      ref.read(reportDateRangeProvider.notifier).set(
+            DateRange(picked.start, picked.end),
+          );
+    }
+  }
+
+  void _openPartPicker(BuildContext context, List<Map<String, dynamic>> parts) {
+    final selectedPartId = ref.read(vendorMovementPartFilterProvider);
+    String filterText = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filteredList = parts.where((p) {
+              if (filterText.isEmpty) return true;
+              final name = (p['name'] ?? '').toString().toLowerCase();
+              final num = (p['part_number'] ?? '').toString().toLowerCase();
+              final q = filterText.toLowerCase();
+              return name.contains(q) || num.contains(q);
+            }).toList();
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.65,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (_, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.category_rounded, size: 20),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Select Product / Part',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (selectedPartId != null)
+                            TextButton(
+                              onPressed: () {
+                                ref
+                                    .read(vendorMovementPartFilterProvider.notifier)
+                                    .set(null);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('Clear Filter'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (val) => setModalState(() => filterText = val.trim()),
+                        decoration: InputDecoration(
+                          hintText: 'Search product name or number...',
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: filteredList.length + 1,
+                          itemBuilder: (context, idx) {
+                            if (idx == 0) {
+                              final isAll = selectedPartId == null;
+                              return ListTile(
+                                leading: Icon(
+                                  Icons.all_inclusive_rounded,
+                                  color: isAll ? Colors.teal : Colors.grey,
+                                ),
+                                title: const Text(
+                                  'All Products',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                trailing: isAll
+                                    ? const Icon(Icons.check_circle, color: Colors.teal)
+                                    : null,
+                                onTap: () {
+                                  ref
+                                      .read(vendorMovementPartFilterProvider.notifier)
+                                      .set(null);
+                                  Navigator.pop(ctx);
+                                },
+                              );
+                            }
+                            final part = filteredList[idx - 1];
+                            final id = part['id']?.toString() ?? '';
+                            final name = part['name']?.toString() ?? '—';
+                            final partNo = part['part_number']?.toString() ?? '';
+                            final isSelected = selectedPartId == id;
+
+                            return ListTile(
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isSelected
+                                    ? Colors.teal.withValues(alpha: 0.2)
+                                    : Colors.grey.shade200,
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.teal : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                name,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                              subtitle: partNo.isNotEmpty
+                                  ? Text('No: $partNo', style: const TextStyle(fontSize: 11))
+                                  : null,
+                              trailing: isSelected
+                                  ? const Icon(Icons.check_circle, color: Colors.teal)
+                                  : null,
+                              onTap: () {
+                                ref
+                                    .read(vendorMovementPartFilterProvider.notifier)
+                                    .set(id);
+                                Navigator.pop(ctx);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openVendorPicker(BuildContext context, List<Map<String, dynamic>> vendors) {
+    final selectedVendorId = ref.read(vendorMovementVendorFilterProvider);
+    String filterText = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filteredList = vendors.where((v) {
+              if (filterText.isEmpty) return true;
+              final name = (v['name'] ?? '').toString().toLowerCase();
+              return name.contains(filterText.toLowerCase());
+            }).toList();
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (_, scrollController) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(Icons.business_rounded, size: 20),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Select Vendor (Faco)',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (selectedVendorId != null)
+                            TextButton(
+                              onPressed: () {
+                                ref
+                                    .read(vendorMovementVendorFilterProvider.notifier)
+                                    .set(null);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('Clear Filter'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (val) => setModalState(() => filterText = val.trim()),
+                        decoration: InputDecoration(
+                          hintText: 'Search vendor name...',
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: filteredList.length + 1,
+                          itemBuilder: (context, idx) {
+                            if (idx == 0) {
+                              final isAll = selectedVendorId == null;
+                              return ListTile(
+                                leading: Icon(
+                                  Icons.all_inclusive_rounded,
+                                  color: isAll ? Colors.teal : Colors.grey,
+                                ),
+                                title: const Text(
+                                  'All Vendors',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                trailing: isAll
+                                    ? const Icon(Icons.check_circle, color: Colors.teal)
+                                    : null,
+                                onTap: () {
+                                  ref
+                                      .read(vendorMovementVendorFilterProvider.notifier)
+                                      .set(null);
+                                  Navigator.pop(ctx);
+                                },
+                              );
+                            }
+                            final vendor = filteredList[idx - 1];
+                            final id = vendor['id']?.toString() ?? '';
+                            final name = vendor['name']?.toString() ?? '—';
+                            final isSelected = selectedVendorId == id;
+
+                            return ListTile(
+                              leading: CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isSelected
+                                    ? Colors.teal.withValues(alpha: 0.2)
+                                    : Colors.grey.shade200,
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.teal : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                name,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                              trailing: isSelected
+                                  ? const Icon(Icons.check_circle, color: Colors.teal)
+                                  : null,
+                              onTap: () {
+                                ref
+                                    .read(vendorMovementVendorFilterProvider.notifier)
+                                    .set(id);
+                                Navigator.pop(ctx);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDayDetails(BuildContext context, DailyVendorMovement day) {
+    final theme = Theme.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (_, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+              child: ListView(
+                controller: scrollController,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 20,
+                          color: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            day.displayDate,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Raw Material Movement: Daily Log',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Day Metric Cards
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Work Order (Sent)',
+                          value: _n(day.workOrderQty),
+                          color: Colors.amber.shade900,
+                          icon: Icons.upload_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Physical (Recv)',
+                          value: _n(day.physicalQty),
+                          color: Colors.teal.shade800,
+                          icon: Icons.download_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _SummaryBox(
+                          label: 'Pending Balance',
+                          value: _n(day.runningBalance.clamp(0, double.infinity)),
+                          color: Colors.red.shade700,
+                          icon: Icons.hourglass_top_rounded,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Dispatches Section
+                  Row(
+                    children: [
+                      Icon(Icons.outbox_rounded, size: 16, color: Colors.amber.shade900),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Material Sent on this Date (${day.dispatches.length})',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (day.dispatches.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'No material dispatched on this date.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    )
+                  else
+                    ...day.dispatches.map((d) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 0.5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: Colors.amber.shade800.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      d.partName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.shade800.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${_n(d.qty)} PCS',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.amber.shade900,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Vendor: ${d.vendorName}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  if (d.challanNumber.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.receipt_long_outlined,
+                                      label: 'Challan: ${d.challanNumber}',
+                                    ),
+                                  if (d.batchNumber.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.tag,
+                                      label: 'Batch: ${d.batchNumber}',
+                                    ),
+                                  if (d.time.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.access_time_rounded,
+                                      label: d.time,
+                                    ),
+                                ],
+                              ),
+                              if (d.remarks.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Note: ${d.remarks}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 16),
+
+                  // Receipts Section
+                  Row(
+                    children: [
+                      const Icon(Icons.move_to_inbox_rounded, size: 16, color: Colors.teal),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Material Received on this Date (${day.receipts.length})',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (day.receipts.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'No material received on this date.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    )
+                  else
+                    ...day.receipts.map((r) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 0.5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: Colors.teal.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      r.partName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.teal.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${_n(r.qtyReceived)} PCS',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.teal,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Vendor: ${r.vendorName}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
+                                  if (r.supplierChallan.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.receipt_outlined,
+                                      label: 'Vendor Ch: ${r.supplierChallan}',
+                                    ),
+                                  if (r.dispatchChallan.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.link_rounded,
+                                      label: 'Against Disp: ${r.dispatchChallan}',
+                                    ),
+                                  if (r.batchNumber.isNotEmpty)
+                                    _TagBadge(
+                                      icon: Icons.tag,
+                                      label: 'Batch: ${r.batchNumber}',
+                                    ),
+                                ],
+                              ),
+                              if (r.remarks.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Note: ${r.remarks}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(vendorMovementProvider);
     final range = ref.watch(reportDateRangeProvider);
+    final selectedPartId = ref.watch(vendorMovementPartFilterProvider);
+    final selectedVendorId = ref.watch(vendorMovementVendorFilterProvider);
+
+    final partsAsync = ref.watch(partsProvider);
+    final vendorsAsync = ref.watch(vendorsProvider);
+
+    final allParts = partsAsync.value ?? [];
+    final allVendors = vendorsAsync.value ?? [];
+
+    String partLabel = 'All Products';
+    if (selectedPartId != null) {
+      final match = allParts.firstWhere(
+        (p) => p['id']?.toString() == selectedPartId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isNotEmpty) {
+        partLabel = match['name']?.toString() ?? 'Selected Product';
+      }
+    }
+
+    String vendorLabel = 'All Vendors';
+    if (selectedVendorId != null) {
+      final match = allVendors.firstWhere(
+        (v) => v['id']?.toString() == selectedVendorId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isNotEmpty) {
+        vendorLabel = match['name']?.toString() ?? 'Selected Vendor';
+      }
+    }
+
     final theme = Theme.of(context);
 
     return _loadingOrError(async, () {
       final data = async.value!;
+
+      // Filtered dispatches for Tab 2
       final filteredDispatches = data.dispatches.where((d) {
         if (_search.isEmpty) return true;
         final q = _search.toLowerCase();
         return d.partName.toLowerCase().contains(q) ||
             d.vendorName.toLowerCase().contains(q) ||
-            d.challanNumber.toLowerCase().contains(q);
+            d.challanNumber.toLowerCase().contains(q) ||
+            d.batchNumber.toLowerCase().contains(q) ||
+            d.rawDate.contains(q);
       }).toList();
 
+      // Filtered receipts for Tab 3
       final filteredReceipts = data.receipts.where((r) {
         if (_search.isEmpty) return true;
         final q = _search.toLowerCase();
         return r.partName.toLowerCase().contains(q) ||
             r.vendorName.toLowerCase().contains(q) ||
-            r.supplierChallan.toLowerCase().contains(q);
+            r.supplierChallan.toLowerCase().contains(q) ||
+            r.dispatchChallan.toLowerCase().contains(q) ||
+            r.batchNumber.toLowerCase().contains(q) ||
+            r.rawDate.contains(q);
+      }).toList();
+
+      // Filtered daily movements for Tab 1 (Rozana Register)
+      final registerList = data.dailyMovements.where((d) {
+        if (_activeDaysOnly && !d.hasMovement) return false;
+        if (_search.isEmpty) return true;
+        final q = _search.toLowerCase();
+        return d.rawDate.contains(q) ||
+            d.displayDate.toLowerCase().contains(q) ||
+            d.dispatches.any(
+              (x) =>
+                  x.partName.toLowerCase().contains(q) ||
+                  x.challanNumber.toLowerCase().contains(q) ||
+                  x.vendorName.toLowerCase().contains(q),
+            ) ||
+            d.receipts.any(
+              (x) =>
+                  x.partName.toLowerCase().contains(q) ||
+                  x.supplierChallan.toLowerCase().contains(q) ||
+                  x.vendorName.toLowerCase().contains(q),
+            );
       }).toList();
 
       return Scaffold(
@@ -1785,7 +3507,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Vendor Movement',
+                'Faco Movement Register',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               Text(
@@ -1798,9 +3520,20 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
               ),
             ],
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Select Date Range',
+              icon: const Icon(Icons.date_range_rounded),
+              onPressed: () => _pickDateRange(context),
+            ),
+          ],
           bottom: TabBar(
             controller: _tabCtrl,
             tabs: [
+              Tab(
+                icon: const Icon(Icons.menu_book_rounded, size: 18),
+                text: 'Rozana Register (${registerList.length})',
+              ),
               Tab(
                 icon: const Icon(Icons.outbox_rounded, size: 18),
                 text: 'Material Sent (${filteredDispatches.length})',
@@ -1814,67 +3547,230 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
         ),
         body: Column(
           children: [
-            // Top Summary Row
+            // Filter Bar (Product & Vendor Selection)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: theme.colorScheme.surfaceContainerLowest,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // Product / Part Chip
+                    FilterChip(
+                      avatar: const Icon(Icons.category_outlined, size: 16),
+                      label: Text(
+                        partLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: selectedPartId != null
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      selected: selectedPartId != null,
+                      selectedColor: Colors.blue.withValues(alpha: 0.15),
+                      onSelected: (_) => _openPartPicker(context, allParts),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Vendor Chip
+                    FilterChip(
+                      avatar: const Icon(Icons.business_outlined, size: 16),
+                      label: Text(
+                        vendorLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: selectedVendorId != null
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      selected: selectedVendorId != null,
+                      selectedColor: Colors.purple.withValues(alpha: 0.15),
+                      onSelected: (_) => _openVendorPicker(context, allVendors),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Quick Month / Date Range
+                    ActionChip(
+                      avatar: const Icon(Icons.calendar_month_outlined, size: 16),
+                      label: const Text('This Month', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        ref
+                            .read(reportDateRangeProvider.notifier)
+                            .set(DateRange.thisMonth());
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Icon(Icons.history_rounded, size: 16),
+                      label: const Text('Last 30 Days', style: TextStyle(fontSize: 12)),
+                      onPressed: () {
+                        ref
+                            .read(reportDateRangeProvider.notifier)
+                            .set(DateRange.last30());
+                      },
+                    ),
+
+                    if (selectedPartId != null || selectedVendorId != null) ...[
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () {
+                          ref
+                              .read(vendorMovementPartFilterProvider.notifier)
+                              .set(null);
+                          ref
+                              .read(vendorMovementVendorFilterProvider.notifier)
+                              .set(null);
+                        },
+                        icon: const Icon(Icons.clear, size: 14, color: Colors.red),
+                        label: const Text(
+                          'Reset Filters',
+                          style: TextStyle(fontSize: 12, color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+
+            // Top Summary Row (Work Order, Physical, Balance)
             ColoredBox(
               color: Colors.amber.shade800.withValues(alpha: 0.08),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Column(
                   children: [
-                    Expanded(
-                      child: _SummaryBox(
-                        label: 'Total Sent',
-                        value: _n(data.totalDispatched),
-                        color: Colors.amber.shade900,
-                        icon: Icons.upload_rounded,
+                    if (data.openingBalance > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Opening Pending with Vendor before ${formatAppDate(range.from)}: ${_n(data.openingBalance)} PCS',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _SummaryBox(
-                        label: 'Total Received',
-                        value: _n(data.totalReceived),
-                        color: Colors.teal.shade800,
-                        icon: Icons.download_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _SummaryBox(
-                        label: 'Pending Balance',
-                        value: _n(data.netPending),
-                        color: Colors.red.shade700,
-                        icon: Icons.hourglass_top_rounded,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SummaryBox(
+                            label: 'Work Order (Sent)',
+                            value: _n(data.totalDispatched),
+                            color: Colors.amber.shade900,
+                            icon: Icons.upload_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _SummaryBox(
+                            label: 'Physical (Recv)',
+                            value: _n(data.totalReceived),
+                            color: Colors.teal.shade800,
+                            icon: Icons.download_rounded,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _SummaryBox(
+                            label: 'Pending Balance',
+                            value: _n(data.netPending),
+                            color: Colors.red.shade700,
+                            icon: Icons.hourglass_top_rounded,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
 
-            // Search Bar
+            // Search Bar & Daily Toggle
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: TextField(
+                        onChanged: (val) => setState(() => _search = val.trim()),
+                        style: const TextStyle(fontSize: 12),
+                        decoration: const InputDecoration(
+                          hintText: 'Search date, challan, part, vendor...',
+                          hintStyle: TextStyle(fontSize: 11),
+                          prefixIcon: Icon(Icons.search, size: 16),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                child: TextField(
-                  onChanged: (val) => setState(() => _search = val.trim()),
-                  style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: 'Search by part, vendor, challan...',
-                    hintStyle: TextStyle(fontSize: 12),
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    border: InputBorder.none,
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: _activeDaysOnly
+                        ? 'Showing active days only'
+                        : 'Showing all register calendar days',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _activeDaysOnly = !_activeDaysOnly),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: _activeDaysOnly
+                              ? Colors.teal.withValues(alpha: 0.15)
+                              : theme.colorScheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _activeDaysOnly ? Colors.teal : Colors.transparent,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _activeDaysOnly
+                                  ? Icons.filter_alt_rounded
+                                  : Icons.view_headline_rounded,
+                              size: 14,
+                              color: _activeDaysOnly ? Colors.teal : Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _activeDaysOnly ? 'Active Only' : 'All Days',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: _activeDaysOnly ? Colors.teal : Colors.grey.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
 
@@ -1882,7 +3778,260 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
               child: TabBarView(
                 controller: _tabCtrl,
                 children: [
-                  // Tab 1: Sent (Dispatches)
+                  // Tab 1: Rozana Register (Daily Book - matching manual register)
+                  registerList.isEmpty
+                      ? const EmptyState(
+                          message: 'No movement records found for this date range',
+                          icon: Icons.menu_book_rounded,
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
+                          itemCount: registerList.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == 0) {
+                              // Register Table Header
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                margin: const EdgeInsets.only(bottom: 6),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 28,
+                                      child: Text(
+                                        '#',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Date',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Work Order\n(Sent)',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Physical\n(Recv)',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Balance\n(Pending)',
+                                        textAlign: TextAlign.right,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    SizedBox(width: 24),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            final day = registerList[index - 1];
+                            final hasWork = day.workOrderQty > 0;
+                            final hasRecv = day.physicalQty > 0;
+                            final hasPending = day.runningBalance > 0;
+
+                            return InkWell(
+                              onTap: () => _showDayDetails(context, day),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 5),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: day.hasMovement
+                                      ? theme.colorScheme.surface
+                                      : theme.colorScheme.surfaceContainerLowest,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: day.hasMovement
+                                        ? theme.colorScheme.outlineVariant.withValues(alpha: 0.6)
+                                        : theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 28,
+                                      child: Text(
+                                        '$index',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            day.displayDate,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: day.hasMovement
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                              color: day.hasMovement
+                                                  ? theme.colorScheme.onSurface
+                                                  : Colors.grey,
+                                            ),
+                                          ),
+                                          if (day.dispatches.isNotEmpty ||
+                                              day.receipts.isNotEmpty)
+                                            Text(
+                                              '${day.dispatches.length} sent • ${day.receipts.length} recv',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: theme.colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Work Order Sent
+                                    Expanded(
+                                      flex: 3,
+                                      child: Center(
+                                        child: hasWork
+                                            ? Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.amber.shade800
+                                                      .withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  _n(day.workOrderQty),
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                    color: Colors.amber.shade900,
+                                                  ),
+                                                ),
+                                              )
+                                            : const Text(
+                                                '—',
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                    // Physical Received
+                                    Expanded(
+                                      flex: 3,
+                                      child: Center(
+                                        child: hasRecv
+                                            ? Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.teal.withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  _n(day.physicalQty),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                    color: Colors.teal,
+                                                  ),
+                                                ),
+                                              )
+                                            : const Text(
+                                                '—',
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                    // Running Balance
+                                    Expanded(
+                                      flex: 3,
+                                      child: Align(
+                                        alignment: Alignment.centerRight,
+                                        child: hasPending
+                                            ? Text(
+                                                '-${_n(day.runningBalance)}',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                  color: Colors.red.shade700,
+                                                ),
+                                              )
+                                            : const Text(
+                                                '0',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.green,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.chevron_right,
+                                      size: 18,
+                                      color: day.hasMovement
+                                          ? theme.colorScheme.primary
+                                          : Colors.grey.shade400,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                  // Tab 2: Sent (Dispatches Log)
                   filteredDispatches.isEmpty
                       ? const EmptyState(
                           message: 'No material dispatched to vendor in this range',
@@ -1967,7 +4116,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                                     children: [
                                       _TagBadge(
                                         icon: Icons.calendar_today_outlined,
-                                        label: item.date,
+                                        label: formatAppDate(item.date),
                                       ),
                                       if (item.challanNumber.isNotEmpty)
                                         _TagBadge(
@@ -1978,6 +4127,11 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                                         _TagBadge(
                                           icon: Icons.tag,
                                           label: 'Batch: ${item.batchNumber}',
+                                        ),
+                                      if (item.time.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.access_time_rounded,
+                                          label: item.time,
                                         ),
                                     ],
                                   ),
@@ -1998,7 +4152,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                           },
                         ),
 
-                  // Tab 2: Received
+                  // Tab 3: Received (Receipts Log)
                   filteredReceipts.isEmpty
                       ? const EmptyState(
                           message: 'No material received from vendor in this range',
@@ -2083,7 +4237,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                                     children: [
                                       _TagBadge(
                                         icon: Icons.calendar_today_outlined,
-                                        label: item.date,
+                                        label: formatAppDate(item.date),
                                       ),
                                       if (item.supplierChallan.isNotEmpty)
                                         _TagBadge(
@@ -2094,6 +4248,11 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
                                         _TagBadge(
                                           icon: Icons.link_rounded,
                                           label: 'Against Disp: ${item.dispatchChallan}',
+                                        ),
+                                      if (item.batchNumber.isNotEmpty)
+                                        _TagBadge(
+                                          icon: Icons.tag,
+                                          label: 'Batch: ${item.batchNumber}',
                                         ),
                                     ],
                                   ),
@@ -2122,6 +4281,7 @@ class _VendorMovementReportState extends ConsumerState<_VendorMovementReport>
     });
   }
 }
+
 
 class _SummaryBox extends StatelessWidget {
   const _SummaryBox({
@@ -2772,8 +4932,8 @@ class _HoldReport extends ConsumerWidget {
           title: const Text('Hold Material Report'),
           bottom: const TabBar(
             tabs: [
-              Tab(icon: Icon(Icons.warning_amber), text: 'BP QC Hold'),
-              Tab(icon: Icon(Icons.sync_problem), text: 'Vendor Rework Hold'),
+              Tab(icon: Icon(Icons.warning_amber_rounded), text: 'BP QC Hold'),
+              Tab(icon: Icon(Icons.sync_problem_rounded), text: 'Vendor Rework Hold'),
             ],
           ),
         ),
@@ -2782,10 +4942,20 @@ class _HoldReport extends ConsumerWidget {
           error: (e, _) =>
               EmptyState(message: 'Error: $e', icon: Icons.error_outline),
           data: (data) {
-            return TabBarView(
+            return Column(
               children: [
-                _buildBpHoldTab(context, data, theme),
-                _buildRtvHoldTab(context, data, theme),
+                _ReportDateHeader(
+                  accentColor: Colors.amber.shade700,
+                  title: 'HOLD MATERIAL PERIOD',
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildBpHoldTab(context, data, theme),
+                      _buildRtvHoldTab(context, data, theme),
+                    ],
+                  ),
+                ),
               ],
             );
           },
@@ -2799,64 +4969,203 @@ class _HoldReport extends ConsumerWidget {
     HoldMaterialReportData data,
     ThemeData theme,
   ) {
-    if (data.bpHoldList.isEmpty) {
-      return const EmptyState(
-        message: 'No material currently on BP QC Hold.',
-        icon: Icons.check_circle_outline,
-      );
+    final isDark = theme.brightness == Brightness.dark;
+
+    // Calculate part totals
+    final Map<String, double> partTotals = {};
+    for (final r in data.bpHoldList) {
+      partTotals[r.partName] = (partTotals[r.partName] ?? 0.0) + r.qty;
     }
 
-    return Column(
+    return Stack(
       children: [
-        _buildSummaryCard(
-          theme,
-          title: 'Total BP Rejections / QC Hold',
-          value: '${data.totalBpHold.toInt()} PCS',
-          icon: Icons.warning_amber,
-          color: Colors.redAccent,
+        Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _SummaryBox(
+                      label: 'Total BP QC Hold',
+                      value: '${data.totalBpHold.toInt()} PCS',
+                      color: Colors.amber.shade700,
+                      icon: Icons.pause_circle_outline_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _SummaryBox(
+                      label: 'Hold Records',
+                      value: '${data.bpHoldList.length}',
+                      color: Colors.redAccent,
+                      icon: Icons.receipt_long_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: data.bpHoldList.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 56,
+                            color: Colors.green.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No material on BP QC Hold for selected period',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+                      itemCount: data.bpHoldList.length,
+                      itemBuilder: (context, i) {
+                        final r = data.bpHoldList[i];
+                        final isOut = r.direction.toLowerCase() == 'out';
+                        final badgeColor = isOut ? Colors.green : Colors.amber.shade700;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E2430)
+                                : theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.pause_circle_filled_rounded,
+                                      size: 16,
+                                      color: Colors.amber.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          r.partName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        if (r.partCode.isNotEmpty && r.partCode != '—')
+                                          Text(
+                                            'Code: ${r.partCode}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '${r.qty.toInt()} PCS',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: badgeColor,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: badgeColor.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          isOut ? 'RELEASED' : 'ON HOLD',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: badgeColor,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Divider(height: 1),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Reason: ${r.reason} · Source: ${r.machineName}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    _fmtDate(r.date),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: data.bpHoldList.length,
-            separatorBuilder: (_, __) => const Divider(),
-            itemBuilder: (context, i) {
-              final r = data.bpHoldList[i];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
-                  child: const Icon(
-                    Icons.build_circle_outlined,
-                    color: Colors.redAccent,
-                  ),
-                ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${r.partCode} – ${r.partName}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Text(
-                      '${r.qty.toInt()} PCS',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.redAccent,
-                      ),
-                    ),
-                  ],
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    'Machine: ${r.machineName} · Reason: ${r.reason} · Date: ${_fmtDate(r.date)}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              );
-            },
-          ),
+        _ReportPartSummaryBox(
+          partTotals: partTotals,
+          title: 'BP HOLD TOTAL',
+          accentColor: Colors.amberAccent,
+          backgroundColor: const Color(0xFF2E2405),
+          icon: Icons.pause_circle_outline_rounded,
         ),
       ],
     );
@@ -2867,134 +5176,209 @@ class _HoldReport extends ConsumerWidget {
     HoldMaterialReportData data,
     ThemeData theme,
   ) {
-    if (data.rtvHoldList.isEmpty) {
-      return const EmptyState(
-          message: 'No stock awaiting vendor rework.',
-        icon: Icons.check_circle_outline,
-      );
+    final isDark = theme.brightness == Brightness.dark;
+
+    // Calculate part totals
+    final Map<String, double> partTotals = {};
+    for (final r in data.rtvHoldList) {
+      partTotals[r.partName] = (partTotals[r.partName] ?? 0.0) + r.qty;
     }
 
-    return Column(
+    return Stack(
       children: [
-        _buildSummaryCard(
-          theme,
-          title: 'Total RTV Pending Reinspection',
-          value: '${data.totalRtvHold.toInt()} PCS',
-          icon: Icons.sync_problem,
-          color: Colors.orange,
-        ),
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(12),
-            itemCount: data.rtvHoldList.length,
-            separatorBuilder: (_, __) => const Divider(),
-            itemBuilder: (context, i) {
-              final r = data.rtvHoldList[i];
-              final ageColor = r.agingDays > 10
-                  ? Colors.red
-                  : (r.agingDays > 5 ? Colors.orange : Colors.green);
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.orange.withValues(alpha: 0.1),
-                  child: const Icon(Icons.undo, color: Colors.orange),
-                ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${r.partCode} – ${r.partName}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+        Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _SummaryBox(
+                      label: 'Total Vendor Rework',
+                      value: '${data.totalRtvHold.toInt()} PCS',
+                      color: const Color(0xFFFF9100),
+                      icon: Icons.sync_problem_rounded,
                     ),
-                    Text(
-                      '${r.qty.toInt()} PCS',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange,
-                      ),
-                    ),
-                  ],
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Vendor: ${r.vendorName} · Status: ${r.status}'),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ageColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${r.agingDays}d aging',
-                          style: TextStyle(
-                            color: ageColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
-                ),
-              );
-            },
-          ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _SummaryBox(
+                      label: 'Pending Batches',
+                      value: '${data.rtvHoldList.length}',
+                      color: Colors.redAccent,
+                      icon: Icons.hourglass_top_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: data.rtvHoldList.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 56,
+                            color: Colors.green.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No stock awaiting vendor rework for selected period',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+                      itemCount: data.rtvHoldList.length,
+                      itemBuilder: (context, i) {
+                        final r = data.rtvHoldList[i];
+                        final ageColor = r.agingDays > 10
+                            ? Colors.red
+                            : (r.agingDays > 5 ? Colors.orange : Colors.green);
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E2430)
+                                : theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.35),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFF9100).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.sync_problem_rounded,
+                                      size: 16,
+                                      color: Color(0xFFFF9100),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          r.partName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.storefront_outlined, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              r.vendorName,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: theme.colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        '${r.qty.toInt()} PCS',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFFFF9100),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: ageColor.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '${r.agingDays}d aging',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: ageColor,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Divider(height: 1),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Status: ${r.status}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    _fmtDate(r.date),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+        _ReportPartSummaryBox(
+          partTotals: partTotals,
+          title: 'VENDOR HOLD TOTAL',
+          accentColor: const Color(0xFFFF9100),
+          backgroundColor: const Color(0xFF2E1C0A),
+          icon: Icons.sync_problem_rounded,
         ),
       ],
-    );
-  }
-
-  Widget _buildSummaryCard(
-    ThemeData theme, {
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -14,7 +14,6 @@ import '../../core/database/database_service.dart';
 import '../../core/models/app_user.dart';
 import '../../core/constants/user_roles.dart';
 import '../../core/network/sync_service.dart';
-import '../../core/providers/master_data_providers.dart';
 import '../../core/providers/stock_invalidation_helper.dart';
 
 // ─── Supabase connected flag (overridden in main.dart) ────────────────────────
@@ -838,10 +837,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             await ref.read(syncServiceProvider).hydrateActiveWorkspace(
                   explicitFactoryId: user.factoryId,
                   force: true,
-                );
-            await ref
-                .read(masterDataRepositoryProvider)
-                .syncMasterDataFromSupabase();
+                ).timeout(const Duration(seconds: 25));
           } catch (e) {
             debugPrint('Hydration on login warning: $e');
           }
@@ -874,10 +870,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
             await ref.read(syncServiceProvider).hydrateActiveWorkspace(
                   explicitFactoryId: user.factoryId,
                   force: true,
-                );
-            await ref
-                .read(masterDataRepositoryProvider)
-                .syncMasterDataFromSupabase();
+                ).timeout(const Duration(seconds: 25));
           } catch (e) {
             debugPrint('Hydration on Google login warning: $e');
           }
@@ -951,10 +944,7 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
         try {
           await ref.read(syncServiceProvider).hydrateActiveWorkspace(
                 explicitFactoryId: user.factoryId,
-              );
-          await ref
-              .read(masterDataRepositoryProvider)
-              .syncMasterDataFromSupabase();
+              ).timeout(const Duration(seconds: 25));
         } catch (_) {}
         ref.read(syncServiceProvider).startPeriodicSync();
         refreshAllStockAndEntryProviders(ref);

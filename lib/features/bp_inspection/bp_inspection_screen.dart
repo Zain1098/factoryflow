@@ -1219,6 +1219,8 @@ class _BpRejectedStockTab extends ConsumerWidget {
                   final batchNumber = item['batch_number'] as String? ?? 'OPEN-$partCode';
                   final reason = item['reason'] as String? ?? 'Quality rejection';
                   final rejectDate = item['reject_date'] as String? ?? '';
+                  final source = item['source'] as String? ?? 'BP QC Inspection';
+                  final isMachine = source.toLowerCase().contains('machine');
 
                   return Card(
                     elevation: 1,
@@ -1235,8 +1237,16 @@ class _BpRejectedStockTab extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               CircleAvatar(
-                                backgroundColor: Colors.red.withValues(alpha: 0.15),
-                                child: const Icon(Icons.cancel_outlined, color: Colors.red, size: 20),
+                                backgroundColor: isMachine
+                                    ? Colors.deepOrange.withValues(alpha: 0.15)
+                                    : Colors.red.withValues(alpha: 0.15),
+                                child: Icon(
+                                  isMachine
+                                      ? Icons.precision_manufacturing_outlined
+                                      : Icons.cancel_outlined,
+                                  color: isMachine ? Colors.deepOrange.shade800 : Colors.red,
+                                  size: 20,
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -1250,14 +1260,61 @@ class _BpRejectedStockTab extends ConsumerWidget {
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Batch: $batchNumber',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: theme.colorScheme.onSurfaceVariant,
-                                        fontFamily: 'monospace',
-                                      ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isMachine
+                                                ? Colors.deepOrange.withValues(alpha: 0.12)
+                                                : Colors.blue.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: isMachine
+                                                  ? Colors.deepOrange.shade300
+                                                  : Colors.blue.shade300,
+                                              width: 0.7,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                isMachine
+                                                    ? Icons.precision_manufacturing
+                                                    : Icons.fact_check,
+                                                size: 11,
+                                                color: isMachine
+                                                    ? Colors.deepOrange.shade800
+                                                    : Colors.blue.shade800,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                source,
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: isMachine
+                                                      ? Colors.deepOrange.shade800
+                                                      : Colors.blue.shade800,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          'Batch: $batchNumber',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: theme.colorScheme.onSurfaceVariant,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -1340,41 +1397,75 @@ class _BpRejectedStockTab extends ConsumerWidget {
 
   Future<void> _confirm(BuildContext context, WidgetRef ref, Map<String, dynamic> item, double qty) async {
     final note = TextEditingController();
+    final source = item['source'] as String? ?? 'BP Rejection';
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm Final BP Scrap Write-Off'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(
-              '${qty.toInt()} PCS of ${item['part_code']} will be permanently written off from BP rejected physical stock.',
-              style: const TextStyle(fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'The historical record will be preserved in the database for monthly/yearly audit reports.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: note,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Scrap Reason / Disposal Note *',
-                hintText: 'e.g. Sold as scrap, melted, discarded',
-                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+            Icon(Icons.delete_forever_rounded, color: Colors.red.shade700, size: 24),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Confirm Scrap Write-Off',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
             ),
           ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade300, width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${qty.toInt()} PCS · ${item['part_code']} (${item['part_name']})',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Batch: ${item['batch_number']}', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    Text('Origin: $source', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                '⚠️ This will permanently remove these parts from active company stock. An immutable audit record will be logged with full details.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: note,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Disposal Reason / Remarks *',
+                  hintText: 'e.g. Disposed, melted down, sold as scrap metal',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red.shade800),
             onPressed: () => Navigator.pop(dialogContext, note.text.trim().isNotEmpty),
-            child: const Text('Confirm Scrap Write-Off'),
+            child: const Text('Confirm Scrap'),
           ),
         ],
       ),
@@ -1404,6 +1495,7 @@ class _BpRejectedStockTab extends ConsumerWidget {
     if (result.success) {
       refreshAllStockAndEntryProviders(ref);
       ref.invalidate(bpRejectedStockProvider);
+      ref.invalidate(bpInspectionListProvider);
     }
   }
 }
@@ -1557,7 +1649,9 @@ class _BpInspectionHistoryTabState
                 children: [
                   _filterChip(label: 'All Activities (${allRecords.length})', value: 'all'),
                   const SizedBox(width: 6),
-                  _filterChip(label: 'Quality Checks', value: 'inspection'),
+                  _filterChip(label: 'Machine Rejects', value: 'machine_reject'),
+                  const SizedBox(width: 6),
+                  _filterChip(label: 'QC Checks', value: 'inspection'),
                   const SizedBox(width: 6),
                   _filterChip(label: 'Hold Clearances', value: 'hold_release'),
                   const SizedBox(width: 6),
@@ -1646,6 +1740,11 @@ class _BpInspectionHistoryTabState
     IconData eventIcon;
 
     switch (eventType) {
+      case 'machine_reject':
+        eventColor = Colors.deepOrange.shade800;
+        eventLabel = 'Machine Rejection';
+        eventIcon = Icons.precision_manufacturing_outlined;
+        break;
       case 'hold_release':
         eventColor = Colors.teal;
         eventLabel = 'Hold Clearance';
@@ -1744,6 +1843,42 @@ class _BpInspectionHistoryTabState
                       child: Text(
                         'Scrapped: ${inspectedQty.toInt()} PCS',
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+                      ),
+                    ),
+                  ] else if (eventType == 'machine_reject') ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Run: ${inspectedQty.toInt()} PCS',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blue),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Good: ${okQty.toInt()} PCS',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.deepOrange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Rej: ${rejectQty.toInt()} PCS',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.deepOrange.shade900),
                       ),
                     ),
                   ] else ...[
@@ -1889,14 +2024,14 @@ class _BpInspectionHistoryTabState
             ),
             const Divider(height: 24),
             _detailRow('Date', date),
-            _detailRow('Event Type', eventType.toUpperCase().replaceAll('_', ' ')),
+            _detailRow('Event Type', eventType == 'machine_reject' ? 'MACHINE REJECTION' : eventType.toUpperCase().replaceAll('_', ' ')),
             _detailRow('Batch Number', batchNumber),
             if (machineName != null) _detailRow('Machine', machineName),
-            _detailRow('Inspector / Handled By', inspectorName),
-            _detailRow('Total Inspected / Handled', '${inspectedQty.toInt()} PCS'),
+            _detailRow(eventType == 'machine_reject' ? 'Operator' : 'Inspector / Handled By', inspectorName),
+            _detailRow(eventType == 'machine_reject' ? 'Total Machine Run' : 'Total Inspected / Handled', '${inspectedQty.toInt()} PCS'),
             if (eventType != 'scrap_writeoff') ...[
-              _detailRow('OK Released (BP Stock)', '${okQty.toInt()} PCS', valueColor: Colors.green),
-              _detailRow('Rejected Quantity', '${rejectQty.toInt()} PCS', valueColor: rejectQty > 0 ? Colors.red : null),
+              _detailRow(eventType == 'machine_reject' ? 'Good Production (BP)' : 'OK Released (BP Stock)', '${okQty.toInt()} PCS', valueColor: Colors.green),
+              _detailRow(eventType == 'machine_reject' ? 'Rejected at Machine' : 'Rejected Quantity', '${rejectQty.toInt()} PCS', valueColor: rejectQty > 0 ? Colors.red : null),
             ],
             if (rejectReason != null) _detailRow('Reason / Classification', rejectReason),
             if (remarks != null && remarks.isNotEmpty) _detailRow('Remarks / Notes', remarks),

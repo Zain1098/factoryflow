@@ -926,8 +926,8 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
   ) {
     final totals = <String, int>{};
     for (final r in records) {
-      final code = (r['part_code'] as String?)?.trim();
-      final name = (r['part_name'] as String?)?.trim();
+      final code = r['part_code']?.toString().trim();
+      final name = r['part_name']?.toString().trim();
       final label = (code != null && code.isNotEmpty)
           ? code
           : (name != null && name.isNotEmpty ? name : 'Unknown');
@@ -1116,16 +1116,16 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
     final qty = (r['qty'] as num?)?.toInt() ?? 0;
     final receivedQty = (r['received_qty'] as num?)?.toInt() ?? 0;
     final hasReceived = receivedQty > 0;
-    final partCode = (r['part_code'] as String? ?? '—').trim();
-    final partName = (r['part_name'] as String? ?? '').trim();
-    final batchNum = (r['batch_number'] as String? ?? '').trim();
-    final vendorName = (r['vendor_name'] as String? ?? '—').trim();
-    final vehicle = (r['vehicle_number'] as String?)?.trim();
-    final driver = (r['driver_name'] as String?)?.trim();
-    final challan = (r['challan_number'] as String?)?.trim();
-    final remarks = (r['remarks'] as String?)?.trim();
-    final dateStr = r['date'] as String? ?? '';
-    final timeStr = formatTimeWithoutSeconds(r['time'] as String?);
+    final partCode = (r['part_code']?.toString() ?? '—').trim();
+    final partName = (r['part_name']?.toString() ?? '').trim();
+    final batchNum = (r['batch_number']?.toString() ?? '').trim();
+    final vendorName = (r['vendor_name']?.toString() ?? '—').trim();
+    final vehicle = r['vehicle_number']?.toString().trim();
+    final driver = r['driver_name']?.toString().trim();
+    final challan = r['challan_number']?.toString().trim();
+    final remarks = r['remarks']?.toString().trim();
+    final dateStr = r['date']?.toString() ?? '';
+    final timeStr = formatTimeWithoutSeconds(r['time']?.toString());
 
     return Card(
       elevation: 0,
@@ -1282,35 +1282,102 @@ class _DispatchFacoScreenState extends ConsumerState<DispatchFacoScreen>
                     ),
                   ],
                 ),
-                if (hasReceived)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.inventory_2_outlined,
-                          size: 13,
-                          color: Colors.teal,
+                Builder(
+                  builder: (context) {
+                    final status = r['delivery_status'] as String? ??
+                        (hasReceived ? 'partial' : 'pending');
+                    final remaining = (r['remaining_qty'] as num?)?.toInt() ??
+                        (qty - receivedQty).clamp(0, 999999);
+                    if (status == 'completed') {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Received: $receivedQty PCS',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal,
-                          ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline,
+                              size: 13,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Fully Received ($receivedQty PCS)',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else if (status == 'partial') {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.hourglass_bottom_rounded,
+                              size: 13,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Partial ($receivedQty Recv • $remaining Left)',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade800.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.pending_actions_rounded,
+                              size: 13,
+                              color: Colors.amber.shade900,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Pending with Vendor ($qty PCS)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  },
+                ),
                 Row(
                   children: [
                     Icon(

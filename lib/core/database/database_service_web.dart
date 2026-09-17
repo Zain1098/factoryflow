@@ -26,6 +26,9 @@ class DatabaseService {
   Stream<void> get onSyncEnqueued => const Stream.empty();
   SharedPreferences? _prefs;
   static const _storageKey = 'factoryflow_web_database_v1';
+  Timer? _persistDebounce;
+  bool _isPersisting = false;
+  bool _needsPersistAgain = false;
 
   // Expose a fake "db" object so call sites that use db.select() still compile
   FakeDb get db => FakeDb(_tables, () => unawaited(_persist()));
@@ -63,13 +66,39 @@ class DatabaseService {
     _initialized = true;
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist({bool immediate = false}) async {
     final prefs = _prefs;
     if (prefs == null) return;
-    await prefs.setString(
-      _storageKey,
-      jsonEncode({'tables': _tables, 'sync_queue': _syncQueue}),
-    );
+    if (immediate) {
+      _persistDebounce?.cancel();
+      await _doPersist();
+      return;
+    }
+    _persistDebounce?.cancel();
+    _persistDebounce = Timer(const Duration(milliseconds: 100), () {
+      unawaited(_doPersist());
+    });
+  }
+
+  Future<void> _doPersist() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    if (_isPersisting) {
+      _needsPersistAgain = true;
+      return;
+    }
+    _isPersisting = true;
+    try {
+      final encoded = jsonEncode({'tables': _tables, 'sync_queue': _syncQueue});
+      await prefs.setString(_storageKey, encoded);
+    } catch (_) {
+    } finally {
+      _isPersisting = false;
+      if (_needsPersistAgain) {
+        _needsPersistAgain = false;
+        unawaited(_doPersist());
+      }
+    }
   }
 
   Future<T> runInTransaction<T>(Future<T> Function() action) => action();
@@ -248,13 +277,25 @@ class DatabaseService {
   }) async {}
 
   Future<void> upsertRemoteRecords(String table, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
     final local = _tables.putIfAbsent(table, () => []);
+    final remoteMap = <String, Map<String, dynamic>>{};
     for (final remote in rows) {
       final id = remote['id']?.toString();
-      if (id == null || id.isEmpty) continue;
-      final index = local.indexWhere((row) => row['id']?.toString() == id);
-      if (index >= 0 && local[index]['sync_status'] == 'pending') continue;
-      local.removeWhere((row) => row['id']?.toString() == id);
+      if (id != null && id.isNotEmpty) {
+        remoteMap[id] = remote;
+      }
+    }
+    if (remoteMap.isEmpty) return;
+
+    local.removeWhere((row) {
+      final id = row['id']?.toString();
+      if (id != null && remoteMap.containsKey(id)) {
+        return row['sync_status'] != 'pending';
+      }
+      return false;
+    });
+    for (final remote in remoteMap.values) {
       local.add({...remote, 'sync_status': 'synced'});
     }
     await _persist();
@@ -267,6 +308,9 @@ class DatabaseService {
           {int limit = 50,}) async =>
       [];
   Future<void> updatePurchaseOrderStatus(String id, String status) async {}
+  Future<String?> recomputePurchaseOrderStatus(String poId) async => null;
+  Future<double> getPurchaseOrderTotalReceived(String poId) async => 0.0;
+  Future<Map<String, dynamic>?> findPurchaseOrderByNumber(String poNumber) async => null;
   Future<Map<String, double>> getPendingPurchaseOrdersRemaining() async => {};
 
   Future<String> getNextPoNumber(
@@ -914,16 +958,27 @@ class FakeDb {
     String sql, [
     List<Object?> params = const [],
   ]) {
-    // Special case: Reject Analysis query (WITH bp_inspection_rejects / all_dates_parts)
+    print('FAKEDB_SELECT: ${sql.replaceAll(RegExp(r'\s+'), ' ').substring(0, sql.length > 80 ? 80 : sql.length)} | params: $params');
+    // Special case 1: Reject Analysis query (WITH bp_inspection_rejects / all_dates_parts)
     if (sql.contains('all_dates_parts') || sql.contains('bp_inspection_rejects')) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final fromDate = params.length > 1 ? params[1]?.toString() : null;
+      final toDate = params.length > 2 ? params[2]?.toString() : null;
+
       final productions = _tables['productions'] ?? [];
       final bpInspections = _tables['bp_inspections'] ?? [];
       final apInspections = _tables['ap_inspections'] ?? [];
-      final parts = {for (final p in _tables['parts'] ?? []) p['id']: p['name']};
+      final adjustments = _tables['stock_adjustments'] ?? [];
+      final parts = {for (final p in _tables['parts'] ?? []) p['id']?.toString(): p['name']?.toString()};
 
       final grouped = <String, Map<String, dynamic>>{};
+
+      // Productions
       for (final p in productions) {
+        if (factoryId != null && p['factory_id'] != factoryId) continue;
         final date = p['date']?.toString() ?? '';
+        if (fromDate != null && date.compareTo(fromDate) < 0) continue;
+        if (toDate != null && date.compareTo(toDate) > 0) continue;
         final partId = p['part_id']?.toString() ?? '';
         final key = '$date|$partId';
         final entry = grouped.putIfAbsent(key, () => {
@@ -938,8 +993,13 @@ class FakeDb {
         entry['bp_rej'] = (entry['bp_rej'] as double) +
             ((p['bp_reject_qty'] as num?)?.toDouble() ?? 0.0);
       }
+
+      // BP QC Inspections
       for (final b in bpInspections) {
+        if (factoryId != null && b['factory_id'] != factoryId) continue;
         final date = b['date']?.toString() ?? '';
+        if (fromDate != null && date.compareTo(fromDate) < 0) continue;
+        if (toDate != null && date.compareTo(toDate) > 0) continue;
         final partId = b['part_id']?.toString() ?? '';
         final key = '$date|$partId';
         final entry = grouped.putIfAbsent(key, () => {
@@ -952,8 +1012,13 @@ class FakeDb {
         entry['bp_rej'] = (entry['bp_rej'] as double) +
             ((b['bp_reject_qty'] as num?)?.toDouble() ?? 0.0);
       }
+
+      // AP QC Inspections
       for (final a in apInspections) {
+        if (factoryId != null && a['factory_id'] != factoryId) continue;
         final date = a['date']?.toString() ?? '';
+        if (fromDate != null && date.compareTo(fromDate) < 0) continue;
+        if (toDate != null && date.compareTo(toDate) > 0) continue;
         final partId = a['part_id']?.toString() ?? '';
         final key = '$date|$partId';
         final entry = grouped.putIfAbsent(key, () => {
@@ -966,7 +1031,394 @@ class FakeDb {
         entry['ap_rej'] = (entry['ap_rej'] as double) +
             ((a['rejected_qty'] as num?)?.toDouble() ?? 0.0);
       }
-      return grouped.values.toList();
+
+      // Stock adjustments (bp_rejected)
+      for (final sa in adjustments) {
+        if (factoryId != null && sa['factory_id'] != factoryId) continue;
+        final stage = sa['stage']?.toString();
+        if (stage != 'bp_rejected' && stage != 'production_rejected') continue;
+        final createdAt = sa['created_at']?.toString() ?? '';
+        final date = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+        if (fromDate != null && date.compareTo(fromDate) < 0) continue;
+        if (toDate != null && date.compareTo(toDate) > 0) continue;
+        final partId = sa['part_id']?.toString() ?? '';
+        final key = '$date|$partId';
+        final entry = grouped.putIfAbsent(key, () => {
+          'date': date,
+          'part_name': parts[partId] ?? '—',
+          'production': 0.0,
+          'bp_rej': 0.0,
+          'ap_rej': 0.0,
+        },);
+        entry['bp_rej'] = (entry['bp_rej'] as double) +
+            ((sa['adjusted_qty'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      final list = grouped.values
+          .where((e) =>
+              (e['production'] as double) > 0 ||
+              (e['bp_rej'] as double) > 0 ||
+              (e['ap_rej'] as double) > 0,)
+          .toList();
+      list.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
+      return list;
+    }
+
+    // Special case 2: BP Rejected Stock combined query
+    if (sql.contains('cr.batch_number') ||
+        (sql.contains('bp_rejected_actions') && sql.contains('actioned_qty'))) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final bpInspections = _tables['bp_inspections'] ?? [];
+      final productions = _tables['productions'] ?? [];
+      final actions = _tables['bp_rejected_actions'] ?? [];
+      final parts = {
+        for (final p in _tables['parts'] ?? []) p['id']?.toString(): p,
+      };
+      final machines = {
+        for (final m in _tables['machines'] ?? []) m['id']?.toString(): m['name']?.toString(),
+      };
+      final reasons = {
+        for (final r in _tables['bp_reject_reasons'] ?? [])
+          r['id']?.toString(): r['reason']?.toString(),
+      };
+
+      // Actioned scrap write-offs
+      final actionedMap = <String, double>{};
+      for (final a in actions) {
+        if (factoryId != null && a['factory_id'] != factoryId) continue;
+        if (a['action'] != 'final_rejected') continue;
+        final partId = a['part_id']?.toString() ?? '';
+        final batch = a['batch_number']?.toString() ?? '';
+        final k = '$partId|$batch';
+        actionedMap[k] =
+            (actionedMap[k] ?? 0.0) + ((a['qty'] as num?)?.toDouble() ?? 0.0);
+      }
+
+      final batchMap = <String, Map<String, dynamic>>{};
+
+      // 1. BP Inspections
+      for (final bi in bpInspections) {
+        if (factoryId != null && bi['factory_id'] != factoryId) continue;
+        final rej = (bi['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+        if (rej <= 0) continue;
+        final partId = bi['part_id']?.toString() ?? '';
+        final batch = bi['batch_number']?.toString() ?? '';
+        final key = '$partId|$batch';
+        final part = parts[partId];
+        if (part == null) continue;
+        final reasonId = bi['reject_reason_id']?.toString();
+        final reasonName = reasons[reasonId] ?? reasonId ?? 'Quality QC reject';
+
+        final entry = batchMap.putIfAbsent(key, () => {
+          'part_id': partId,
+          'part_code': part['code']?.toString() ?? '',
+          'part_name': part['name']?.toString() ?? '',
+          'batch_number': batch,
+          'qty': 0.0,
+          'reasons': <String>{},
+          'reject_date': bi['date']?.toString() ?? '',
+          'sources': <String>{},
+        },);
+        entry['qty'] = (entry['qty'] as double) + rej;
+        (entry['reasons'] as Set<String>).add(reasonName);
+        (entry['sources'] as Set<String>).add('BP QC Inspection');
+        final curD = entry['reject_date'] as String;
+        final newD = bi['date']?.toString() ?? '';
+        if (newD.compareTo(curD) > 0) entry['reject_date'] = newD;
+      }
+
+      // 2. Productions
+      for (final pr in productions) {
+        if (factoryId != null && pr['factory_id'] != factoryId) continue;
+        final rej = (pr['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+        if (rej <= 0) continue;
+        final partId = pr['part_id']?.toString() ?? '';
+        final batch = pr['batch_number']?.toString() ?? '';
+        final key = '$partId|$batch';
+        final part = parts[partId];
+        if (part == null) continue;
+        final machId = pr['machine_id']?.toString();
+        final machName = machines[machId] ?? 'Machine';
+        final reasonName = 'Machine Reject: $machName';
+        final sourceName = 'Machine: $machName';
+
+        final entry = batchMap.putIfAbsent(key, () => {
+          'part_id': partId,
+          'part_code': part['code']?.toString() ?? '',
+          'part_name': part['name']?.toString() ?? '',
+          'batch_number': batch,
+          'qty': 0.0,
+          'reasons': <String>{},
+          'reject_date': pr['date']?.toString() ?? '',
+          'sources': <String>{},
+        },);
+        entry['qty'] = (entry['qty'] as double) + rej;
+        (entry['reasons'] as Set<String>).add(reasonName);
+        (entry['sources'] as Set<String>).add(sourceName);
+        final curD = entry['reject_date'] as String;
+        final newD = pr['date']?.toString() ?? '';
+        if (newD.compareTo(curD) > 0) entry['reject_date'] = newD;
+      }
+
+      final result = <Map<String, dynamic>>[];
+      for (final entry in batchMap.values) {
+        final key = '${entry['part_id']}|${entry['batch_number']}';
+        final actioned = actionedMap[key] ?? 0.0;
+        final totalRej = entry['qty'] as double;
+        final remaining = totalRej - actioned;
+        if (remaining > 0) {
+          result.add({
+            'part_id': entry['part_id'],
+            'part_code': entry['part_code'],
+            'part_name': entry['part_name'],
+            'batch_number': entry['batch_number'],
+            'qty': remaining,
+            'reason': (entry['reasons'] as Set<String>).join(', '),
+            'reject_date': entry['reject_date'],
+            'source': (entry['sources'] as Set<String>).join(', '),
+          });
+        }
+      }
+      result.sort((a, b) =>
+          (b['reject_date'] as String).compareTo(a['reject_date'] as String),);
+      return result;
+    }
+
+    // Special case 3: BP Audit History query (UNION across bp_inspections, actions, adjustments, productions)
+    if (sql.contains('scrap_writeoff') && sql.contains('bp_inspections')) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final limit = params.isNotEmpty && params.last is int ? params.last as int : 100;
+      final bpInspections = _tables['bp_inspections'] ?? [];
+      final actions = _tables['bp_rejected_actions'] ?? [];
+      final adjustments = _tables['stock_adjustments'] ?? [];
+      final productions = _tables['productions'] ?? [];
+      final parts = {
+        for (final p in _tables['parts'] ?? []) p['id']?.toString(): p,
+      };
+      final machines = {
+        for (final m in _tables['machines'] ?? []) m['id']?.toString(): m['name']?.toString(),
+      };
+      final operators = {
+        for (final op in _tables['operators'] ?? []) op['id']?.toString(): op['name']?.toString(),
+      };
+      final reasons = {
+        for (final r in _tables['bp_reject_reasons'] ?? [])
+          r['id']?.toString(): r['reason']?.toString(),
+      };
+
+      final combined = <Map<String, dynamic>>[];
+
+      // 1. bp_inspections
+      for (final bi in bpInspections) {
+        if (factoryId != null && bi['factory_id'] != factoryId) continue;
+        final part = parts[bi['part_id']?.toString()];
+        final isHoldClearance = (bi['remarks']?.toString() ?? '')
+            .startsWith('Quality Hold Clearance');
+        final reasonId = bi['reject_reason_id']?.toString();
+        combined.add({
+          'event_type': isHoldClearance ? 'hold_release' : 'inspection',
+          'id': bi['id'],
+          'factory_id': bi['factory_id'],
+          'date': bi['date'],
+          'batch_number': bi['batch_number'],
+          'part_id': bi['part_id'],
+          'part_name': part?['name'] ?? '—',
+          'part_code': part?['code'] ?? '—',
+          'machine_name': machines[bi['machine_id']?.toString()],
+          'inspector_name': operators[bi['inspector_id']?.toString()] ??
+              bi['inspector_id'] ??
+              'QC Inspector',
+          'inspected_qty': (bi['inspected_qty'] as num?)?.toDouble() ?? 0.0,
+          'bp_reject_qty': (bi['bp_reject_qty'] as num?)?.toDouble() ?? 0.0,
+          'reject_reason_name': reasons[reasonId] ?? reasonId,
+          'remarks': bi['remarks'],
+          'photo_url': bi['photo_url'],
+          'sync_status': bi['sync_status'] ?? 'synced',
+        });
+      }
+
+      // 2. bp_rejected_actions (scrap_writeoff)
+      for (final a in actions) {
+        if (factoryId != null && a['factory_id'] != factoryId) continue;
+        final part = parts[a['part_id']?.toString()];
+        final qty = (a['qty'] as num?)?.toDouble() ?? 0.0;
+        combined.add({
+          'event_type': 'scrap_writeoff',
+          'id': a['id'],
+          'factory_id': a['factory_id'],
+          'date': a['date'],
+          'batch_number': a['batch_number'],
+          'part_id': a['part_id'],
+          'part_name': part?['name'] ?? '—',
+          'part_code': part?['code'] ?? '—',
+          'machine_name': null,
+          'inspector_name': a['created_by'] ?? 'Authorized User',
+          'inspected_qty': qty,
+          'bp_reject_qty': qty,
+          'reject_reason_name': 'Permanent Scrap Write-Off',
+          'remarks': a['remarks'],
+          'photo_url': null,
+          'sync_status': a['sync_status'] ?? 'synced',
+        });
+      }
+
+      // 3. stock_adjustments
+      for (final sa in adjustments) {
+        if (factoryId != null && sa['factory_id'] != factoryId) continue;
+        final stage = sa['stage']?.toString();
+        if (stage != 'bp_hold' && stage != 'bp_rejected') continue;
+        final part = parts[sa['part_id']?.toString()];
+        final qty = (sa['adjusted_qty'] as num?)?.toDouble() ?? 0.0;
+        final createdAt = sa['created_at']?.toString() ?? '';
+        final date = createdAt.length >= 10 ? createdAt.substring(0, 10) : createdAt;
+        combined.add({
+          'event_type': 'stock_adjustment',
+          'id': sa['id'],
+          'factory_id': sa['factory_id'],
+          'date': date,
+          'batch_number': sa['batch_number'] ?? 'MANUAL-${part?['code'] ?? ''}',
+          'part_id': sa['part_id'],
+          'part_name': part?['name'] ?? '—',
+          'part_code': part?['code'] ?? '—',
+          'machine_name': null,
+          'inspector_name': 'Stock Manager',
+          'inspected_qty': qty,
+          'bp_reject_qty': stage == 'bp_rejected' ? qty : 0.0,
+          'reject_reason_name': stage == 'bp_hold'
+              ? 'Manual BP Hold Placement'
+              : 'Manual BP Rejection Placement',
+          'remarks': sa['remarks'],
+          'photo_url': null,
+          'sync_status': sa['sync_status'] ?? 'synced',
+        });
+      }
+
+      // 4. productions with bp_reject_qty > 0
+      for (final pr in productions) {
+        if (factoryId != null && pr['factory_id'] != factoryId) continue;
+        final rej = (pr['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+        if (rej <= 0) continue;
+        final part = parts[pr['part_id']?.toString()];
+        final machName = machines[pr['machine_id']?.toString()];
+        combined.add({
+          'event_type': 'machine_reject',
+          'id': pr['id'],
+          'factory_id': pr['factory_id'],
+          'date': pr['date'],
+          'batch_number': pr['batch_number'],
+          'part_id': pr['part_id'],
+          'part_name': part?['name'] ?? '—',
+          'part_code': part?['code'] ?? '—',
+          'machine_name': machName,
+          'inspector_name': operators[pr['operator_id']?.toString()] ??
+              pr['created_by'] ??
+              'Machine Operator',
+          'inspected_qty': (pr['production_qty'] as num?)?.toDouble() ?? 0.0,
+          'bp_reject_qty': rej,
+          'reject_reason_name': machName != null
+              ? 'Machine Reject ($machName)'
+              : 'Machine Production Rejection',
+          'remarks': pr['remarks'] ?? 'Rejected at machine during production',
+          'photo_url': null,
+          'sync_status': pr['sync_status'] ?? 'synced',
+        });
+      }
+
+      combined.sort((a, b) =>
+          (b['date']?.toString() ?? '').compareTo(a['date']?.toString() ?? ''),);
+      return combined.take(limit).toList();
+    }
+
+    // Custom handler for stock_ledger bp_hold query in holdMaterialReportProvider
+    if (sql.contains('stock_ledger') && sql.contains('bp_hold')) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final fromDate = params.length >= 3 ? params[1]?.toString() : null;
+      final toDate = params.length >= 3 ? params[2]?.toString() : null;
+
+      final ledger = List<Map<String, dynamic>>.from(_tables['stock_ledger'] ?? const []);
+      final parts = {for (var p in (_tables['parts'] ?? const [])) p['id']?.toString(): p};
+      final machines = {for (var m in (_tables['machines'] ?? const [])) m['id']?.toString(): m['name']?.toString()};
+      final adjustments = {for (var sa in (_tables['stock_adjustments'] ?? const [])) sa['id']?.toString(): sa};
+      final bpInspections = {for (var bi in (_tables['bp_inspections'] ?? const [])) bi['id']?.toString(): bi};
+
+      var rows = ledger.where((l) {
+        if (factoryId != null && l['factory_id']?.toString() != factoryId) return false;
+        if (l['stage']?.toString() != 'bp_hold') return false;
+        if (fromDate != null && toDate != null) {
+          final d = l['date']?.toString() ?? '';
+          if (d.compareTo(fromDate) < 0 || d.compareTo(toDate) > 0) return false;
+        }
+        return true;
+      }).toList();
+
+      rows.sort((a, b) => (b['date']?.toString() ?? '').compareTo(a['date']?.toString() ?? ''));
+
+      return rows.map((r) {
+        final part = parts[r['part_id']?.toString()];
+        final sa = adjustments[r['ref_id']?.toString()];
+        final bi = bpInspections[r['ref_id']?.toString()];
+        final machineName = bi != null ? machines[bi['machine_id']?.toString()] : null;
+        final reason = sa?['remarks'] ?? bi?['remarks'] ?? 'BP quality hold';
+        final qty = (r['qty'] as num?)?.toDouble() ?? 0.0;
+        final runningBalance = (r['running_balance'] as num?)?.toDouble() ?? 0.0;
+
+        return {
+          'date': r['date']?.toString() ?? '',
+          'part_code': part?['code']?.toString() ?? '—',
+          'part_name': part?['name']?.toString() ?? '—',
+          'reason': reason.toString(),
+          'qty': qty,
+          'running_balance': runningBalance,
+          'direction': r['direction']?.toString() ?? 'in',
+          'machine_name': machineName ?? 'BP Inspection',
+        };
+      }).toList();
+    }
+
+    // Custom handler for stock_ledger rtv_stock query in holdMaterialReportProvider
+    if (sql.contains('stock_ledger') && (sql.contains('rtv_stock') || sql.contains('rtv_at_vendor'))) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final fromDate = params.length >= 3 ? params[1]?.toString() : null;
+      final toDate = params.length >= 3 ? params[2]?.toString() : null;
+
+      final ledger = List<Map<String, dynamic>>.from(_tables['stock_ledger'] ?? const []);
+      final parts = {for (var p in (_tables['parts'] ?? const [])) p['id']?.toString(): p};
+      final vendors = {for (var v in (_tables['vendors'] ?? const [])) v['id']?.toString(): v['name']?.toString()};
+      final adjustments = {for (var sa in (_tables['stock_adjustments'] ?? const [])) sa['id']?.toString(): sa};
+      final rtvs = {for (var rtv in (_tables['rtvs'] ?? const [])) rtv['id']?.toString(): rtv};
+
+      var rows = ledger.where((l) {
+        if (factoryId != null && l['factory_id']?.toString() != factoryId) return false;
+        final stage = l['stage']?.toString();
+        if (stage != 'rtv_stock' && stage != 'rtv_at_vendor') return false;
+        if (fromDate != null && toDate != null) {
+          final d = l['date']?.toString() ?? '';
+          if (d.compareTo(fromDate) < 0 || d.compareTo(toDate) > 0) return false;
+        }
+        return true;
+      }).toList();
+
+      rows.sort((a, b) => (b['date']?.toString() ?? '').compareTo(a['date']?.toString() ?? ''));
+
+      return rows.map((r) {
+        final part = parts[r['part_id']?.toString()];
+        final sa = adjustments[r['ref_id']?.toString()];
+        final rtv = rtvs[r['ref_id']?.toString()];
+        final vendorName = rtv != null ? vendors[rtv['vendor_id']?.toString()] : sa?['remarks'];
+        final qty = (r['qty'] as num?)?.toDouble() ?? 0.0;
+        final runningBalance = (r['running_balance'] as num?)?.toDouble() ?? 0.0;
+
+        return {
+          'date': r['date']?.toString() ?? '',
+          'part_code': part?['code']?.toString() ?? '—',
+          'part_name': part?['name']?.toString() ?? '—',
+          'vendor_name': vendorName?.toString() ?? 'Awaiting vendor rework',
+          'qty': qty,
+          'running_balance': runningBalance,
+          'direction': r['direction']?.toString() ?? 'in',
+          'stage': r['stage']?.toString() ?? 'rtv_stock',
+        };
+      }).toList();
     }
 
     final tableMatch =
@@ -1044,13 +1496,21 @@ class FakeDb {
       rows = rows.where((row) => row['status'] == 'pending').toList();
     }
 
-    final isCount = RegExp(r'\bCOUNT\s*\(', caseSensitive: false).hasMatch(sql);
-    final isSum = RegExp(r'\bSUM\s*\(', caseSensitive: false).hasMatch(sql);
+    final isTopLevelCount = RegExp(
+      r'^\s*SELECT\s+(?:DISTINCT\s+)?(?:COALESCE\s*\(\s*)?COUNT\s*\(',
+      caseSensitive: false,
+    ).hasMatch(sql);
+    final isTopLevelSum = RegExp(
+      r'^\s*SELECT\s+(?:DISTINCT\s+)?(?:COALESCE\s*\(\s*)?SUM\s*\(',
+      caseSensitive: false,
+    ).hasMatch(sql);
     final hasGroupBy =
         RegExp(r'\bGROUP\s+BY\b', caseSensitive: false).hasMatch(sql);
 
     // Aggregate queries without GROUP BY always return exactly 1 row in SQL
-    if (!hasGroupBy && (isCount || isSum)) {
+    if (!hasGroupBy && (isTopLevelCount || isTopLevelSum)) {
+      final isCount = isTopLevelCount;
+      final isSum = isTopLevelSum;
       final aliasMatch =
           RegExp(r'\bAS\s+(\w+)', caseSensitive: false).firstMatch(sql);
       final alias = aliasMatch?.group(1) ?? (isCount ? 'cnt' : 'qty');
@@ -1126,16 +1586,36 @@ class FakeDb {
     if (table == 'machines' && hasGroupBy && sql.contains('total_prod')) {
       final productions = _tables['productions'] ?? [];
       final downtimes = _tables['machine_downtimes'] ?? [];
+      final machines = _tables['machines'] ?? [];
+      final factoryId = params.isNotEmpty ? params.last?.toString() : null;
+      final fromDate = params.isNotEmpty ? params[0]?.toString() : null;
+      final toDate = params.length > 1 ? params[1]?.toString() : null;
+
       final result = <Map<String, dynamic>>[];
-      for (final m in rows) {
-        final mId = m['id'];
-        final fId = m['factory_id'];
-        final mProds = productions
-            .where((p) => p['machine_id'] == mId && p['factory_id'] == fId)
-            .toList();
-        final mDts = downtimes
-            .where((d) => d['machine_id'] == mId && d['factory_id'] == fId)
-            .toList();
+      for (final m in machines) {
+        if (factoryId != null && m['factory_id']?.toString() != factoryId) continue;
+        if (m['active'] != 1 && m['active'] != true) continue;
+
+        final mId = m['id']?.toString();
+        final fId = m['factory_id']?.toString();
+
+        final mProds = productions.where((p) {
+          if (p['machine_id']?.toString() != mId || p['factory_id']?.toString() != fId) return false;
+          if (fromDate != null && toDate != null) {
+            final d = p['date']?.toString() ?? '';
+            if (d.compareTo(fromDate) < 0 || d.compareTo(toDate) > 0) return false;
+          }
+          return true;
+        }).toList();
+
+        final mDts = downtimes.where((d) {
+          if (d['machine_id']?.toString() != mId || d['factory_id']?.toString() != fId) return false;
+          if (fromDate != null && toDate != null) {
+            final dDate = d['date']?.toString() ?? '';
+            if (dDate.compareTo(fromDate) < 0 || dDate.compareTo(toDate) > 0) return false;
+          }
+          return true;
+        }).toList();
 
         double totalProd = 0.0;
         double bpRej = 0.0;
@@ -1154,6 +1634,7 @@ class FakeDb {
         }
 
         result.add({
+          'machine_id': mId,
           'machine_name': m['name'] ?? '',
           'total_prod': totalProd,
           'bp_rej': bpRej,
@@ -1162,7 +1643,53 @@ class FakeDb {
           'downtime_mins': dtMins,
         });
       }
+      result.sort((a, b) => ((b['total_prod'] as num?) ?? 0).compareTo((a['total_prod'] as num?) ?? 0));
       return result;
+    }
+
+    // Special query: Machine parts breakdown query
+    if (table == 'productions' && sql.contains('machine_id') && sql.contains('part_id') && hasGroupBy && sql.contains('good_qty')) {
+      final factoryId = params.isNotEmpty ? params[0]?.toString() : null;
+      final fromDate = params.length > 1 ? params[1]?.toString() : null;
+      final toDate = params.length > 2 ? params[2]?.toString() : null;
+
+      final productions = _tables['productions'] ?? [];
+      final parts = {for (var p in (_tables['parts'] ?? const [])) p['id']?.toString(): p};
+
+      final grouped = <String, Map<String, dynamic>>{};
+      for (final p in productions) {
+        if (factoryId != null && p['factory_id']?.toString() != factoryId) continue;
+        if (fromDate != null && toDate != null) {
+          final d = p['date']?.toString() ?? '';
+          if (d.compareTo(fromDate) < 0 || d.compareTo(toDate) > 0) continue;
+        }
+        final mId = p['machine_id']?.toString() ?? '';
+        final ptId = p['part_id']?.toString() ?? '';
+        final key = '${mId}__$ptId';
+
+        final part = parts[ptId];
+        final prodQty = (p['production_qty'] as num?)?.toDouble() ?? 0.0;
+        final goodQty = (p['good_qty'] as num?)?.toDouble() ?? 0.0;
+        final rejQty = (p['bp_reject_qty'] as num?)?.toDouble() ?? 0.0;
+
+        if (!grouped.containsKey(key)) {
+          grouped[key] = {
+            'machine_id': mId,
+            'part_id': ptId,
+            'part_name': part?['name'] ?? '—',
+            'part_code': part?['code'] ?? '—',
+            'qty': 0.0,
+            'good_qty': 0.0,
+            'reject_qty': 0.0,
+          };
+        }
+        grouped[key]!['qty'] = (grouped[key]!['qty'] as double) + prodQty;
+        grouped[key]!['good_qty'] = (grouped[key]!['good_qty'] as double) + goodQty;
+        grouped[key]!['reject_qty'] = (grouped[key]!['reject_qty'] as double) + rejQty;
+      }
+      final list = grouped.values.toList();
+      list.sort((a, b) => ((b['qty'] as num?) ?? 0).compareTo((a['qty'] as num?) ?? 0));
+      return list;
     }
 
     // Special query: Operator Report (operators with productions)
